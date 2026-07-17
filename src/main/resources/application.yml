@@ -13,7 +13,8 @@ spring:
     hibernate:
       # Flyway owns the schema; JPA only validates that entities match the migrated tables.
       ddl-auto: validate
-    open-in-view: false
+    # Enabled for now so controllers can lazily map entities to response DTOs; revisit before scale.
+    open-in-view: true
     properties:
       hibernate:
         format_sql: true

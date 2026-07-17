@@ -82,6 +82,13 @@ public class SecurityConfig {
 
                         ).permitAll()
 
+                        // Public browse (read-only catalog + auctions) and the WebSocket endpoint
+                        .requestMatchers(org.springframework.http.HttpMethod.GET,
+                                "/api/categories/**", "/api/listings/**", "/api/auctions/**")
+                        .permitAll()
+                        .requestMatchers("/ws/**")
+                        .permitAll()
+
                         // User Session APIs
                         .requestMatchers("/api/sessions/**")
                         .hasRole("USER")
