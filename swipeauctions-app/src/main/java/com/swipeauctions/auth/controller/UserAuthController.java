@@ -1,0 +1,134 @@
+package com.swipeauctions.auth.controller;
+
+
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+import com.swipeauctions.auth.dto.*;
+import com.swipeauctions.auth.service.UserAuthService;
+import com.swipeauctions.common.exception.BadRequestException;
+import com.swipeauctions.common.response.ApiResponse;
+import com.swipeauctions.user.dtos.RegisterRequestDTO;
+
+import java.security.Principal;
+
+// Handles authentication related APIs
+@RestController
+@RequestMapping("/api/auth")
+@RequiredArgsConstructor
+public class UserAuthController {
+
+    private final UserAuthService userAuthService;
+
+    // Register a new user
+    @PostMapping("/register")
+    public ResponseEntity<ApiResponse<String>> register(
+            @Valid
+            @RequestBody RegisterRequestDTO request
+    ) {
+
+        return ResponseEntity.ok(ApiResponse.success(userAuthService.register(request),null));
+    }
+
+    // Verify email OTP
+    @PostMapping("/verify-email")
+    public ResponseEntity<ApiResponse<String>> verifyEmailOtp(
+            @Valid
+            @RequestBody VerifyEmailOtpDTO request
+    ) {
+
+        return ResponseEntity.ok(ApiResponse.success(userAuthService.verifyEmailOtp(request),null));
+    }
+
+    // Verify mobile OTP
+    @PostMapping("/verify-mobile")
+    public ResponseEntity<ApiResponse<String>> verifyMobileOtp(
+            @Valid
+            @RequestBody VerifyMobileOtpDTO request
+    ) {
+
+        return ResponseEntity.ok(ApiResponse.success(userAuthService.verifyMobileOtp(request),null));
+    }
+
+    // Authenticate user and generate JWT
+    @PostMapping("/login")
+    public ResponseEntity<ApiResponse<LoginResponseDTO>> login(
+
+            @Valid
+            @RequestBody LoginRequestDTO request,
+            HttpServletRequest httpServletRequest
+    ) {
+        LoginResponseDTO response = userAuthService.login(request, httpServletRequest);
+
+        String message = Boolean.TRUE.equals(response.getDeviceLimitReached()) ? response.getMessage() : "Login successful";
+
+        return ResponseEntity.ok(ApiResponse.success(message, response));
+    }
+
+    // Send password reset link
+    @PostMapping("/forgot-password")
+    public ResponseEntity<ApiResponse<String>> forgotPassword(
+
+            @Valid
+            @RequestBody ForgotPasswordRequestDTO request
+
+    ) {
+        return ResponseEntity.ok(ApiResponse.success(userAuthService.forgotPassword(request), null));
+    }
+
+    // Reset password using token
+    @PostMapping("/reset-password")
+    public ResponseEntity<ApiResponse<String>> resetPassword(
+
+            @Valid
+            @RequestBody ResetPasswordRequestDTO request
+
+    ) {
+
+        return ResponseEntity.ok(ApiResponse.success(userAuthService.resetPassword(request), null));
+    }
+
+    @PostMapping("/change-password")
+    public ResponseEntity<ApiResponse<String>> changePassword(
+
+            @Valid
+            @RequestBody
+            ChangePasswordRequestDTO request,
+            Principal principal
+
+    ) {
+
+        return ResponseEntity.ok(ApiResponse.success(userAuthService.changePassword(request, principal.getName()), null));
+    }
+
+    @PostMapping("/resend-otp")
+    public ResponseEntity<ApiResponse<String>> resendOtp(
+
+            @Valid
+            @RequestBody ResendOtpDTO request
+
+    ) {
+
+        return ResponseEntity.ok(ApiResponse.success(userAuthService.resendOtp(request), null));
+    }
+
+    @PostMapping("/logout")
+    public ResponseEntity<ApiResponse<String>> logout(HttpServletRequest request)
+    {
+
+        String authHeader = request.getHeader("Authorization");
+
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+
+            throw new BadRequestException("Authorization token is missing");
+        }
+
+        String token = authHeader.substring(7);
+
+        String response = userAuthService.logout(token);
+
+        return ResponseEntity.ok(ApiResponse.success(response, null));
+    }
+}

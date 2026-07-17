@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+
+<html lang="en"
+      xmlns:th="http://www.thymeleaf.org">
+
+<body>
+
+<div th:replace="~{email/base :: emailLayout(~{::section})}">
+
+  ```
+  <section>
+
+    <h2>Welcome to Swipe Auctions</h2>
+
+    <p>
+      Hello
+      <strong th:text="${firstName}">
+        User
+      </strong>,
+    </p>
+
+    <p>
+      Congratulations! Your account has been successfully activated.
+    </p>
+
+    <div style="
+            background:#ECFDF5;
+            border:2px solid #10B981;
+            border-radius:14px;
+            padding:25px;
+            margin:25px 0;
+    ">
+
+      <h3 style="
+                margin-top:0;
+                color:#065F46;
+        ">
+        Account Status : ACTIVE
+      </h3>
+
+      <p>
+        Your account is verified and ready to participate in the Swipe Auctions ecosystem.
+      </p>
+
+    </div>
+
+    <h3>Next Steps</h3>
+
+    <ul>
+      <li>Complete your eKYC verification.</li>
+      <li>Purchase Membership.</li>
+      <li>Deposit EMD.</li>
+      <li>Participate in Live Auctions.</li>
+      <li>Start Bidding.</li>
+    </ul>
+
+    <p>
+      Thank you for choosing Swipe Auctions.
+    </p>
+
+    <p>
+      Regards,<br>
+      Swipe Auctions Team
+    </p>
+
+  </section>
+  ```
+
+</div>
+
+</body>
+</html>

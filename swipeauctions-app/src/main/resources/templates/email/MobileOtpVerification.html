@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+
+<html lang="en"
+      xmlns:th="http://www.thymeleaf.org">
+
+<body>
+
+<div th:replace="~{email/base :: emailLayout(~{::section})}">
+
+    ```
+    <section>
+
+        <h2>Verify Your Mobile Number</h2>
+
+        <p>
+            Hello
+            <strong th:text="${firstName}">
+                User
+            </strong>,
+        </p>
+
+        <p>
+            Use the OTP below to verify your mobile number.
+        </p>
+
+        <div style="
+            background:#EFF6FF;
+            border:2px solid #3B82F6;
+            border-radius:14px;
+            padding:25px;
+            text-align:center;
+            margin:25px 0;
+    ">
+
+            <div style="
+                color:#64748B;
+                font-size:13px;
+        ">
+                MOBILE VERIFICATION OTP
+            </div>
+
+            <h1 style="
+                color:#2563EB;
+                font-size:44px;
+                letter-spacing:12px;
+        "
+                th:text="${otp}">
+                123456
+            </h1>
+
+        </div>
+
+        <p>
+            This OTP is valid for 10 minutes.
+        </p>
+
+    </section>
+    ```
+
+</div>
+
+</body>
+</html>
