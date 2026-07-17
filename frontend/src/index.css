@@ -1,0 +1,80 @@
+:root {
+  color-scheme: dark;
+  --bg: #0f172a;
+  --panel: #1e293b;
+  --panel-2: #273449;
+  --border: #334155;
+  --text: #e2e8f0;
+  --muted: #94a3b8;
+  --accent: #38bdf8;
+  --accent-2: #22d3ee;
+  --green: #4ade80;
+  --amber: #fbbf24;
+  --red: #f87171;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.nav {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 24px; background: rgba(15,23,42,.9); border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; backdrop-filter: blur(6px); z-index: 10;
+}
+.brand { font-weight: 800; font-size: 18px; color: var(--text); display: flex; align-items: center; gap: 10px; }
+.brand:hover { text-decoration: none; }
+.logo { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center;
+  background: linear-gradient(135deg, var(--accent-2), var(--accent)); color: #06121f; font-weight: 900; }
+.nav-links { display: flex; align-items: center; gap: 18px; }
+.who { color: var(--muted); font-size: 13px; }
+
+.container { max-width: 1080px; margin: 0 auto; padding: 28px 24px; }
+
+.btn { background: linear-gradient(135deg, var(--accent-2), var(--accent)); color: #06121f;
+  border: none; border-radius: 8px; padding: 9px 16px; font-weight: 700; cursor: pointer; font-size: 14px; }
+.btn:hover { filter: brightness(1.07); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn.ghost { background: transparent; color: var(--text); border: 1px solid var(--border); }
+.btn.block { display: block; width: 100%; }
+
+.card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 18px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+
+.auction-card { display: flex; flex-direction: column; gap: 8px; transition: transform .1s, border-color .1s; }
+.auction-card:hover { transform: translateY(-2px); border-color: var(--accent); }
+.auction-card h3 { margin: 0; font-size: 16px; }
+.row { display: flex; align-items: center; justify-content: space-between; }
+.muted { color: var(--muted); font-size: 13px; }
+.price { font-size: 20px; font-weight: 800; }
+
+.badge { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; text-transform: uppercase; letter-spacing: .04em; }
+.badge.OPEN { background: rgba(74,222,128,.14); color: var(--green); }
+.badge.SCHEDULED { background: rgba(251,191,36,.14); color: var(--amber); }
+.badge.CLOSED { background: rgba(148,163,184,.16); color: var(--muted); }
+.badge.RESERVE_NOT_MET, .badge.CANCELLED { background: rgba(248,113,113,.14); color: var(--red); }
+
+.tabs { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
+.tab { padding: 7px 14px; border-radius: 999px; border: 1px solid var(--border); background: transparent;
+  color: var(--muted); cursor: pointer; font-size: 13px; }
+.tab.active { background: var(--panel-2); color: var(--text); border-color: var(--accent); }
+
+.form { max-width: 400px; margin: 30px auto; }
+.form h1 { font-size: 22px; }
+label { display: block; font-size: 13px; color: var(--muted); margin: 14px 0 6px; }
+input, select { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--panel-2); color: var(--text); font-size: 14px; }
+input:focus { outline: none; border-color: var(--accent); }
+
+.error { color: var(--red); background: rgba(248,113,113,.1); border: 1px solid rgba(248,113,113,.3);
+  padding: 10px 12px; border-radius: 8px; font-size: 13px; margin-top: 14px; }
+.ok { color: var(--green); background: rgba(74,222,128,.1); border: 1px solid rgba(74,222,128,.3);
+  padding: 10px 12px; border-radius: 8px; font-size: 13px; margin-top: 14px; }
+
+.stat { display: flex; gap: 28px; margin: 16px 0; }
+.stat .k { font-size: 11px; text-transform: uppercase; color: var(--muted); letter-spacing: .05em; }
+.stat .v { font-size: 24px; font-weight: 800; }
+.countdown { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--accent-2); }
+.live-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--green);
+  box-shadow: 0 0 8px var(--green); margin-right: 6px; }
