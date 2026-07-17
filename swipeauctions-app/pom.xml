@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.swipeauctions</groupId>
+        <artifactId>swipeauctions-parent</artifactId>
+        <version>0.0.1-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>swipeauctions-app</artifactId>
+    <name>SwipeAuctions App</name>
+    <description>Boot layer: SwipeAuctionsApplication, security/web/websocket config, Flyway migrations</description>
+
+    <dependencies>
+        <!-- All domain modules assembled into the single deployable -->
+        <dependency>
+            <groupId>com.swipeauctions</groupId>
+            <artifactId>swipeauctions-admin</artifactId>
+        </dependency>
+        <!-- admin transitively pulls identity/catalog/auction/wallet/bidding/payment/dispute/notification/common,
+             but declare the leaf modules explicitly too so the app owns the full graph directly -->
+        <dependency>
+            <groupId>com.swipeauctions</groupId>
+            <artifactId>swipeauctions-bidding</artifactId>
+        </dependency>
+
+        <!-- Web + realtime + persistence -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-websocket</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+
+        <!-- Migrations + driver -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-database-postgresql</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>

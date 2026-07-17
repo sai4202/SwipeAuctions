@@ -1,0 +1,30 @@
+spring:
+  application:
+    name: swipeauctions
+  datasource:
+    # Supabase Postgres — session pooler or direct connection (NOT the transaction pooler on 6543).
+    # Supply these via environment variables; never commit real credentials.
+    url: ${SUPABASE_DB_URL}
+    username: ${SUPABASE_DB_USER}
+    password: ${SUPABASE_DB_PASSWORD}
+    hikari:
+      maximum-pool-size: 5
+  jpa:
+    hibernate:
+      # Flyway owns the schema; JPA only validates that entities match the migrated tables.
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: false
+
+server:
+  port: 8080
+
+logging:
+  level:
+    org.flywaydb: info

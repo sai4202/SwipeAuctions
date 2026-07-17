@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.swipeauctions</groupId>
+        <artifactId>swipeauctions-parent</artifactId>
+        <version>0.0.1-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>swipeauctions-admin</artifactId>
+    <name>SwipeAuctions Admin</name>
+    <description>Cross-cutting admin orchestration — depends on all domain modules</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.swipeauctions</groupId>
+            <artifactId>swipeauctions-identity</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.swipeauctions</groupId>
+            <artifactId>swipeauctions-catalog</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.swipeauctions</groupId>
+            <artifactId>swipeauctions-auction</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.swipeauctions</groupId>
+            <artifactId>swipeauctions-wallet</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.swipeauctions</groupId>
+            <artifactId>swipeauctions-bidding</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.swipeauctions</groupId>
+            <artifactId>swipeauctions-payment</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.swipeauctions</groupId>
+            <artifactId>swipeauctions-dispute</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.swipeauctions</groupId>
+            <artifactId>swipeauctions-notification</artifactId>
+        </dependency>
+    </dependencies>
+</project>
