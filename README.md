@@ -1,2 +1,2 @@
 # SwipeAuctions
-An eAuction platform 
+A real time eAuction platform 
