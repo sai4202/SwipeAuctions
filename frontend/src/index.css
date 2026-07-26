@@ -594,4 +594,30 @@ h1.page { font-size: 26px; margin: 0 0 4px; }
   .login-card h1 { font-size: 22px; }
   .login-brand h2 { font-size: 32px; }
   .admin-filters input, .admin-filters select { width: 100%; flex: 1 1 100%; }
+
+  /* Auction catalogue: a single auto-fill column on a phone stretches each card to the full
+     viewport width — oversized image, oversized everything. Force a tight 2-column grid instead
+     (same pattern as most shopping-app catalogues) and shrink the card chrome to fit, without
+     dropping any of the info the desktop card shows. */
+  .grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .acard.card { padding: 10px; border-radius: 12px; }
+  .acard .thumb-wrap { margin: -10px -10px 2px; }
+  .acard .thumb, .acard .thumb-fallback { border-radius: 10px 10px 0 0; }
+  .acard .wishlist-btn { width: 26px; height: 26px; font-size: 12px; top: 6px; right: 6px; }
+  .acard .ribbon { top: 6px; left: 6px; }
+  .acard .ribbon-time { top: 32px; right: 6px; font-size: 10px; padding: 2px 7px; }
+  .acard .cat, .acard .cond { font-size: 9.5px; }
+  .acard .loc { font-size: 10.5px; }
+  .acard-title { font-size: 12.5px; min-height: 2.2em; margin: 0; }
+  .acard .price-block { padding: 6px 0; }
+  .acard .price-now { font-size: 16px; }
+  .acard .price-was { font-size: 10px; }
+  .acard .price-label { font-size: 9px; }
+  .acard .price-meta { font-size: 9.5px; }
+  .acard .badge { font-size: 9px; padding: 2px 7px; }
+  .acard .countdown { font-size: 10.5px; }
+  .acard .card-cta { gap: 5px; margin-top: 2px; }
+  .acard .card-cta .btn { font-size: 11px; padding: 7px 8px; }
+  .acard .card-cta-stack .bid-stepper input { font-size: 12px; padding: 6px 4px; }
+  .acard .card-cta-stack .step-btn { width: 26px; font-size: 13px; }
 }

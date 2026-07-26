@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { login, requestLoginOtp, verifyLoginOtp, logoutDevice, errorMessage, type LoginData, type SessionInfo } from '../api'
 import { useAuth } from '../auth'
 
@@ -13,6 +13,10 @@ function formatWhen(iso: string | null): string {
 export default function LoginPage() {
   const { signIn } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
+  // RequireAuth (App.tsx) sends anonymous visitors here with the page they were trying to reach —
+  // land them back there instead of always dumping them on /auctions after signing in.
+  const returnTo = (location.state as { from?: string } | null)?.from
   const [mode, setMode] = useState<Mode>('password')
   const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
@@ -38,7 +42,7 @@ export default function LoginPage() {
       token: data.token, email: data.email, role: data.role, kycCompleted: data.kycCompleted,
       subscriptionTier: data.subscriptionTier, subscriptionExpiresAt: data.subscriptionExpiresAt,
     })
-    navigate('/auctions')
+    navigate(returnTo || '/auctions')
   }
 
   const submitPassword = async (e: FormEvent) => {

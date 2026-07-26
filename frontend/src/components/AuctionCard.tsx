@@ -43,7 +43,7 @@ type ModalPhase = 'terms' | 'low' | 'confirm' | 'success'
  * here on the card — no navigation, and no re-entering the amount a second time.
  */
 export default function AuctionCard({ auction: a, inTray, onToggleTray }: Props) {
-  const { subscriptionTier, role } = useAuth()
+  const { isAuthenticated, subscriptionTier, role } = useAuth()
   const navigate = useNavigate()
   const [amount, setAmount] = useState('')
   // Optimistic patch after a successful bid placed right here on the card — the parent's auction
@@ -90,6 +90,12 @@ export default function AuctionCard({ auction: a, inTray, onToggleTray }: Props)
   const showTierBadge = auction.requiredTier !== 'NONE' && (locked || isAdmin)
 
   const clickBidNow = () => {
+    // Catalog browsing is public, but bidding isn't — send an anonymous visitor to sign in first
+    // instead of letting them reach a confirm popup that only then fails with "Unauthorized".
+    if (!isAuthenticated) {
+      navigate('/login', { state: { from: `/auctions/${auction.id}` } })
+      return
+    }
     const amt = Number(amount || minNext)
     setBidError('')
     if (!Number.isFinite(amt) || amt <= 0 || amt < minNext) {

@@ -447,7 +447,7 @@ public class DevDataSeeder implements CommandLineRunner {
         covers.put("2022 Jeep Compass (Repo)", demoGallery("2022 Jeep Compass (Repo)", "jeep,compass,suv,car", 3));
         covers.put("2023 Volvo XC60 (Fleet Return)", demoGallery("2023 Volvo XC60 (Fleet Return)", "volvo,xc60,suv,car", 3));
         covers.put("4BHK Luxury Penthouse — Mumbai (Bank Auction)", demoGallery("4BHK Luxury Penthouse — Mumbai (Bank Auction)", "penthouse,luxury,apartment", 3));
-        covers.put("2023 Range Rover Sport (Repo)", demoGallery("2023 Range Rover Sport (Repo)", "range rover,suv,car", 3));
+        covers.put("2023 Range Rover Sport (Repo)", demoGallery("2023 Range Rover Sport (Repo)", "range-rover,suv,car", 3));
         covers.put("2023 Porsche Cayenne (Fleet Return)", demoGallery("2023 Porsche Cayenne (Fleet Return)", "porsche,cayenne,suv,car", 3));
 
         int added = 0;
@@ -476,10 +476,15 @@ public class DevDataSeeder implements CommandLineRunner {
      * from the title) so the result is stable across restarts instead of changing every run.
      */
     private List<String> demoGallery(String title, String keywords, int count) {
+        // Encode each term so a space (e.g. "range rover") can't produce a malformed, silently-
+        // broken-image URL — loremflickr keeps the comma separators, just not raw spaces.
+        String encodedKeywords = java.util.Arrays.stream(keywords.split(","))
+                .map(k -> java.net.URLEncoder.encode(k.trim(), java.nio.charset.StandardCharsets.UTF_8))
+                .collect(Collectors.joining(","));
         List<String> urls = new java.util.ArrayList<>();
         for (int i = 1; i <= count; i++) {
             long lock = Math.abs((long) (title + "#" + i).hashCode());
-            urls.add("https://loremflickr.com/800/600/" + keywords + "?lock=" + lock);
+            urls.add("https://loremflickr.com/800/600/" + encodedKeywords + "?lock=" + lock);
         }
         return urls;
     }
