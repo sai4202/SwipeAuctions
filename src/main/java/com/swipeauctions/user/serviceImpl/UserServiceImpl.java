@@ -9,6 +9,7 @@ import com.swipeauctions.common.exception.ResourceNotFoundException;
 import com.swipeauctions.email.dto.EmailRequestDTO;
 import com.swipeauctions.email.service.EmailService;
 import com.swipeauctions.email.service.EmailTemplateService;
+import com.swipeauctions.sms.service.SmsService;
 import com.swipeauctions.user.dtos.*;
 import com.swipeauctions.user.entity.User;
 import com.swipeauctions.user.entity.UserUpdateRequest;
@@ -32,9 +33,15 @@ public class UserServiceImpl implements UserService
 
     private final EmailTemplateService emailTemplateService;
 
+    private final SmsService smsService;
+
     private final OtpGenerator otpGenerator;
 
     private final UserSecurityService userSecurityService;
+
+    // Max wrong-OTP guesses before requiring a fresh resend — closes the brute-force gap on a 6-digit
+    // OTP (900,000 possibilities) that otherwise had no rate limit.
+    private static final int MAX_OTP_ATTEMPTS = 5;
 
     private String normalizeEmail(String email)
     {
@@ -85,6 +92,7 @@ public class UserServiceImpl implements UserService
                 LocalDateTime.now().plusMinutes(10));
         updateRequest.setEmailVerified(false);
         updateRequest.setEmailOtpSentAt(LocalDateTime.now());
+        updateRequest.setEmailOtpAttempts(0);
 
         userUpdateRequestRepository.save(updateRequest);
 
@@ -130,8 +138,18 @@ public class UserServiceImpl implements UserService
 
         if (!updateRequest.getEmailOtp().equals(request.getOtp()))
         {
+            int attempts = updateRequest.getEmailOtpAttempts() + 1;
+            if (attempts >= MAX_OTP_ATTEMPTS) {
+                updateRequest.setEmailOtp(null);
+                updateRequest.setEmailOtpAttempts(0);
+                userUpdateRequestRepository.save(updateRequest);
+                throw new BadRequestException("Too many incorrect attempts — request a new OTP");
+            }
+            updateRequest.setEmailOtpAttempts(attempts);
+            userUpdateRequestRepository.save(updateRequest);
             throw new BadRequestException("Invalid OTP");
         }
+        updateRequest.setEmailOtpAttempts(0);
 
         if (updateRequest.getNewEmail() == null)
         {
@@ -194,6 +212,8 @@ public class UserServiceImpl implements UserService
 
         updateRequest.setEmailOtpSentAt(LocalDateTime.now());
 
+        updateRequest.setEmailOtpAttempts(0);
+
         userUpdateRequestRepository.save(updateRequest);
 
         String body = emailTemplateService.getEmailVerificationTemplate("User", otp);
@@ -254,15 +274,11 @@ public class UserServiceImpl implements UserService
 
         updateRequest.setMobileOtpSentAt(LocalDateTime.now());
 
+        updateRequest.setMobileOtpAttempts(0);
+
         userUpdateRequestRepository.save(updateRequest);
 
-        String body = emailTemplateService.getMobileVerificationTemplate("User", otp);
-
-        emailService.sendEmail(EmailRequestDTO.builder()
-                        .to(user.getEmail())
-                        .subject("Mobile Change Verification")
-                        .body(body)
-                        .build());
+        smsService.sendSms(request.getNewMobileNumber(), "Your SwipeAuctions mobile verification code is " + otp + ". Valid for 10 minutes.");
 
         return "OTP sent successfully";
     }
@@ -297,8 +313,18 @@ public class UserServiceImpl implements UserService
 
         if (!updateRequest.getMobileOtp().equals(request.getOtp()))
         {
+            int attempts = updateRequest.getMobileOtpAttempts() + 1;
+            if (attempts >= MAX_OTP_ATTEMPTS) {
+                updateRequest.setMobileOtp(null);
+                updateRequest.setMobileOtpAttempts(0);
+                userUpdateRequestRepository.save(updateRequest);
+                throw new BadRequestException("Too many incorrect attempts — request a new OTP");
+            }
+            updateRequest.setMobileOtpAttempts(attempts);
+            userUpdateRequestRepository.save(updateRequest);
             throw new BadRequestException("Invalid OTP");
         }
+        updateRequest.setMobileOtpAttempts(0);
 
         if (updateRequest.getNewMobileNumber() == null)
         {
@@ -361,14 +387,7 @@ public class UserServiceImpl implements UserService
 
         userUpdateRequestRepository.save(updateRequest);
 
-        String body = emailTemplateService.getMobileVerificationTemplate("User", otp);
-
-        emailService.sendEmail(EmailRequestDTO.builder()
-                        .to(user.getEmail()) // currently sending OTP to registered email
-                        .subject("Mobile Change Verification")
-                        .body(body)
-                        .build()
-        );
+        smsService.sendSms(updateRequest.getNewMobileNumber(), "Your SwipeAuctions mobile verification code is " + otp + ". Valid for 10 minutes.");
 
         return "OTP resent successfully";
     }

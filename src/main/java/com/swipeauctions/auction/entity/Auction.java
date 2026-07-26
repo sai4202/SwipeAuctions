@@ -3,6 +3,7 @@ package com.swipeauctions.auction.entity;
 import com.swipeauctions.auction.enums.AuctionStatus;
 import com.swipeauctions.catalog.entity.Listing;
 import com.swipeauctions.common.entity.BaseEntity;
+import com.swipeauctions.event.entity.AuctionEvent;
 import com.swipeauctions.user.entity.User;
 import jakarta.persistence.*;
 import lombok.*;
@@ -29,6 +30,11 @@ public class Auction extends BaseEntity {
     @OneToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "listing_id", nullable = false, unique = true)
     private Listing listing;
+
+    /** Optional grouping under a seller-created auction event (Bank Vehicles / Insurance categories). */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "event_id")
+    private AuctionEvent event;
 
     @Column(name = "base_price", nullable = false, precision = 12, scale = 2)
     private BigDecimal basePrice;
@@ -57,6 +63,11 @@ public class Auction extends BaseEntity {
     @Builder.Default
     @Column(name = "extension_count", nullable = false)
     private int extensionCount = 0;
+
+    /** True once the winner's full settlement (EMD + remainder) has been captured from their wallet. */
+    @Builder.Default
+    @Column(name = "settlement_paid", nullable = false)
+    private boolean settlementPaid = false;
 
     @Version
     @Column(nullable = false)

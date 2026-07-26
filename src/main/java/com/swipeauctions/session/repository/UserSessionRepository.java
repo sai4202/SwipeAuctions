@@ -36,4 +36,10 @@ public interface UserSessionRepository extends JpaRepository<UserSessions, UUID>
      * Returns all active sessions ordered by latest login.
      */
     List<UserSessions> findByUserAndActiveTrueOrderByLoginTimeDesc(User user);
+
+    /**
+     * Whether this user has ever had a session from the given device (User-Agent), active or not.
+     * Used to send a "new device sign-in" alert only the first time a device is seen.
+     */
+    boolean existsByUserAndUserAgent(User user, String userAgent);
 }

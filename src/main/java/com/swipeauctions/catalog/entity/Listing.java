@@ -3,6 +3,7 @@ package com.swipeauctions.catalog.entity;
 import com.swipeauctions.catalog.enums.ItemCondition;
 import com.swipeauctions.catalog.enums.ListingStatus;
 import com.swipeauctions.common.entity.BaseEntity;
+import com.swipeauctions.enums.SubscriptionTier;
 import com.swipeauctions.user.entity.User;
 import jakarta.persistence.*;
 import lombok.*;
@@ -73,4 +74,16 @@ public class Listing extends BaseEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private ListingStatus status = ListingStatus.DRAFT;
+
+    /** Shows this item on the dedicated /swipe-stock page, independent of who the seller is. */
+    @Builder.Default
+    @Column(name = "swipe_stock", nullable = false)
+    private boolean swipeStock = false;
+
+    /** Minimum subscription tier a viewer needs to register/bid on this listing's auction. NONE
+     *  (default) means visible to everyone, same as before this field existed. */
+    @Builder.Default
+    @Enumerated(EnumType.STRING)
+    @Column(name = "required_tier", nullable = false, length = 20)
+    private SubscriptionTier requiredTier = SubscriptionTier.NONE;
 }

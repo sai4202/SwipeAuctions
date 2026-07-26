@@ -9,5 +9,6 @@ public enum WalletTxnType {
     DEBIT,
     PAYOUT,
     WITHDRAWAL,
-    REFUND
+    REFUND,
+    SALE_PROCEEDS
 }

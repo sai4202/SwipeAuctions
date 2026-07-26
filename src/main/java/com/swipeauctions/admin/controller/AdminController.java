@@ -1,0 +1,306 @@
+package com.swipeauctions.admin.controller;
+
+import com.swipeauctions.admin.service.AdminUserService;
+import com.swipeauctions.auction.entity.Auction;
+import com.swipeauctions.auction.enums.AuctionStatus;
+import com.swipeauctions.auction.repository.AuctionRepository;
+import com.swipeauctions.auction.service.AuctionService;
+import com.swipeauctions.bidding.repository.BidRepository;
+import com.swipeauctions.catalog.entity.Category;
+import com.swipeauctions.catalog.entity.CategoryAttributeDef;
+import com.swipeauctions.catalog.entity.Listing;
+import com.swipeauctions.catalog.enums.AttributeValueType;
+import com.swipeauctions.catalog.enums.ListingStatus;
+import com.swipeauctions.catalog.repository.ListingRepository;
+import com.swipeauctions.catalog.service.CatalogService;
+import com.swipeauctions.common.exception.ResourceNotFoundException;
+import com.swipeauctions.common.response.PageResponse;
+import com.swipeauctions.dispute.controller.DisputeController;
+import com.swipeauctions.dispute.entity.Dispute;
+import com.swipeauctions.dispute.enums.DisputeStatus;
+import com.swipeauctions.dispute.repository.DisputeRepository;
+import com.swipeauctions.dispute.service.DisputeService;
+import com.swipeauctions.enums.KycStatus;
+import com.swipeauctions.enums.Role;
+import com.swipeauctions.enums.SubscriptionTier;
+import com.swipeauctions.user.entity.KycVerification;
+import com.swipeauctions.user.entity.User;
+import com.swipeauctions.user.repository.UserRepository;
+import com.swipeauctions.user.service.KycService;
+import com.swipeauctions.wallet.enums.WalletTxnType;
+import com.swipeauctions.wallet.repository.WalletTransactionRepository;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.*;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.UUID;
+
+/** Admin dashboard: user management, listing/auction oversight, force-close, disputes, stats. */
+@RestController
+@RequestMapping("/api/admin")
+@RequiredArgsConstructor
+public class AdminController {
+
+    private final AdminUserService adminUserService;
+    private final AuctionService auctionService;
+    private final AuctionRepository auctionRepository;
+    private final ListingRepository listingRepository;
+    private final BidRepository bidRepository;
+    private final DisputeService disputeService;
+    private final DisputeRepository disputeRepository;
+    private final UserRepository userRepository;
+    private final WalletTransactionRepository walletTransactionRepository;
+    private final CatalogService catalogService;
+    private final KycService kycService;
+
+    // ---- Users ----
+
+    @GetMapping("/users")
+    public PageResponse<UserResponse> users(@RequestParam(required = false) String search,
+                                             @RequestParam(required = false) Role role,
+                                             @RequestParam(required = false) Boolean active,
+                                             @RequestParam(defaultValue = "0") int page,
+                                             @RequestParam(defaultValue = "20") int size) {
+        return PageResponse.of(adminUserService.listUsers(search, role, active, pageable(page, size, "createdAt")),
+                AdminController::toUser);
+    }
+
+    @GetMapping("/users/{id}")
+    public UserResponse user(@PathVariable UUID id) {
+        return toUser(adminUserService.getUser(id));
+    }
+
+    @PostMapping("/users/{id}/suspend")
+    public UserResponse suspend(@PathVariable UUID id) {
+        return toUser(adminUserService.suspend(id));
+    }
+
+    @PostMapping("/users/{id}/reactivate")
+    public UserResponse reactivate(@PathVariable UUID id) {
+        return toUser(adminUserService.reactivate(id));
+    }
+
+    // ---- Listings / auctions ----
+
+    @GetMapping("/listings")
+    public PageResponse<ListingResponse> listings(@RequestParam(required = false) ListingStatus status,
+                                                    @RequestParam(defaultValue = "0") int page,
+                                                    @RequestParam(defaultValue = "20") int size) {
+        Pageable pageable = pageable(page, size, "createdAt");
+        var result = status != null ? listingRepository.findByStatus(status, pageable) : listingRepository.findAll(pageable);
+        return PageResponse.of(result, AdminController::toListing);
+    }
+
+    @GetMapping("/auctions")
+    public PageResponse<AuctionResponse> auctions(@RequestParam(required = false) AuctionStatus status,
+                                                    @RequestParam(defaultValue = "0") int page,
+                                                    @RequestParam(defaultValue = "20") int size) {
+        Pageable pageable = pageable(page, size, "startTime");
+        var result = status != null ? auctionRepository.findByStatus(status, pageable) : auctionRepository.findAll(pageable);
+        return PageResponse.of(result, this::toAuction);
+    }
+
+    @PostMapping("/auctions/{id}/force-close")
+    public AuctionResponse forceClose(@PathVariable UUID id) {
+        return toAuction(auctionService.forceClose(id));
+    }
+
+    @PatchMapping("/auctions/{id}")
+    public AuctionResponse updateAuction(@PathVariable UUID id, @Valid @RequestBody UpdateAuctionRequest req) {
+        return toAuction(auctionService.adminUpdate(id, req.title(), req.basePrice(), req.startTime(), req.endTime()));
+    }
+
+    @PatchMapping("/listings/{id}/required-tier")
+    public ListingResponse updateRequiredTier(@PathVariable UUID id, @Valid @RequestBody UpdateRequiredTierRequest req) {
+        Listing listing = listingRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Listing not found"));
+        listing.setRequiredTier(req.requiredTier());
+        return toListing(listingRepository.save(listing));
+    }
+
+    // ---- Disputes ----
+
+    @GetMapping("/disputes")
+    public PageResponse<DisputeController.DisputeResponse> disputes(@RequestParam(required = false) DisputeStatus status,
+                                                                       @RequestParam(defaultValue = "0") int page,
+                                                                       @RequestParam(defaultValue = "20") int size) {
+        return PageResponse.of(disputeService.list(status, pageable(page, size, "createdAt")), DisputeController::toResponse);
+    }
+
+    @GetMapping("/disputes/{id}")
+    public DisputeController.DisputeResponse dispute(@PathVariable UUID id) {
+        return DisputeController.toResponse(disputeService.get(id));
+    }
+
+    @PostMapping("/disputes/{id}/resolve")
+    public DisputeController.DisputeResponse resolveDispute(@PathVariable UUID id,
+                                                              @Valid @RequestBody ResolveDisputeRequest req) {
+        boolean refundBuyer = Boolean.TRUE.equals(req.refundBuyer());
+        return DisputeController.toResponse(disputeService.resolve(id, req.adminNotes(), refundBuyer));
+    }
+
+    // ---- Categories ----
+
+    /** Any admin-created category becomes selectable immediately wherever categories are picked
+     *  (browse filters, the seller listing form) — no schema change, category rows are just data. */
+    @GetMapping("/categories")
+    public List<CategoryResponse> categories() {
+        return catalogService.listCategories().stream().map(AdminController::toCategory).toList();
+    }
+
+    @PostMapping("/categories")
+    public CategoryResponse createCategory(@Valid @RequestBody CreateCategoryRequest req) {
+        return toCategory(catalogService.createCategory(req.name(), req.slug(), req.parentId()));
+    }
+
+    @GetMapping("/categories/{id}/attributes")
+    public List<CategoryAttributeResponse> categoryAttributes(@PathVariable UUID id) {
+        return catalogService.listCategoryAttributes(id).stream().map(AdminController::toCategoryAttribute).toList();
+    }
+
+    @PostMapping("/categories/{id}/attributes")
+    public CategoryAttributeResponse addCategoryAttribute(@PathVariable UUID id,
+                                                           @Valid @RequestBody CreateCategoryAttributeRequest req) {
+        CategoryAttributeDef def = catalogService.addCategoryAttribute(id, req.key(), req.label(),
+                req.valueType(), req.filterable() == null || req.filterable(), req.sortOrder() != null ? req.sortOrder() : 0);
+        return toCategoryAttribute(def);
+    }
+
+    // ---- KYC ----
+
+    @GetMapping("/kyc")
+    public PageResponse<AdminKycResponse> kycQueue(@RequestParam(required = false) KycStatus status,
+                                                     @RequestParam(defaultValue = "0") int page,
+                                                     @RequestParam(defaultValue = "20") int size) {
+        return PageResponse.of(kycService.listForAdmin(status, pageable(page, size, "createdAt")), AdminController::toKyc);
+    }
+
+    @GetMapping("/kyc/{userId}")
+    public AdminKycResponse kycRecord(@PathVariable UUID userId) {
+        return toKyc(kycService.getForAdmin(userId));
+    }
+
+    @PostMapping("/kyc/{userId}/approve")
+    public AdminKycResponse approveKyc(@PathVariable UUID userId,
+                                        @RequestBody(required = false) KycReviewRequest req,
+                                        Authentication authentication) {
+        String remarks = req != null ? req.remarks() : null;
+        return toKyc(kycService.approve(userId, remarks, authentication.getName()));
+    }
+
+    @PostMapping("/kyc/{userId}/reject")
+    public AdminKycResponse rejectKyc(@PathVariable UUID userId,
+                                       @Valid @RequestBody KycReviewRequest req,
+                                       Authentication authentication) {
+        return toKyc(kycService.reject(userId, req.remarks(), authentication.getName()));
+    }
+
+    // ---- Stats ----
+
+    @GetMapping("/stats")
+    public StatsResponse stats() {
+        long totalUsers = userRepository.count();
+        long openAuctions = auctionRepository.findByStatus(AuctionStatus.OPEN).size();
+        long openDisputes = disputeRepository.findByStatus(DisputeStatus.OPEN).size()
+                + disputeRepository.findByStatus(DisputeStatus.IN_REVIEW).size();
+        BigDecimal gmv = walletTransactionRepository.findByType(WalletTxnType.CAPTURE).stream()
+                .map(t -> t.getAmount())
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        return new StatsResponse(totalUsers, openAuctions, gmv, openDisputes);
+    }
+
+    // ---- paging / mapping helpers ----
+
+    private static Pageable pageable(int page, int size, String sortProperty) {
+        return PageRequest.of(Math.max(page, 0), Math.max(size, 1), Sort.by(Sort.Direction.DESC, sortProperty));
+    }
+
+    static UserResponse toUser(User u) {
+        return new UserResponse(u.getId(), u.getEmail(), u.getMobileNumber(), u.getRole(),
+                u.getActive(), u.getKycStatus(), u.getEmailVerified(), u.getMobileVerified(), u.getCreatedAt());
+    }
+
+    static ListingResponse toListing(Listing l) {
+        return new ListingResponse(l.getId(), l.getTitle(), l.getSeller().getEmail(),
+                l.getCategory().getName(), l.getStatus(), l.getReservePrice(), l.getCreatedAt(), l.getRequiredTier());
+    }
+
+    static CategoryResponse toCategory(Category c) {
+        return new CategoryResponse(c.getId(), c.getName(), c.getSlug(),
+                c.getParent() != null ? c.getParent().getId() : null);
+    }
+
+    static CategoryAttributeResponse toCategoryAttribute(CategoryAttributeDef d) {
+        return new CategoryAttributeResponse(d.getId(), d.getKey(), d.getLabel(), d.getValueType(),
+                d.isFilterable(), d.getSortOrder());
+    }
+
+    static AdminKycResponse toKyc(KycVerification k) {
+        return new AdminKycResponse(k.getUser().getId(), k.getUser().getEmail(), k.getFullName(),
+                k.getDateOfBirth(), k.getAddress(), k.getCity(), k.getState(), k.getPincode(),
+                k.getAadhaarMasked(), k.getPanNumberMasked(), k.getStatus(), k.getProvider(),
+                k.getSubmittedAt(), k.getVerifiedAt(), k.getRemarks(), k.getReviewedBy());
+    }
+
+    AuctionResponse toAuction(Auction a) {
+        return new AuctionResponse(a.getId(), a.getListing().getId(), a.getListing().getTitle(),
+                a.getListing().getSeller().getEmail(), a.getBasePrice(), a.getCurrentHighestBid(),
+                a.getStatus(), a.getStartTime(), a.getCurrentEndTime(),
+                bidRepository.countByAuction_Id(a.getId()));
+    }
+
+    public record UserResponse(UUID id, String email, String mobileNumber, Role role, Boolean active,
+                               KycStatus kycStatus, Boolean emailVerified, Boolean mobileVerified,
+                               LocalDateTime createdAt) {}
+
+    public record ListingResponse(UUID id, String title, String sellerEmail, String categoryName,
+                                  ListingStatus status, BigDecimal reservePrice, LocalDateTime createdAt,
+                                  SubscriptionTier requiredTier) {}
+
+    public record UpdateRequiredTierRequest(@jakarta.validation.constraints.NotNull SubscriptionTier requiredTier) {}
+
+    public record AuctionResponse(UUID id, UUID listingId, String title, String sellerEmail,
+                                  BigDecimal basePrice, BigDecimal currentHighestBid, AuctionStatus status,
+                                  LocalDateTime startTime, LocalDateTime currentEndTime, long bidCount) {}
+
+    public record UpdateAuctionRequest(@NotBlank String title,
+                                       @jakarta.validation.constraints.NotNull @jakarta.validation.constraints.Positive BigDecimal basePrice,
+                                       @jakarta.validation.constraints.NotNull LocalDateTime startTime,
+                                       @jakarta.validation.constraints.NotNull LocalDateTime endTime) {}
+
+    /** refundBuyer: true = reverse escrowed sale proceeds back to the buyer; false/null = release to the seller. */
+    public record ResolveDisputeRequest(String adminNotes, Boolean refundBuyer) {}
+
+    public record StatsResponse(long totalUsers, long openAuctions, BigDecimal gmv, long openDisputes) {}
+
+    public record CategoryResponse(UUID id, String name, String slug, UUID parentId) {}
+
+    public record CreateCategoryRequest(@jakarta.validation.constraints.NotBlank String name,
+                                        @jakarta.validation.constraints.NotBlank String slug, UUID parentId) {}
+
+    public record CategoryAttributeResponse(UUID id, String key, String label, AttributeValueType valueType,
+                                            boolean filterable, int sortOrder) {}
+
+    public record CreateCategoryAttributeRequest(@jakarta.validation.constraints.NotBlank String key,
+                                                  @jakarta.validation.constraints.NotBlank String label,
+                                                  @jakarta.validation.constraints.NotNull AttributeValueType valueType,
+                                                  Boolean filterable, Integer sortOrder) {}
+
+    public record AdminKycResponse(UUID userId, String email, String fullName, LocalDate dateOfBirth,
+                                   String address, String city, String state, String pincode,
+                                   String aadhaarMasked, String panNumberMasked, KycStatus status,
+                                   String provider, LocalDateTime submittedAt, LocalDateTime verifiedAt,
+                                   String remarks, String reviewedBy) {}
+
+    /** remarks is required when rejecting; optional when approving. */
+    public record KycReviewRequest(@NotBlank(message = "Remarks are required") String remarks) {}
+}

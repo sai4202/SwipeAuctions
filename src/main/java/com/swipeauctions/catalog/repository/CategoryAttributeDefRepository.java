@@ -11,4 +11,6 @@ public interface CategoryAttributeDefRepository extends JpaRepository<CategoryAt
     List<CategoryAttributeDef> findByCategory_IdOrderBySortOrderAsc(UUID categoryId);
 
     List<CategoryAttributeDef> findByCategory_IdAndFilterableTrue(UUID categoryId);
+
+    List<CategoryAttributeDef> findByCategory_IdAndFilterableTrueOrderBySortOrderAsc(UUID categoryId);
 }

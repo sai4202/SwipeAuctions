@@ -58,4 +58,16 @@ public class KycVerification extends BaseEntity {
     private LocalDateTime submittedAt;
 
     private LocalDateTime verifiedAt;
+
+    /** "MANUAL" (admin-reviewed) today; a real vendor key (e.g. "DIGIO") once one is wired up. */
+    @Builder.Default
+    private String provider = "MANUAL";
+
+    private String providerReferenceId;
+
+    @Column(columnDefinition = "text")
+    private String providerRawResponse;
+
+    /** Admin email who approved/rejected — null while still PENDING or for provider-decided outcomes. */
+    private String reviewedBy;
 }

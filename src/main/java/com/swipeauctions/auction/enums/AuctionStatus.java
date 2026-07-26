@@ -5,6 +5,6 @@ public enum AuctionStatus {
     SCHEDULED,
     OPEN,
     CLOSED,
-    RESERVE_NOT_MET,
+    UNSOLD,
     CANCELLED
 }

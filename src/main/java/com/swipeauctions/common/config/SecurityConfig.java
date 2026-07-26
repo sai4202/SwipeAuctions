@@ -57,6 +57,7 @@ public class SecurityConfig {
                                 "/css/**",
                                 "/js/**",
                                 "/assets/**",
+                                "/uploads/**",
                                 "/api/status",
                                 "/actuator/health",
                                 "/error",
@@ -68,23 +69,41 @@ public class SecurityConfig {
                                 // User Public APIs
                                 "/api/auth/register",
                                 "/api/auth/login",
+                                "/api/auth/logout-device",
                                 "/api/auth/verify-email",
                                 "/api/auth/verify-mobile",
                                 "/api/auth/resend-otp",
+                                "/api/auth/login/otp/request",
+                                "/api/auth/login/otp/verify",
                                 "/api/auth/forgot-password",
                                 "/api/auth/reset-password",
 
                                 // Admin Public APIs
-                                "/api/admin/auth/register",
+                                // NOTE: /api/admin/auth/register is deliberately NOT here — it's covered by the
+                                // /api/admin/** -> hasRole("ADMIN") rule below, so only an already-authenticated
+                                // admin can create another admin. Bootstrap the first admin via a trusted
+                                // out-of-band path (DB seed/migration), never a public endpoint.
                                 "/api/admin/auth/login",
                                 "/api/admin/auth/forgot-password",
-                                "/api/admin/auth/reset-password"
+                                "/api/admin/auth/reset-password",
+
+                                // Stripe calls this directly — no JWT, auth is the Stripe-Signature header
+                                "/api/webhooks/stripe"
 
                         ).permitAll()
 
-                        // Public browse (read-only catalog + auctions) and the WebSocket endpoint
+                        // Seller-only: list my own auction events (must be checked before the public GET rule below)
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/events/mine")
+                        .authenticated()
+
+                        // Buyer-only: list auctions I've won (must be checked before the public GET rule below)
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/auctions/mine/won")
+                        .authenticated()
+
+                        // Public browse (read-only catalog + auctions + events) and the WebSocket endpoint
                         .requestMatchers(org.springframework.http.HttpMethod.GET,
-                                "/api/categories/**", "/api/listings/**", "/api/auctions/**")
+                                "/api/categories/**", "/api/listings/**", "/api/auctions/**", "/api/events/**",
+                                "/api/settings/**")
                         .permitAll()
                         .requestMatchers("/ws/**")
                         .permitAll()

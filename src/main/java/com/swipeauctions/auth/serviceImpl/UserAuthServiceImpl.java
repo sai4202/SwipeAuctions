@@ -2,6 +2,7 @@ package com.swipeauctions.auth.serviceImpl;
 
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -19,9 +20,11 @@ import com.swipeauctions.email.service.EmailService;
 import com.swipeauctions.email.service.EmailTemplateService;
 import com.swipeauctions.session.dtos.SessionResponseDTO;
 import com.swipeauctions.user.dtos.RegisterRequestDTO;
+import com.swipeauctions.user.entity.LoginOtp;
 import com.swipeauctions.user.entity.OtpVerification;
 import com.swipeauctions.user.entity.PasswordResetToken;
 import com.swipeauctions.user.entity.User;
+import com.swipeauctions.user.repository.LoginOtpRepository;
 import com.swipeauctions.user.repository.OtpVerificationRepository;
 import com.swipeauctions.user.repository.PasswordResetTokenRepository;
 import com.swipeauctions.user.repository.UserRepository;
@@ -38,11 +41,14 @@ import java.util.UUID;
 // Handles users authentication business logic
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class UserAuthServiceImpl implements UserAuthService {
 
     private final UserRepository userRepository;
 
     private final OtpVerificationRepository otpRepository;
+
+    private final LoginOtpRepository loginOtpRepository;
 
     private final PasswordEncoder passwordEncoder;
 
@@ -72,8 +78,16 @@ public class UserAuthServiceImpl implements UserAuthService {
 
     private final UserReferenceNumGenerator userReferenceNumberGenerator;
 
+    private final com.swipeauctions.notification.AuctionNotificationService auctionNotificationService;
+
+    private final com.swipeauctions.settings.service.SubscriptionService subscriptionService;
+
     @Value("${app.frontend.url}")
     private String frontendUrl;
+
+    /** Max concurrent signed-in devices per user (configurable via {@code auth.max-active-sessions}). */
+    @Value("${auth.max-active-sessions:2}")
+    private int maxActiveSessions;
 
     // Register new user account
     @Override
@@ -84,26 +98,7 @@ public class UserAuthServiceImpl implements UserAuthService {
 
         registrationHelperService.validateRegistrationRequest(request);
 
-        User user = userRepository.findByEmail(email).orElse(null);
-
-        if (user == null) {
-            user = userRepository.findByMobileNumber(request.getMobileNumber()).orElse(null);
-        }
-
-        if (user == null)
-        {
-            user = registrationHelperService.createUser(request);
-        }
-        else {
-            // Existing inactive account.
-            user.setPassword(passwordEncoder.encode(request.getPassword()));
-
-            user.setEmailVerified(false);
-
-            user.setMobileVerified(false);
-
-            user.setActive(false);
-        }
+        User user = registrationHelperService.createUser(request);
 
         userRepository.save(user);
 
@@ -115,10 +110,14 @@ public class UserAuthServiceImpl implements UserAuthService {
 
         emailNotificationService.sendEmailOtp(email, emailOtp);
 
-        emailNotificationService.sendMobileOtp(email, mobileOtp);
+        emailNotificationService.sendMobileOtp(user.getMobileNumber(), mobileOtp);
 
         return "Registration successful. OTP sent to email.";
     }
+    // Max wrong-OTP guesses before requiring a fresh resend — same threshold as login lockout, closes
+    // the brute-force gap on a 6-digit OTP (900,000 possibilities) that otherwise had no rate limit.
+    private static final int MAX_OTP_ATTEMPTS = 5;
+
     //verifies email otp and activates email
     @Override
     @Transactional
@@ -127,7 +126,15 @@ public class UserAuthServiceImpl implements UserAuthService {
 
         String email = authHelperService.normalizeEmail(request.getEmail());
 
-        OtpVerification otp = authHelperService.getOtpVerification(email);
+        // Anonymous email is never confirmed/denied by a distinct error here — same "Invalid Email OTP"
+        // whether the account doesn't exist or the OTP is simply wrong, so this endpoint can't be used
+        // to enumerate registered accounts the way a 404-vs-400 split would.
+        OtpVerification otp;
+        try {
+            otp = authHelperService.getOtpVerification(email);
+        } catch (ResourceNotFoundException e) {
+            throw new BadRequestException("Invalid Email OTP");
+        }
 
         if (Boolean.TRUE.equals(otp.getEmailVerified()))
         {
@@ -136,6 +143,15 @@ public class UserAuthServiceImpl implements UserAuthService {
 
         if (otp.getEmailOtp() == null || !otp.getEmailOtp().equals(request.getOtp()))
         {
+            int attempts = otp.getEmailOtpAttempts() + 1;
+            if (attempts >= MAX_OTP_ATTEMPTS) {
+                otp.setEmailOtp(null);
+                otp.setEmailOtpAttempts(0);
+                otpRepository.save(otp);
+                throw new BadRequestException("Too many incorrect attempts — request a new OTP");
+            }
+            otp.setEmailOtpAttempts(attempts);
+            otpRepository.save(otp);
             throw new BadRequestException("Invalid Email OTP");
         }
 
@@ -148,6 +164,7 @@ public class UserAuthServiceImpl implements UserAuthService {
 
         // Optional
         otp.setEmailOtp(null);
+        otp.setEmailOtpAttempts(0);
 
         otpRepository.save(otp);
 
@@ -168,7 +185,12 @@ public class UserAuthServiceImpl implements UserAuthService {
 
         String email = authHelperService.normalizeEmail(request.getEmail());
 
-        OtpVerification otp = authHelperService.getOtpVerification(email);
+        OtpVerification otp;
+        try {
+            otp = authHelperService.getOtpVerification(email);
+        } catch (ResourceNotFoundException e) {
+            throw new BadRequestException("Invalid Mobile OTP");
+        }
 
         if (Boolean.TRUE.equals(otp.getMobileVerified()))
         {
@@ -177,6 +199,15 @@ public class UserAuthServiceImpl implements UserAuthService {
 
         if (otp.getMobileOtp() == null || !otp.getMobileOtp().equals(request.getOtp()))
         {
+            int attempts = otp.getMobileOtpAttempts() + 1;
+            if (attempts >= MAX_OTP_ATTEMPTS) {
+                otp.setMobileOtp(null);
+                otp.setMobileOtpAttempts(0);
+                otpRepository.save(otp);
+                throw new BadRequestException("Too many incorrect attempts — request a new OTP");
+            }
+            otp.setMobileOtpAttempts(attempts);
+            otpRepository.save(otp);
             throw new BadRequestException("Invalid Mobile OTP");
         }
 
@@ -189,6 +220,7 @@ public class UserAuthServiceImpl implements UserAuthService {
 
         // Optional
         otp.setMobileOtp(null);
+        otp.setMobileOtpAttempts(0);
 
         otpRepository.save(otp);
 
@@ -218,6 +250,12 @@ public class UserAuthServiceImpl implements UserAuthService {
         return "Mobile verified successfully";
     }
 
+    // Same generic wording for both the real resend and the "no such account" case below, so this
+    // endpoint can't be used to enumerate registered accounts (a distinguishable message/status would
+    // leak registration status the same way forgotPassword deliberately avoids).
+    private static final String OTP_RESENT_GENERIC_MESSAGE =
+            "If an account matching this email is pending verification, a new OTP has been sent.";
+
     //resend otp
     @Override
     @Transactional
@@ -225,14 +263,19 @@ public class UserAuthServiceImpl implements UserAuthService {
     {
         String email = authHelperService.normalizeEmail(request.getEmail());
 
-        User user = authHelperService.getUserByEmail(email);
-
-        OtpVerification otp = authHelperService.getOtpVerification(email);
+        User user;
+        OtpVerification otp;
+        try {
+            user = authHelperService.getUserByEmail(email);
+            otp = authHelperService.getOtpVerification(email);
+        } catch (ResourceNotFoundException e) {
+            return OTP_RESENT_GENERIC_MESSAGE;
+        }
 
         if (otp.getLastOtpSentAt() != null
-                && otp.getLastOtpSentAt().plusMinutes(1).isAfter(LocalDateTime.now()))
+                && otp.getLastOtpSentAt().plusSeconds(30).isAfter(LocalDateTime.now()))
         {
-            throw new BadRequestException("Please wait 1 minute before requesting another OTP");
+            throw new BadRequestException("Please wait 30 seconds before requesting another OTP");
         }
 
         if (Boolean.TRUE.equals(user.getEmailVerified()) && Boolean.TRUE.equals(user.getMobileVerified()))
@@ -247,6 +290,7 @@ public class UserAuthServiceImpl implements UserAuthService {
             otp.setEmailOtp(emailOtp);
 
             otp.setEmailOtpExpiry(LocalDateTime.now().plusMinutes(10));
+            otp.setEmailOtpAttempts(0);
 
             emailNotificationService.sendEmailOtp(user.getEmail(), emailOtp);
         }
@@ -258,14 +302,15 @@ public class UserAuthServiceImpl implements UserAuthService {
             otp.setMobileOtp(mobileOtp);
 
             otp.setMobileOtpExpiry(LocalDateTime.now().plusMinutes(10));
+            otp.setMobileOtpAttempts(0);
 
-            emailNotificationService.sendMobileOtp(user.getEmail(), mobileOtp);
+            emailNotificationService.sendMobileOtp(user.getMobileNumber(), mobileOtp);
         }
 
         otp.setLastOtpSentAt(LocalDateTime.now());
         otpRepository.save(otp);
 
-        return "OTP resent successfully";
+        return OTP_RESENT_GENERIC_MESSAGE;
     }
 
 
@@ -287,9 +332,97 @@ public class UserAuthServiceImpl implements UserAuthService {
 
         loginValidationService.validateVerificationStatus(user);
 
+        return issueLoginSession(user, httpServletRequest);
+    }
+
+    // Requests a one-shot login OTP, delivered to the account's email.
+    @Override
+    @Transactional
+    public String requestLoginOtp(RequestLoginOtpDTO request)
+    {
+        User user = authHelperService.findUserByIdentifier(request.getEmailOrMobile());
+        loginValidationService.validateUserAccountStatus(user);
+        loginValidationService.validateVerificationStatus(user);
+
+        LoginOtp existing = loginOtpRepository.findByEmail(user.getEmail()).orElse(null);
+
+        if (existing != null && existing.getLastSentAt() != null
+                && existing.getLastSentAt().plusMinutes(1).isAfter(LocalDateTime.now()))
+        {
+            throw new BadRequestException("Please wait 1 minute before requesting another OTP");
+        }
+
+        if (existing != null)
+        {
+            loginOtpRepository.delete(existing);
+        }
+
+        String code = otpGenerator.generateOtp();
+
+        LoginOtp otp = LoginOtp.builder()
+                .email(user.getEmail())
+                .otp(code)
+                .expiry(LocalDateTime.now().plusMinutes(5))
+                .lastSentAt(LocalDateTime.now())
+                .build();
+
+        loginOtpRepository.save(otp);
+
+        emailNotificationService.sendLoginOtp(user.getEmail(), code);
+
+        return "OTP sent to your registered email.";
+    }
+
+    // Verifies a login OTP and, on success, issues a session identically to password login.
+    @Override
+    @Transactional
+    public LoginResponseDTO verifyLoginOtp(VerifyLoginOtpDTO request, HttpServletRequest httpServletRequest)
+    {
+        User user = authHelperService.findUserByIdentifier(request.getEmailOrMobile());
+        loginValidationService.validateUserAccountStatus(user);
+
+        LoginOtp otp = loginOtpRepository.findByEmail(user.getEmail())
+                .orElseThrow(() -> new BadRequestException("No OTP requested, please request a new one"));
+
+        if (Boolean.TRUE.equals(otp.getConsumed()))
+        {
+            throw new BadRequestException("OTP already used, please request a new one");
+        }
+
+        if (otp.getExpiry().isBefore(LocalDateTime.now()))
+        {
+            throw new BadRequestException("OTP expired, please request a new one");
+        }
+
+        if (!otp.getOtp().equals(request.getOtp()))
+        {
+            loginValidationService.handleFailedLogin(user);
+        }
+
+        userLoginSecurityService.resetFailedLoginAttempts(user);
+
+        loginValidationService.validateVerificationStatus(user);
+
+        LoginResponseDTO response = issueLoginSession(user, httpServletRequest);
+
+        // Only consume the OTP once a real token is actually issued — if the device-limit gate fires
+        // instead, the same OTP can be resubmitted after the user frees a device slot, rather than
+        // forcing a fresh resend.
+        if (!Boolean.TRUE.equals(response.getDeviceLimitReached()))
+        {
+            otp.setConsumed(true);
+            loginOtpRepository.save(otp);
+        }
+
+        return response;
+    }
+
+    // Shared tail of password and OTP login: device-limit gate, JWT issuance, session bookkeeping.
+    private LoginResponseDTO issueLoginSession(User user, HttpServletRequest httpServletRequest)
+    {
         List<UserSessions> activeSessions = sessionManagementService.getActiveSessions(user);
 
-        if (activeSessions.size() >= 2)
+        if (activeSessions.size() >= maxActiveSessions)
         {
             return LoginResponseDTO.builder()
                     .deviceLimitReached(true)
@@ -312,8 +445,19 @@ public class UserAuthServiceImpl implements UserAuthService {
 
         String token = jwtService.generateToken(user.getEmail(), jwtId);
 
+        // "New device" = we've never seen a session from this User-Agent for this user (checked before
+        // the new session is persisted). Alert only then, so routine logins don't spam the inbox.
+        String userAgent = httpServletRequest.getHeader("User-Agent");
+        boolean newDevice = userAgent == null || userAgent.isBlank()
+                || !sessionRepository.existsByUserAndUserAgent(user, userAgent);
+
         sessionManagementService.updateUserLoginAudit(user, httpServletRequest);
         sessionManagementService.createUserSession(user, jwtId, httpServletRequest);
+
+        if (newDevice) {
+            auctionNotificationService.loginConfirmation(user.getEmail(), LocalDateTime.now(),
+                    httpServletRequest.getHeader("User-Agent"), httpServletRequest.getRemoteAddr());
+        }
 
         return LoginResponseDTO.builder()
                 .userId(user.getId())
@@ -326,6 +470,8 @@ public class UserAuthServiceImpl implements UserAuthService {
                 .emailVerified(user.getEmailVerified())
                 .mobileVerified(user.getMobileVerified())
                 .kycCompleted(user.getKycCompleted())
+                .subscriptionTier(subscriptionService.currentTier(user))
+                .subscriptionExpiresAt(user.getSubscriptionExpiresAt())
                 .build();
     }
 
@@ -419,15 +565,19 @@ public class UserAuthServiceImpl implements UserAuthService {
 
         passwordResetTokenRepository.save(passwordResetToken);
 
-        String body = emailTemplateService.getPasswordResetSuccessTemplate("User", LocalDateTime.now());
-
-        EmailRequestDTO emailRequest = EmailRequestDTO.builder()
-                .to(user.getEmail())
-                .subject("Password Reset Successfully")
-                .body(body)
-                .build();
-
-        emailService.sendEmail(emailRequest);
+        // Best-effort: this is just a confirmation notice after the password change above has already
+        // fully committed (session invalidation + token consumption included) — a transient SMTP
+        // failure here must not roll back a password reset that already genuinely succeeded.
+        try {
+            String body = emailTemplateService.getPasswordResetSuccessTemplate("User", LocalDateTime.now());
+            emailService.sendEmail(EmailRequestDTO.builder()
+                    .to(user.getEmail())
+                    .subject("Password Reset Successfully")
+                    .body(body)
+                    .build());
+        } catch (Exception e) {
+            log.warn("Failed to send password-reset confirmation email to {}: {}", user.getEmail(), e.getMessage());
+        }
 
         return "Password reset successfully";
     }
@@ -463,19 +613,61 @@ public class UserAuthServiceImpl implements UserAuthService {
 
         userRepository.save(user);
 
-        String body = emailTemplateService.getPasswordChangedSuccessTemplate("User", LocalDateTime.now());
-
-        EmailRequestDTO emailRequest = EmailRequestDTO.builder()
-                .to(user.getEmail())
-                .subject("Password Changed Successfully")
-                .body(body)
-                .build();
-
-        emailService.sendEmail(emailRequest);
+        // Best-effort — see resetPassword's identical comment: this is a post-success confirmation,
+        // not part of the actual state change, so an SMTP hiccup shouldn't undo the password change.
+        try {
+            String body = emailTemplateService.getPasswordChangedSuccessTemplate("User", LocalDateTime.now());
+            emailService.sendEmail(EmailRequestDTO.builder()
+                    .to(user.getEmail())
+                    .subject("Password Changed Successfully")
+                    .body(body)
+                    .build());
+        } catch (Exception e) {
+            log.warn("Failed to send password-changed confirmation email to {}: {}", user.getEmail(), e.getMessage());
+        }
 
         sessionManagementService.invalidateUserSessions(user);
 
         return "Password changed successfully, please login again";
+    }
+
+    // Logs out a specific device chosen from the login screen's device-limit prompt. The caller has
+    // no JWT yet, so identity is re-proved with credentials rather than a Bearer token.
+    @Override
+    @Transactional
+    public String logoutDevice(LogoutDeviceRequestDTO request)
+    {
+        User user = authHelperService.findUserByIdentifier(request.getEmailOrMobile());
+
+        loginValidationService.validateUserAccountStatus(user);
+
+        if (!passwordEncoder.matches(request.getPassword(), user.getPassword()))
+        {
+            loginValidationService.handleFailedLogin(user);
+        }
+
+        userLoginSecurityService.resetFailedLoginAttempts(user);
+
+        UserSessions session = sessionRepository.findById(request.getSessionId())
+                .orElseThrow(() -> new ResourceNotFoundException("Session not found"));
+
+        if (!session.getUser().getId().equals(user.getId()))
+        {
+            throw new BadRequestException("You cannot logout another user's session");
+        }
+
+        if (!Boolean.TRUE.equals(session.getActive()))
+        {
+            throw new BadRequestException("Session is already logged out");
+        }
+
+        session.setActive(false);
+
+        session.setLogoutTime(LocalDateTime.now());
+
+        sessionRepository.save(session);
+
+        return "Device logged out. You can now sign in again.";
     }
 
     //logout functionality

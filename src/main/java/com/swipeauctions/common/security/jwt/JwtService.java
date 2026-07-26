@@ -43,6 +43,17 @@ public class JwtService {
             String email,
             String jwtId
     ) {
+        return generateToken(email, jwtId, expiration);
+    }
+
+    /*
+     * Generates a JWT token with a caller-specified validity period (e.g. a shorter admin session timeout).
+     */
+    public String generateToken(
+            String email,
+            String jwtId,
+            long expirationMillis
+    ) {
 
         return Jwts.builder()
                 .id(jwtId)
@@ -51,7 +62,7 @@ public class JwtService {
                 .expiration(
                         new Date(
                                 System.currentTimeMillis()
-                                        + expiration
+                                        + expirationMillis
                         )
                 )
                 .signWith(getSignKey())

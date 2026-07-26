@@ -7,6 +7,8 @@ import com.swipeauctions.bidding.entity.Bid;
 import com.swipeauctions.bidding.repository.BidRepository;
 import com.swipeauctions.common.exception.BadRequestException;
 import com.swipeauctions.common.exception.ResourceNotFoundException;
+import com.swipeauctions.enums.Role;
+import com.swipeauctions.notification.AuctionNotificationService;
 import com.swipeauctions.user.entity.User;
 import com.swipeauctions.wallet.service.WalletService;
 import lombok.RequiredArgsConstructor;
@@ -37,6 +39,7 @@ public class BidService {
     private final BidRepository bidRepository;
     private final WalletService walletService;
     private final SimpMessagingTemplate messagingTemplate;
+    private final AuctionNotificationService notificationService;
 
     @Value("${auction.anti-snipe.window-seconds:30}")
     private long antiSnipeWindowSeconds;
@@ -65,8 +68,12 @@ public class BidService {
         if (auction.getListing().getSeller().getId().equals(bidder.getId())) {
             throw new BadRequestException("Sellers cannot bid on their own auction");
         }
-        if (!walletService.hasActiveHold(auctionId, bidder.getId())) {
-            throw new BadRequestException("Register to bid first — a refundable deposit hold is required");
+        if (!Boolean.TRUE.equals(bidder.getKycCompleted())) {
+            throw new BadRequestException("Complete your KYC verification before bidding.");
+        }
+        // Dealers are pre-vetted and skip the EMD bidding gate entirely (KYC is still required, above).
+        if (bidder.getRole() != Role.DEALER && !walletService.hasActiveHold(auctionId, bidder.getId())) {
+            throw new BadRequestException("Register to bid first — a refundable EMD deposit is required");
         }
 
         BigDecimal minAllowed = auction.getCurrentHighestBid() != null
@@ -76,6 +83,19 @@ public class BidService {
             throw new BadRequestException("Bid must be at least " + minAllowed);
         }
 
+        // Capture who currently leads (the person about to be outbid) before we overwrite the winner.
+        User previousWinner = auction.getCurrentWinner();
+        String previousWinnerEmail = previousWinner != null ? previousWinner.getEmail() : null;
+        boolean previousWasSomeoneElse = previousWinner != null
+                && !previousWinner.getId().equals(bidder.getId());
+        String auctionTitle = auction.getListing().getTitle();
+        String bidderEmail = bidder.getEmail();
+
+        // Counted before inserting (rather than re-querying after) to save a network round trip against
+        // the remote DB on every single bid — safe because the auction row is pessimistic-locked above,
+        // so nothing else can be inserting a competing bid between this count and our own insert.
+        long bidCountAfter = bidRepository.countByAuction_Id(auctionId) + 1;
+
         Bid bid = bidRepository.save(Bid.builder()
                 .auction(auction).bidder(bidder).amount(amount).placedAt(now).build());
 
@@ -83,16 +103,50 @@ public class BidService {
         auction.setCurrentWinner(bidder);
 
         // Anti-snipe: a late bid extends the deadline, up to a cap.
-        long remaining = Duration.between(now, auction.getCurrentEndTime()).getSeconds();
-        if (remaining <= antiSnipeWindowSeconds && auction.getExtensionCount() < maxExtensions) {
-            auction.setCurrentEndTime(auction.getCurrentEndTime().plusSeconds(antiSnipeExtensionSeconds));
+        if (shouldExtend(now, auction.getCurrentEndTime(), auction.getExtensionCount(),
+                antiSnipeWindowSeconds, maxExtensions)) {
+            auction.setCurrentEndTime(extend(auction.getCurrentEndTime(), antiSnipeExtensionSeconds));
             auction.setExtensionCount(auction.getExtensionCount() + 1);
         }
         auctionRepository.save(auction);
 
-        broadcastAfterCommit(auctionId, amount, auction.getCurrentEndTime(),
-                bidRepository.countByAuction_Id(auctionId) + 1);
+        broadcastAfterCommit(auctionId, amount, auction.getCurrentEndTime(), bidCountAfter);
+
+        // Notify only once the bid is durably committed (async + non-fatal inside the service).
+        String auctionIdStr = auctionId.toString();
+        runAfterCommit(() -> {
+            notificationService.bidPlaced(bidderEmail, auctionIdStr, auctionTitle, amount, true);
+            if (previousWasSomeoneElse) {
+                notificationService.outbid(previousWinnerEmail, auctionIdStr, auctionTitle, amount);
+            }
+        });
         return bid;
+    }
+
+    /** Pure anti-snipe decision: does a bid landing this close to the deadline warrant an extension? */
+    static boolean shouldExtend(LocalDateTime now, LocalDateTime currentEndTime, int extensionCount,
+                                 long windowSeconds, int maxExtensions) {
+        long remaining = Duration.between(now, currentEndTime).getSeconds();
+        return remaining <= windowSeconds && extensionCount < maxExtensions;
+    }
+
+    /** Pure anti-snipe extension: push the deadline out by {@code extensionSeconds}. */
+    static LocalDateTime extend(LocalDateTime currentEndTime, long extensionSeconds) {
+        return currentEndTime.plusSeconds(extensionSeconds);
+    }
+
+    /** Run {@code action} after the current transaction commits, or immediately if none is active. */
+    private void runAfterCommit(Runnable action) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    action.run();
+                }
+            });
+        } else {
+            action.run();
+        }
     }
 
     private void broadcastAfterCommit(UUID auctionId, BigDecimal amount, LocalDateTime endTime, long bidCount) {

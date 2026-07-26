@@ -2,6 +2,7 @@ package com.swipeauctions.admin.serviceImpl;
 
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -37,6 +38,7 @@ import java.time.LocalDateTime;
 @Service
 @RequiredArgsConstructor
 @Transactional
+@Slf4j
 public class AdminAuthServiceImpl implements AdminAuthService {
 
     private final JwtService jwtService;
@@ -66,6 +68,10 @@ public class AdminAuthServiceImpl implements AdminAuthService {
     //reset password variable storing link
     @Value("${app.frontend.url}")
     private String frontendUrl;
+
+    // Admin session timeout (user decision 2026-07-21): shorter than the regular user JWT.
+    @Value("${admin.jwt.expiration}")
+    private long adminJwtExpiration;
 
     //Registers a new admin account.
     @Override
@@ -114,8 +120,8 @@ public class AdminAuthServiceImpl implements AdminAuthService {
         // Generate unique JWT identifier.
         String jwtId = jwtService.generateJwtId();
 
-        // Generate JWT token.
-        String token = jwtService.generateToken(admin.getEmail(), jwtId);
+        // Generate JWT token (short-lived — 2-minute admin session timeout).
+        String token = jwtService.generateToken(admin.getEmail(), jwtId, adminJwtExpiration);
 
         // Create admin session.
         sessionManagementService.createAdminSession(admin, httpServletRequest, jwtId);
@@ -250,16 +256,19 @@ public class AdminAuthServiceImpl implements AdminAuthService {
 
         adminPasswordResetTokenRepository.save(resetToken);
 
-        String body = emailTemplateService
-                .getPasswordResetSuccessTemplate(admin.getLastName(), LocalDateTime.now());
-
-        EmailRequestDTO emailRequest = EmailRequestDTO.builder()
-                .to(admin.getEmail())
-                .subject("Password Reset Successfully")
-                .body(body)
-                .build();
-
-        emailService.sendEmail(emailRequest);
+        // Best-effort — the password change above already fully committed, so a transient SMTP
+        // failure on this confirmation notice must not roll it back.
+        try {
+            String body = emailTemplateService
+                    .getPasswordResetSuccessTemplate(admin.getLastName(), LocalDateTime.now());
+            emailService.sendEmail(EmailRequestDTO.builder()
+                    .to(admin.getEmail())
+                    .subject("Password Reset Successfully")
+                    .body(body)
+                    .build());
+        } catch (Exception e) {
+            log.warn("Failed to send admin password-reset confirmation email to {}: {}", admin.getEmail(), e.getMessage());
+        }
 
         // Force logout active admin session.
         adminSessionRepository.findByAdminAndActiveTrue(admin)
@@ -312,17 +321,18 @@ public class AdminAuthServiceImpl implements AdminAuthService {
 
         adminRepository.save(admin);
 
-        String body = emailTemplateService
-                .getPasswordChangedSuccessTemplate(admin.getLastName(), LocalDateTime.now());
-
-        EmailRequestDTO emailRequest = EmailRequestDTO.builder()
-                .to(admin.getEmail())
-                .subject("Password Changed Successfully")
-                .body(body)
-                .build();
-
-        emailService.sendEmail(emailRequest);
-
+        // Best-effort — see resetPassword's identical comment above.
+        try {
+            String body = emailTemplateService
+                    .getPasswordChangedSuccessTemplate(admin.getLastName(), LocalDateTime.now());
+            emailService.sendEmail(EmailRequestDTO.builder()
+                    .to(admin.getEmail())
+                    .subject("Password Changed Successfully")
+                    .body(body)
+                    .build());
+        } catch (Exception e) {
+            log.warn("Failed to send admin password-changed confirmation email to {}: {}", admin.getEmail(), e.getMessage());
+        }
 
         // Invalidate active session and force re-login.
         adminSessionRepository.findByAdminAndActiveTrue(admin)

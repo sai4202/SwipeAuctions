@@ -13,9 +13,13 @@ dist/
 npm-debug.log*
 yarn-error.log*
 
+# ===== Uploaded files (local dev storage) =====
+uploads/
+
 # ===== Secrets / local config =====
 *.env
 .env*
+!.env.example
 application-local.yml
 application-local.yaml
 application-local.properties

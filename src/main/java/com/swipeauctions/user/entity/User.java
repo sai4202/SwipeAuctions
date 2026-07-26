@@ -5,6 +5,7 @@ import lombok.*;
 import com.swipeauctions.common.entity.BaseEntity;
 import com.swipeauctions.enums.KycStatus;
 import com.swipeauctions.enums.Role;
+import com.swipeauctions.enums.SubscriptionTier;
 
 import java.time.LocalDateTime;
 
@@ -72,4 +73,31 @@ public class User extends BaseEntity {
     private Integer failedLoginAttempts = 0;
 
     private LocalDateTime lockedUntil;
+
+    // ---- Stripe (Phase 2) ----
+
+    @Column(name = "stripe_customer_id")
+    private String stripeCustomerId;
+
+    /** Connect Express account id — sellers/dealers need this to receive wallet withdrawals. */
+    @Column(name = "stripe_account_id")
+    private String stripeAccountId;
+
+    @Builder.Default
+    @Column(name = "stripe_charges_enabled", nullable = false)
+    private Boolean stripeChargesEnabled = false;
+
+    @Builder.Default
+    @Column(name = "stripe_payouts_enabled", nullable = false)
+    private Boolean stripePayoutsEnabled = false;
+
+    // ---- Subscription tier (buyer content access) ----
+
+    @Builder.Default
+    @Enumerated(EnumType.STRING)
+    @Column(name = "subscription_tier", nullable = false, length = 20)
+    private SubscriptionTier subscriptionTier = SubscriptionTier.NONE;
+
+    @Column(name = "subscription_expires_at")
+    private LocalDateTime subscriptionExpiresAt;
 }

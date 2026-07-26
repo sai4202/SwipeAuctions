@@ -3,6 +3,7 @@ package com.swipeauctions.auth.helper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import com.swipeauctions.admin.repository.AdminRepository;
 import com.swipeauctions.auth.util.UserReferenceNumGenerator;
 import com.swipeauctions.common.exception.BadRequestException;
 import com.swipeauctions.enums.Role;
@@ -19,6 +20,8 @@ import java.time.LocalDateTime;
 public class UserRegistrationHelperService {
 
     private final UserRepository userRepository;
+
+    private final AdminRepository adminRepository;
 
     private final OtpVerificationRepository otpRepository;
 
@@ -40,21 +43,33 @@ public class UserRegistrationHelperService {
 
         User existingEmailUser = userRepository.findByEmail(email).orElse(null);
 
-        if (existingEmailUser != null && Boolean.TRUE.equals(existingEmailUser.getActive()))
+        if (existingEmailUser != null)
+        {
+            throw new BadRequestException(Boolean.TRUE.equals(existingEmailUser.getActive())
+                    ? "Email already registered"
+                    : "Email already registered but not verified. Please verify using the OTP sent earlier, or resend it.");
+        }
+
+        // Also check the separate admins table — the two tables were never cross-checked, so the same
+        // email/mobile could exist in both, leaving JWT session resolution to only ever consult one
+        // table's session repo for that identifier and produce inconsistent auth behavior.
+        if (adminRepository.existsByEmail(email))
         {
             throw new BadRequestException("Email already registered");
         }
 
         User existingMobileUser = userRepository.findByMobileNumber(request.getMobileNumber()).orElse(null);
 
-        if (existingMobileUser != null && Boolean.TRUE.equals(existingMobileUser.getActive()))
+        if (existingMobileUser != null)
         {
-            throw new BadRequestException("Mobile number already registered");
+            throw new BadRequestException(Boolean.TRUE.equals(existingMobileUser.getActive())
+                    ? "Mobile number already registered"
+                    : "Mobile number already registered but not verified. Please verify using the OTP sent earlier, or resend it.");
         }
 
-        if (existingEmailUser != null && existingMobileUser != null && !existingEmailUser.getId().equals(existingMobileUser.getId()))
+        if (adminRepository.existsByMobileNumber(request.getMobileNumber()))
         {
-            throw new BadRequestException("Email and mobile belong to different accounts");
+            throw new BadRequestException("Mobile number already registered");
         }
     }
 
@@ -66,8 +81,20 @@ public class UserRegistrationHelperService {
                 .email(authHelperService.normalizeEmail(request.getEmail()))
                 .mobileNumber(request.getMobileNumber())
                 .password(passwordEncoder.encode(request.getPassword()))
-                .role(Role.USER)
+                .role(resolveRole(request.getRole()))
                 .build();
+    }
+
+    /** Self-registration may only choose USER or DEALER — any other value (e.g. "ADMIN") falls back to USER. */
+    private Role resolveRole(String requested) {
+        if (requested == null) {
+            return Role.USER;
+        }
+        try {
+            return Role.valueOf(requested.trim().toUpperCase()) == Role.DEALER ? Role.DEALER : Role.USER;
+        } catch (IllegalArgumentException e) {
+            return Role.USER;
+        }
     }
 
     // Generate and store OTP details

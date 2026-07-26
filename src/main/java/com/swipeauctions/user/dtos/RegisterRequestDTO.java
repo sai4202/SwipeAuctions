@@ -32,4 +32,7 @@ public class RegisterRequestDTO {
 
     @NotBlank(message = "Confirm Password is required")
     private String confirmPassword;
+
+    /** Optional: "USER" (default) or "DEALER". Any other value (e.g. "ADMIN") is ignored — admins can't self-register here. */
+    private String role;
 }

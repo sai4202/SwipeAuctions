@@ -38,4 +38,13 @@ public class OtpVerification extends BaseEntity {
 
     private LocalDateTime lastOtpSentAt;
 
+    /** Wrong-guess counters — locked out (OTP cleared, resend required) past a threshold. */
+    @Builder.Default
+    @Column(nullable = false)
+    private int emailOtpAttempts = 0;
+
+    @Builder.Default
+    @Column(nullable = false)
+    private int mobileOtpAttempts = 0;
+
 }

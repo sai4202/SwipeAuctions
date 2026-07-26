@@ -5,6 +5,7 @@ import org.springframework.stereotype.Service;
 import com.swipeauctions.email.dto.EmailRequestDTO;
 import com.swipeauctions.email.service.EmailService;
 import com.swipeauctions.email.service.EmailTemplateService;
+import com.swipeauctions.sms.service.SmsService;
 import com.swipeauctions.user.entity.User;
 
 @Service
@@ -14,6 +15,8 @@ public class UserEmailNotificationService {
     private final EmailService emailService;
 
     private final EmailTemplateService emailTemplateService;
+
+    private final SmsService smsService;
 
     public void sendEmailOtp(String email, String otp)
     {
@@ -28,14 +31,19 @@ public class UserEmailNotificationService {
         );
     }
 
-    public void sendMobileOtp(String email, String otp)
+    public void sendMobileOtp(String mobileNumber, String otp)
     {
-        String body = emailTemplateService.getMobileVerificationTemplate("User", otp);
+        smsService.sendSms(mobileNumber, "Your SwipeAuctions mobile verification code is " + otp + ". Valid for 10 minutes.");
+    }
+
+    public void sendLoginOtp(String email, String otp)
+    {
+        String body = emailTemplateService.getEmailVerificationTemplate("User", otp);
 
         emailService.sendEmail(
                 EmailRequestDTO.builder()
                         .to(email)
-                        .subject("Verify Your Mobile Number")
+                        .subject("Your SwipeAuctions Login Code")
                         .body(body)
                         .build()
         );

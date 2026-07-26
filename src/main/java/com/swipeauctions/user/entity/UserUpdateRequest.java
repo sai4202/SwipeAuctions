@@ -65,4 +65,11 @@ public class UserUpdateRequest extends BaseEntity {
     private LocalDateTime requestedAt;
 
     private LocalDateTime verifiedAt;
+
+    // Wrong-guess counters — locked out (OTP cleared, resend required) past a threshold.
+    @Builder.Default
+    private int emailOtpAttempts = 0;
+
+    @Builder.Default
+    private int mobileOtpAttempts = 0;
 }

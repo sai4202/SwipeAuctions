@@ -1,8 +1,10 @@
 package com.swipeauctions.auth.dto;
 
 import lombok.*;
+import com.swipeauctions.enums.SubscriptionTier;
 import com.swipeauctions.session.dtos.SessionResponseDTO;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -32,6 +34,10 @@ public class LoginResponseDTO {
     private Boolean mobileVerified;
 
     private Boolean kycCompleted;
+
+    private SubscriptionTier subscriptionTier;
+
+    private LocalDateTime subscriptionExpiresAt;
 
     private Boolean deviceLimitReached;
 

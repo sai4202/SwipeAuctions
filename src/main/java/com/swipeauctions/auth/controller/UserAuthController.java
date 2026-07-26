@@ -67,6 +67,29 @@ public class UserAuthController {
         return ResponseEntity.ok(ApiResponse.success(message, response));
     }
 
+    // Request a login OTP, delivered to the account's email.
+    @PostMapping("/login/otp/request")
+    public ResponseEntity<ApiResponse<String>> requestLoginOtp(
+            @Valid
+            @RequestBody RequestLoginOtpDTO request
+    ) {
+        return ResponseEntity.ok(ApiResponse.success(userAuthService.requestLoginOtp(request), null));
+    }
+
+    // Verify a login OTP and, on success, get a JWT — same response shape as password login.
+    @PostMapping("/login/otp/verify")
+    public ResponseEntity<ApiResponse<LoginResponseDTO>> verifyLoginOtp(
+            @Valid
+            @RequestBody VerifyLoginOtpDTO request,
+            HttpServletRequest httpServletRequest
+    ) {
+        LoginResponseDTO response = userAuthService.verifyLoginOtp(request, httpServletRequest);
+
+        String message = Boolean.TRUE.equals(response.getDeviceLimitReached()) ? response.getMessage() : "Login successful";
+
+        return ResponseEntity.ok(ApiResponse.success(message, response));
+    }
+
     // Send password reset link
     @PostMapping("/forgot-password")
     public ResponseEntity<ApiResponse<String>> forgotPassword(
@@ -112,6 +135,17 @@ public class UserAuthController {
     ) {
 
         return ResponseEntity.ok(ApiResponse.success(userAuthService.resendOtp(request), null));
+    }
+
+    // Log out a specific device chosen from the "device limit reached" login response, then the
+    // frontend retries the login. Public: the caller has no JWT yet, so credentials are re-checked.
+    @PostMapping("/logout-device")
+    public ResponseEntity<ApiResponse<String>> logoutDevice(
+            @Valid
+            @RequestBody LogoutDeviceRequestDTO request
+    ) {
+
+        return ResponseEntity.ok(ApiResponse.success(userAuthService.logoutDevice(request), null));
     }
 
     @PostMapping("/logout")
