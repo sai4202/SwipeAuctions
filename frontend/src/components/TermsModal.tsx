@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 
 interface Props {
   title: string
@@ -23,7 +24,10 @@ const TERMS: { text: string; highlight?: boolean }[] = [
 export default function TermsModal({ title, onAccept, onCancel }: Props) {
   const [accepted, setAccepted] = useState(false)
 
-  return (
+  // Portaled to <body> — rendered inline, a card that translateY()s on :hover (e.g. .acard) becomes
+  // this modal's containing block since it's a transformed ancestor, so the fixed-position backdrop
+  // jumps to track the card's hover animation instead of covering the viewport.
+  return createPortal((
     <div className="modal-backdrop" onClick={onCancel}>
       <div className="modal-card" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
@@ -48,5 +52,5 @@ export default function TermsModal({ title, onAccept, onCancel }: Props) {
         </div>
       </div>
     </div>
-  )
+  ), document.body)
 }

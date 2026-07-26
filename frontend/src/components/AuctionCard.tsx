@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Link, useNavigate } from 'react-router-dom'
 import { placeBid, errorMessage, type Auction } from '../api'
 import { useAuth } from '../auth'
@@ -205,7 +206,10 @@ export default function AuctionCard({ auction: a, inTray, onToggleTray }: Props)
         />
       )}
 
-      {showBidModal && modalPhase !== 'terms' && (
+      {showBidModal && modalPhase !== 'terms' && createPortal((
+        // Portaled to <body> — inline here, .acard's hover transform (translateY, see index.css)
+        // would become this fixed-position backdrop's containing block, making it jump/resize as
+        // the mouse moves in and out of the card instead of covering the viewport.
         <div className="modal-backdrop" onClick={() => setShowBidModal(false)}>
           <div className="modal-card" onClick={(e) => e.stopPropagation()}>
             {modalPhase === 'low' ? (
@@ -252,7 +256,7 @@ export default function AuctionCard({ auction: a, inTray, onToggleTray }: Props)
             )}
           </div>
         </div>
-      )}
+      ), document.body)}
     </div>
   )
 }
