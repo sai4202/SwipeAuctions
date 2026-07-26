@@ -16,6 +16,7 @@ import AdminDashboardPage from './pages/AdminDashboardPage'
 import AboutPage from './pages/AboutPage'
 import ContactPage from './pages/ContactPage'
 import KycPage from './pages/KycPage'
+import RequireAuth from './components/RequireAuth'
 
 export default function App() {
   return (
@@ -23,19 +24,19 @@ export default function App() {
       <Header />
       <Routes>
         <Route path="/" element={<HomePage />} />
-        <Route path="/auctions" element={<BrowsePage />} />
-        <Route path="/auctions/:id" element={<AuctionDetailPage />} />
-        <Route path="/wishlist" element={<MultiBiddingPage />} />
-        <Route path="/swipe-stock" element={<BrowsePage />} />
+        <Route path="/auctions" element={<RequireAuth><BrowsePage /></RequireAuth>} />
+        <Route path="/auctions/:id" element={<RequireAuth><AuctionDetailPage /></RequireAuth>} />
+        <Route path="/wishlist" element={<RequireAuth><MultiBiddingPage /></RequireAuth>} />
+        <Route path="/swipe-stock" element={<RequireAuth><BrowsePage /></RequireAuth>} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/admin-login" element={<AdminLoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
-        <Route path="/wallet" element={<WalletPage />} />
-        <Route path="/my-wins" element={<MyWinsPage />} />
-        <Route path="/my-transactions" element={<MyTransactionsPage />} />
-        <Route path="/profile" element={<ProfilePage />} />
-        <Route path="/subscription" element={<SubscriptionPage />} />
-        <Route path="/kyc" element={<KycPage />} />
+        <Route path="/wallet" element={<RequireAuth><WalletPage /></RequireAuth>} />
+        <Route path="/my-wins" element={<RequireAuth><MyWinsPage /></RequireAuth>} />
+        <Route path="/my-transactions" element={<RequireAuth><MyTransactionsPage /></RequireAuth>} />
+        <Route path="/profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
+        <Route path="/subscription" element={<RequireAuth><SubscriptionPage /></RequireAuth>} />
+        <Route path="/kyc" element={<RequireAuth><KycPage /></RequireAuth>} />
         <Route path="/admin" element={<AdminDashboardPage />} />
         <Route path="/about" element={<AboutPage />} />
         <Route path="/contact" element={<ContactPage />} />

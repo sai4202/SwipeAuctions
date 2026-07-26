@@ -131,13 +131,18 @@ public class SecurityConfig {
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/auctions/mine/won")
                         .authenticated()
 
-                        // Public browse (read-only catalog + auctions + events) and the WebSocket endpoint
-                        .requestMatchers(org.springframework.http.HttpMethod.GET,
-                                "/api/categories/**", "/api/listings/**", "/api/auctions/**", "/api/events/**",
-                                "/api/settings/**")
+                        // Registration fee / subscription pricing must be visible before an account even
+                        // exists (RegisterPage shows it pre-signup).
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/settings/**")
                         .permitAll()
                         .requestMatchers("/ws/**")
                         .permitAll()
+
+                        // Catalog/auctions/events browsing requires sign-in (falls through to
+                        // anyRequest().authenticated() below) — matches the frontend's RequireAuth gate:
+                        // only the Home page is reachable while signed out. Locking this down server-side
+                        // too, not just in the SPA router, since the API would otherwise still be directly
+                        // callable by anyone who skips the UI.
 
                         // User Session APIs
                         .requestMatchers("/api/sessions/**")

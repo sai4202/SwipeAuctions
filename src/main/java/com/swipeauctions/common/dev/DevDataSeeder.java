@@ -289,6 +289,22 @@ public class DevDataSeeder implements CommandLineRunner {
         ensureAuctionWithTier(seller, premium, "2023 Porsche Cayenne (Fleet Return)", "Porsche", ItemCondition.USED,
                 "Gurugram", "HR", "12000000", now.minusMinutes(1), now.plusDays(2), SubscriptionTier.DIAMOND);
         addAttributes("2023 Porsche Cayenne (Fleet Return)", Map.of("Year", "2023", "Fuel", "Petrol", "KM driven", "3000"));
+
+        // ---- SILVER-gated / no tier (NONE) — everyday cars, not locked behind the top tiers ----
+        ensureAuctionWithTier(seller, vehicles, "2021 Hyundai Verna (Repo)", "Hyundai", ItemCondition.USED,
+                "Chennai", "TN", "780000", now.minusMinutes(1), now.plusDays(1), SubscriptionTier.SILVER);
+        addAttributes("2021 Hyundai Verna (Repo)", Map.of(
+                "Year", "2021", "Fuel", "Petrol", "Transmission", "Automatic", "KM driven", "29000"));
+
+        ensureAuctionWithTier(seller, vehicles, "2019 Ford EcoSport (Repo)", "Ford", ItemCondition.USED,
+                "Pune", "MH", "520000", now.minusMinutes(1), now.plusHours(14), SubscriptionTier.SILVER);
+        addAttributes("2019 Ford EcoSport (Repo)", Map.of(
+                "Year", "2019", "Fuel", "Diesel", "Transmission", "Manual", "KM driven", "51000"));
+
+        ensureAuctionWithTier(seller, vehicles, "2022 Maruti Suzuki Swift (Repo)", "Maruti Suzuki", ItemCondition.USED,
+                "Bengaluru", "KA", "620000", now.minusMinutes(1), now.plusDays(2), SubscriptionTier.NONE);
+        addAttributes("2022 Maruti Suzuki Swift (Repo)", Map.of(
+                "Year", "2022", "Fuel", "Petrol", "Transmission", "Manual", "KM driven", "15000"));
     }
 
     /** Like {@link #ensureAuction}, but for a listing gated behind a subscription tier. */
@@ -449,6 +465,9 @@ public class DevDataSeeder implements CommandLineRunner {
         covers.put("4BHK Luxury Penthouse — Mumbai (Bank Auction)", demoGallery("4BHK Luxury Penthouse — Mumbai (Bank Auction)", "penthouse,luxury,apartment", 3));
         covers.put("2023 Range Rover Sport (Repo)", demoGallery("2023 Range Rover Sport (Repo)", "range-rover,suv,car", 3));
         covers.put("2023 Porsche Cayenne (Fleet Return)", demoGallery("2023 Porsche Cayenne (Fleet Return)", "porsche,cayenne,suv,car", 3));
+        covers.put("2021 Hyundai Verna (Repo)", demoGallery("2021 Hyundai Verna (Repo)", "hyundai,verna,sedan,car", 3));
+        covers.put("2019 Ford EcoSport (Repo)", demoGallery("2019 Ford EcoSport (Repo)", "ford,ecosport,suv,car", 3));
+        covers.put("2022 Maruti Suzuki Swift (Repo)", demoGallery("2022 Maruti Suzuki Swift (Repo)", "maruti,swift,hatchback,car", 3));
 
         int added = 0;
         for (Listing l : listingRepository.findAll()) {
