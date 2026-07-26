@@ -1,10 +1,12 @@
 import axios from 'axios'
 
-// In dev, relative paths go through Vite's proxy (vite.config.ts) to localhost:8080. In
-// production the frontend and backend are on different domains (e.g. Vercel + Railway), so
-// VITE_API_URL must point at the deployed backend's origin, no trailing slash (e.g.
-// https://swipeauctions-backend.up.railway.app).
-export const API_BASE = import.meta.env.VITE_API_URL ?? ''
+// In dev, relative paths go through Vite's proxy (vite.config.ts) to localhost:8080, so API_BASE
+// stays '' there regardless (import.meta.env.PROD is false under `vite dev`/`vite test`). In a
+// production build, fall back to the deployed Railway backend so the app works even if Vercel's
+// VITE_API_URL env var isn't set — set VITE_API_URL there to override this without a code change
+// (e.g. after moving to a custom domain).
+export const API_BASE = import.meta.env.VITE_API_URL
+  ?? (import.meta.env.PROD ? 'https://swipeauctions-production.up.railway.app' : '')
 
 const api = axios.create({ baseURL: API_BASE || '/' })
 
