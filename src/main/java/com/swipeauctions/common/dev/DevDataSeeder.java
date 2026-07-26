@@ -20,6 +20,7 @@ import com.swipeauctions.catalog.repository.ListingRepository;
 import com.swipeauctions.catalog.service.CatalogService;
 import com.swipeauctions.common.platform.PlatformAccountService;
 import com.swipeauctions.enums.Role;
+import com.swipeauctions.enums.SubscriptionTier;
 import com.swipeauctions.session.entity.UserSessions;
 import com.swipeauctions.session.repository.UserSessionRepository;
 import com.swipeauctions.user.entity.User;
@@ -127,9 +128,10 @@ public class DevDataSeeder implements CommandLineRunner {
         Category vehicles = getOrCreateCategory("Vehicles", "vehicles");
         Category properties = getOrCreateCategory("Properties", "properties");
         seedCategoryFilters(electronics, vehicles, properties, bankVehicles, insurance, premium, auto);
-        seedCoverImages();
         seedEventCategoryDemoData(seller, bankVehicles, insurance, premium, auto);
         seedSwipeStockDemoData();
+        seedTieredLiveDemoData(seller, electronics, vehicles, properties, premium);
+        seedCoverImages();
 
         log.info("[dev-seed] login: {} / {} (also {}, {})", BIDDER_EMAIL, DEMO_PASSWORD, BIDDER2_EMAIL, SELLER_EMAIL);
     }
@@ -248,6 +250,56 @@ public class DevDataSeeder implements CommandLineRunner {
         ensureEventAuction(seller, autoLive, auto, "TVS King Duramax (Fleet Surplus)", "TVS",
                 ItemCondition.USED, "Pune", "MH", "195000", now.minusMinutes(1), now.plusDays(2),
                 Map.of("Year", "2021", "Fuel", "Diesel", "KM driven", "42000", "Vehicle Type", "TR/FE"));
+    }
+
+    /**
+     * More live auctions gated behind the GOLD/DIAMOND subscription tiers, so the paywall UI
+     * (locked card, tier badge, "Upgrade your plan" CTA) has real live data to exercise across
+     * devices, not just whatever a single earlier test listing happened to be. Idempotent by title.
+     */
+    private void seedTieredLiveDemoData(User seller, Category electronics, Category vehicles,
+                                        Category properties, Category premium) {
+        LocalDateTime now = LocalDateTime.now();
+
+        // ---- GOLD-gated ----
+        ensureAuctionWithTier(seller, electronics, "Apple MacBook Pro 16\" M3 Max (Sealed)", "Apple", ItemCondition.NEW,
+                "Mumbai", "MH", "320000", now.minusMinutes(1), now.plusHours(6), SubscriptionTier.GOLD);
+        addAttributes("Apple MacBook Pro 16\" M3 Max (Sealed)", Map.of("RAM", "36 GB", "Storage", "1 TB", "Screen size", "16.2\""));
+
+        ensureAuctionWithTier(seller, vehicles, "2022 Jeep Compass (Repo)", "Jeep", ItemCondition.USED,
+                "Pune", "MH", "1800000", now.minusMinutes(1), now.plusDays(1), SubscriptionTier.GOLD);
+        addAttributes("2022 Jeep Compass (Repo)", Map.of(
+                "Year", "2022", "Fuel", "Diesel", "Transmission", "Automatic", "KM driven", "24000"));
+
+        ensureAuctionWithTier(seller, premium, "2023 Volvo XC60 (Fleet Return)", "Volvo", ItemCondition.USED,
+                "Bengaluru", "KA", "4200000", now.minusMinutes(1), now.plusDays(2), SubscriptionTier.GOLD);
+        addAttributes("2023 Volvo XC60 (Fleet Return)", Map.of("Year", "2023", "Fuel", "Petrol", "KM driven", "6000"));
+
+        // ---- DIAMOND-gated ----
+        ensureAuctionWithTier(seller, properties, "4BHK Luxury Penthouse — Mumbai (Bank Auction)", null, ItemCondition.USED,
+                "Mumbai", "MH", "25000000", now.minusMinutes(1), now.plusDays(3), SubscriptionTier.DIAMOND);
+        addAttributes("4BHK Luxury Penthouse — Mumbai (Bank Auction)", Map.of(
+                "Bedrooms", "4 BHK", "Furnishing", "Furnished", "Area (sqft)", "3800"));
+
+        ensureAuctionWithTier(seller, vehicles, "2023 Range Rover Sport (Repo)", "Land Rover", ItemCondition.USED,
+                "Delhi", "DL", "9500000", now.minusMinutes(1), now.plusDays(1), SubscriptionTier.DIAMOND);
+        addAttributes("2023 Range Rover Sport (Repo)", Map.of(
+                "Year", "2023", "Fuel", "Diesel", "Transmission", "Automatic", "KM driven", "4000"));
+
+        ensureAuctionWithTier(seller, premium, "2023 Porsche Cayenne (Fleet Return)", "Porsche", ItemCondition.USED,
+                "Gurugram", "HR", "12000000", now.minusMinutes(1), now.plusDays(2), SubscriptionTier.DIAMOND);
+        addAttributes("2023 Porsche Cayenne (Fleet Return)", Map.of("Year", "2023", "Fuel", "Petrol", "KM driven", "3000"));
+    }
+
+    /** Like {@link #ensureAuction}, but for a listing gated behind a subscription tier. */
+    private void ensureAuctionWithTier(User seller, Category category, String title, String brand,
+                                       ItemCondition condition, String city, String state, String price,
+                                       LocalDateTime start, LocalDateTime end, SubscriptionTier requiredTier) {
+        if (listingRepository.findAll().stream().anyMatch(l -> l.getTitle().equals(title))) return;
+        Listing listing = catalogService.createListing(seller, category.getId(), title,
+                title + " — seeded demo listing.", brand, condition, city, state, null, new BigDecimal(price),
+                null, false, requiredTier);
+        auctionService.createAuction(seller, listing.getId(), new BigDecimal(price), start, end, null);
     }
 
     /**
@@ -388,6 +440,16 @@ public class DevDataSeeder implements CommandLineRunner {
         // Swipe Stock demo listings intentionally get no explicit cover here — they fall back to the
         // deterministic keyword-photo (frontend cardImage()), same as any other uncovered listing.
 
+        // seedTieredLiveDemoData's items — no single "the" photo per title like the curated ones
+        // above, so each gets a small keyword-matched gallery from loremflickr.com instead (the same
+        // source the frontend's cardImage() fallback already uses for any uncovered listing).
+        covers.put("Apple MacBook Pro 16\" M3 Max (Sealed)", demoGallery("Apple MacBook Pro 16\" M3 Max (Sealed)", "macbook,laptop,apple", 3));
+        covers.put("2022 Jeep Compass (Repo)", demoGallery("2022 Jeep Compass (Repo)", "jeep,compass,suv,car", 3));
+        covers.put("2023 Volvo XC60 (Fleet Return)", demoGallery("2023 Volvo XC60 (Fleet Return)", "volvo,xc60,suv,car", 3));
+        covers.put("4BHK Luxury Penthouse — Mumbai (Bank Auction)", demoGallery("4BHK Luxury Penthouse — Mumbai (Bank Auction)", "penthouse,luxury,apartment", 3));
+        covers.put("2023 Range Rover Sport (Repo)", demoGallery("2023 Range Rover Sport (Repo)", "range rover,suv,car", 3));
+        covers.put("2023 Porsche Cayenne (Fleet Return)", demoGallery("2023 Porsche Cayenne (Fleet Return)", "porsche,cayenne,suv,car", 3));
+
         int added = 0;
         for (Listing l : listingRepository.findAll()) {
             List<String> urls = covers.get(l.getTitle());
@@ -406,6 +468,20 @@ public class DevDataSeeder implements CommandLineRunner {
             }
         }
         if (added > 0) log.info("[dev-seed] attached {} demo listing image(s)", added);
+    }
+
+    /**
+     * {@code count} distinct, keyword-relevant stock photos for a demo listing that doesn't have a
+     * real upload/one curated URL — pinned to deterministic loremflickr.com "lock" seeds (derived
+     * from the title) so the result is stable across restarts instead of changing every run.
+     */
+    private List<String> demoGallery(String title, String keywords, int count) {
+        List<String> urls = new java.util.ArrayList<>();
+        for (int i = 1; i <= count; i++) {
+            long lock = Math.abs((long) (title + "#" + i).hashCode());
+            urls.add("https://loremflickr.com/800/600/" + keywords + "?lock=" + lock);
+        }
+        return urls;
     }
 
     private void addAttributes(String title, Map<String, String> attrs) {
