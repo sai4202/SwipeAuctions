@@ -1,6 +1,12 @@
 import axios from 'axios'
 
-const api = axios.create({ baseURL: '/' })
+// In dev, relative paths go through Vite's proxy (vite.config.ts) to localhost:8080. In
+// production the frontend and backend are on different domains (e.g. Vercel + Railway), so
+// VITE_API_URL must point at the deployed backend's origin, no trailing slash (e.g.
+// https://swipeauctions-backend.up.railway.app).
+export const API_BASE = import.meta.env.VITE_API_URL ?? ''
+
+const api = axios.create({ baseURL: API_BASE || '/' })
 
 // Attach the JWT (if present) to every request.
 api.interceptors.request.use((config) => {

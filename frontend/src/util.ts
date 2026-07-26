@@ -1,3 +1,16 @@
+import { API_BASE } from './api'
+
+/**
+ * Uploaded listing media comes back from the API as a root-relative path (e.g. "/uploads/...")
+ * since it's served by the same backend — resolve it against the backend's own origin so it still
+ * loads once the frontend is deployed on a different domain (Vercel) than the API (Railway).
+ * Already-absolute URLs (the loremflickr.com fallback in cardImage(), external links) pass through.
+ */
+export function resolveMediaUrl(url: string): string {
+  if (/^https?:\/\//i.test(url)) return url
+  return `${API_BASE}${url}`
+}
+
 /** Milliseconds until an ISO (local, no-zone) datetime string. */
 export function msUntil(iso: string): number {
   return new Date(iso).getTime() - Date.now()
@@ -55,7 +68,7 @@ function hashCode(s: string): number {
 export function cardImage(a: {
   id: string; coverImageUrl?: string | null; categoryName?: string; brand?: string | null; title?: string
 }): string {
-  if (a.coverImageUrl) return a.coverImageUrl
+  if (a.coverImageUrl) return resolveMediaUrl(a.coverImageUrl)
   const keywords = [a.categoryName, a.brand, a.title?.split(' ')[0]]
     .filter(Boolean)
     .join(',')

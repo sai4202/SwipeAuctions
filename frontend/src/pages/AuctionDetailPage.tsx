@@ -4,11 +4,11 @@ import { Client } from '@stomp/stompjs'
 import SockJS from 'sockjs-client'
 import {
   getAuction, registerToBid, placeBid, raiseDispute, completeAuctionPayment, errorMessage,
-  type Auction,
+  API_BASE, type Auction,
 } from '../api'
 import { useAuth } from '../auth'
 import { useWallet } from '../WalletContext'
-import { formatCountdown, msUntil, money, cardImage, downloadValuation, isVideoUrl, tierMeets, effectiveStatus } from '../util'
+import { formatCountdown, msUntil, money, cardImage, downloadValuation, isVideoUrl, tierMeets, effectiveStatus, resolveMediaUrl } from '../util'
 import { useCachedFetch } from '../useCachedFetch'
 import { AuctionDetailSkeleton } from '../components/Skeleton'
 import TermsModal from '../components/TermsModal'
@@ -87,7 +87,7 @@ export default function AuctionDetailPage() {
   useEffect(() => {
     if (!id) return
     const client = new Client({
-      webSocketFactory: () => new SockJS('/ws'),
+      webSocketFactory: () => new SockJS(`${API_BASE}/ws`),
       reconnectDelay: 4000,
       onConnect: () => {
         client.subscribe(`/topic/auctions/${id}`, (frame) => {
@@ -190,7 +190,7 @@ export default function AuctionDetailPage() {
 
   const current = auction.currentHighestBid ?? auction.basePrice
   const minNext = auction.currentHighestBid != null ? auction.currentHighestBid + MIN_INCREMENT : auction.basePrice
-  const gallery = auction.images.length > 0 ? auction.images : [cardImage(auction)]
+  const gallery = auction.images.length > 0 ? auction.images.map(resolveMediaUrl) : [cardImage(auction)]
   const specs = Object.entries(auction.attributes)
   const locked = auction.requiredTier !== 'NONE' && !tierMeets(subscriptionTier, auction.requiredTier)
   // Status only flips OPEN -> CLOSED/UNSOLD on a scheduler tick, so a raw `status` read can lag

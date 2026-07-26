@@ -1,6 +1,7 @@
 package com.swipeauctions.common.config;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -10,9 +11,15 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import com.swipeauctions.common.security.jwt.JwtAccessDeniedHandler;
 import com.swipeauctions.common.security.jwt.JwtAuthenticationEntryPoint;
 import com.swipeauctions.common.security.jwt.JwtAuthenticationFilter;
+
+import java.util.Arrays;
+import java.util.List;
 
 @Configuration
 @EnableWebSecurity
@@ -25,12 +32,36 @@ public class SecurityConfig {
 
     private final JwtAccessDeniedHandler jwtAccessDeniedHandler;
 
+    // Comma-separated in app.cors.allowed-origins (APP_CORS_ALLOWED_ORIGINS) — the deployed
+    // frontend runs on a different origin than this API (e.g. Vercel vs. Railway), so without this
+    // every browser request would be blocked by CORS despite a valid JWT.
+    @Value("${app.cors.allowed-origins}")
+    private String allowedOrigins;
+
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration config = new CorsConfiguration();
+        List<String> origins = Arrays.stream(allowedOrigins.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .toList();
+        config.setAllowedOrigins(origins);
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+        config.setAllowedHeaders(List.of("*"));
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", config);
+        return source;
+    }
+
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception
     {
         http
                 // Disable CSRF for REST APIs
                 .csrf(csrf -> csrf.disable())
+
+                // Browser calls from the deployed frontend's own origin (see corsConfigurationSource above)
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
 
                 // Stateless JWT Authentication
                 .sessionManagement(session ->

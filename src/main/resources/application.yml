@@ -40,7 +40,9 @@ spring:
             enable: true
 
 server:
-  port: 8080
+  # Railway (and most PaaS hosts) assign the listen port at runtime via $PORT — binding to a fixed
+  # 8080 instead would make the container unreachable there. Falls back to 8080 for local dev.
+  port: ${PORT:8080}
 
 logging:
   level:
@@ -64,6 +66,10 @@ app:
     url: ${APP_FRONTEND_URL:http://localhost:3000}
   upload:
     dir: ${UPLOAD_DIR:uploads}
+  cors:
+    # Comma-separated browser origins allowed to call this API (the Vite dev server locally; the
+    # deployed frontend's origin in production — e.g. https://swipe-auctions.vercel.app).
+    allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:3000}
 
 # Authentication
 auth:

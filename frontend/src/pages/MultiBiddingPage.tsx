@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Client } from '@stomp/stompjs'
 import SockJS from 'sockjs-client'
-import { getAuction, registerToBid, placeBid, errorMessage, type Auction } from '../api'
+import { getAuction, registerToBid, placeBid, errorMessage, API_BASE, type Auction } from '../api'
 import { useAuth } from '../auth'
 import { useWallet } from '../WalletContext'
 import { getMultiBidIds, removeMultiBid, formatCountdown, msUntil, money, cardImage, effectiveStatus, MULTI_KEY } from '../util'
@@ -38,7 +38,7 @@ export default function MultiBiddingPage() {
   useEffect(() => {
     if (ids.length === 0) return
     const client = new Client({
-      webSocketFactory: () => new SockJS('/ws'),
+      webSocketFactory: () => new SockJS(`${API_BASE}/ws`),
       reconnectDelay: 4000,
       onConnect: () => {
         ids.forEach((id) =>

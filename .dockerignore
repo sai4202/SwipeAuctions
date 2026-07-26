@@ -1,0 +1,10 @@
+frontend
+target
+uploads
+*.log
+.env
+.env.*
+!.env.example
+.git
+.vscode
+login.json

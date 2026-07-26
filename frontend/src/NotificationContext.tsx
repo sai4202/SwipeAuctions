@@ -3,6 +3,7 @@ import { Client } from '@stomp/stompjs'
 import SockJS from 'sockjs-client'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from './auth'
+import { API_BASE } from './api'
 
 type NotificationKind = 'BID_PLACED' | 'OUTBID' | 'AUCTION_WON' | 'AUCTION_LOST' | 'WALLET_TOPUP'
 
@@ -41,7 +42,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     if (!isAuthenticated || !token) return
 
     const client = new Client({
-      webSocketFactory: () => new SockJS('/ws'),
+      webSocketFactory: () => new SockJS(`${API_BASE}/ws`),
       connectHeaders: { Authorization: `Bearer ${token}` },
       reconnectDelay: 4000,
       onConnect: () => {
