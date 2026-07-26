@@ -10,6 +10,7 @@ import com.swipeauctions.catalog.entity.Listing;
 import com.swipeauctions.catalog.enums.ItemCondition;
 import com.swipeauctions.catalog.repository.ListingAttributeRepository;
 import com.swipeauctions.catalog.repository.ListingImageRepository;
+import com.swipeauctions.catalog.repository.ListingRepository;
 import com.swipeauctions.common.exception.UnauthorizedException;
 import com.swipeauctions.common.util.LoggedInUserUtil;
 import com.swipeauctions.event.entity.AuctionEvent;
@@ -42,6 +43,7 @@ class AuctionControllerListTest {
     @Mock private BidRepository bidRepository;
     @Mock private ListingImageRepository listingImageRepository;
     @Mock private ListingAttributeRepository listingAttributeRepository;
+    @Mock private ListingRepository listingRepository;
     @Mock private AuctionNotificationService notificationService;
     @Mock private LoggedInUserUtil loggedInUserUtil;
     @Mock private SubscriptionService subscriptionService;
@@ -51,8 +53,8 @@ class AuctionControllerListTest {
     @BeforeEach
     void setUp() {
         controller = new AuctionController(auctionService, bidService, walletService, bidRepository,
-                listingImageRepository, listingAttributeRepository, notificationService, loggedInUserUtil,
-                subscriptionService);
+                listingImageRepository, listingAttributeRepository, listingRepository, notificationService,
+                loggedInUserUtil, subscriptionService);
         lenient().when(loggedInUserUtil.getCurrentUser()).thenThrow(new UnauthorizedException("anonymous"));
         lenient().when(listingImageRepository.findByListing_IdOrderBySortOrderAsc(any())).thenReturn(List.of());
         lenient().when(listingAttributeRepository.findByListing_Id(any())).thenReturn(List.of());
