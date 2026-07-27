@@ -7,10 +7,11 @@ import { EVENT_CATEGORY_SLUGS } from '../eventCategories'
 import { useAuth } from '../auth'
 import { useCachedFetch } from '../useCachedFetch'
 import AuctionCard from '../components/AuctionCard'
+import AuctionListTable from '../components/AuctionListTable'
 import EventsBrowse from '../components/EventsBrowse'
 import FilterPill from '../components/FilterPill'
 import FilterModal, { CheckboxListBody } from '../components/FilterModal'
-import { AuctionGridSkeleton } from '../components/Skeleton'
+import { AuctionGridSkeleton, SkeletonTableRows } from '../components/Skeleton'
 
 const STATUS = ['OPEN', 'SCHEDULED', 'CLOSED']
 // Auctions that ended without a sale (reserve not met) or were pulled by an admin are still "over" —
@@ -83,6 +84,7 @@ export default function BrowsePage() {
   const cityParam = params.get('city') || ''
   const citySel = useMemo(() => cityParam.split(',').filter(Boolean), [cityParam])
   const tier = params.get('tier') || ''
+  const view = params.get('view') === 'list' ? 'list' : 'catalogue'
 
   const setParam = (k: string, v: string) => {
     const p = new URLSearchParams(params)
@@ -254,14 +256,17 @@ export default function BrowsePage() {
   return (
     <div className="container">
       <div className="section-head">
-        <h1 className="page">{isSwipeStockView ? 'Swipe Stock' : `${SLABEL[status]} Auctions`}</h1>
+        <div className="section-head-tabs">
+          {isSwipeStockView && <span className="eyebrow">Swipe Stock</span>}
+          <div className="tabs status-tabs">
+            {STATUS.map((s) => (
+              <button key={s} className={`tab ${status === s ? 'active' : ''}`} onClick={() => setParam('status', s)}>{SLABEL[s]}</button>
+            ))}
+          </div>
+        </div>
         {isAuthenticated && (
           <Link to="/wishlist" className="btn ghost sm">♡ Wishlist{multiIds.length > 0 ? ` (${multiIds.length})` : ''}</Link>
         )}
-      </div>
-
-      <div className="global-search">
-        <input value={q} onChange={(e) => setParam('q', e.target.value)} placeholder="Search auctions by title, brand, city…" aria-label="Search auctions" />
       </div>
 
       <div className="filter-pill-row">
@@ -314,23 +319,54 @@ export default function BrowsePage() {
         </div>
       )}
 
-      <div className="tabs status-tabs">
-        {STATUS.map((s) => (
-          <button key={s} className={`tab ${status === s ? 'active' : ''}`} onClick={() => setParam('status', s)}>{SLABEL[s]}</button>
-        ))}
-      </div>
-
       <div className="results">
         {error && <div className="error">{error}</div>}
         {!loading && !error && (
           <div className="results-bar">
             <span className="muted">{filtered.length} {filtered.length === 1 ? 'auction' : 'auctions'}</span>
+            <div className="view-toggle">
+              <button
+                type="button" className={view === 'catalogue' ? 'active' : ''}
+                onClick={() => setParam('view', '')} title="Catalogue view" aria-label="Catalogue view"
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="3" width="8" height="8" rx="1.5" /><rect x="13" y="3" width="8" height="8" rx="1.5" />
+                  <rect x="3" y="13" width="8" height="8" rx="1.5" /><rect x="13" y="13" width="8" height="8" rx="1.5" />
+                </svg>
+              </button>
+              <button
+                type="button" className={view === 'list' ? 'active' : ''}
+                onClick={() => setParam('view', 'list')} title="List view" aria-label="List view"
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="4" y1="6" x2="20" y2="6" /><line x1="4" y1="12" x2="20" y2="12" /><line x1="4" y1="18" x2="20" y2="18" />
+                </svg>
+              </button>
+            </div>
           </div>
         )}
         {loading ? (
-          <AuctionGridSkeleton />
+          view === 'list' ? (
+            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+              <div style={{ overflowX: 'auto', padding: 16 }}>
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>Image</th><th>Details</th><th>Start Time</th><th>End Time</th>
+                      <th>Base Price</th><th>Current Bid</th><th>Bids</th><th>Bids Left</th><th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody><SkeletonTableRows rows={5} cols={9} /></tbody>
+                </table>
+              </div>
+            </div>
+          ) : (
+            <AuctionGridSkeleton />
+          )
         ) : filtered.length === 0 ? (
           <p className="muted">No auctions match your filters.</p>
+        ) : view === 'list' ? (
+          <AuctionListTable auctions={filtered} multiIds={multiIds} onToggleTray={toggleMulti} />
         ) : (
           <div className="grid">
             {filtered.map((a) => (

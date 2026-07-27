@@ -290,7 +290,11 @@ export default function EventsBrowse({ categorySlug }: { categorySlug?: string }
                       <td>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 120 }}>
                           <Link to={`/auctions/${a.id}`} className="btn ghost sm">View Details</Link>
-                          {a.bidsRemaining === 0 ? (
+                          {effectiveStatus(a) !== 'OPEN' ? (
+                            <span className="btn sm" style={{ opacity: .55, pointerEvents: 'none' }}>
+                              {effectiveStatus(a) === 'SCHEDULED' ? 'Not started' : 'Closed'}
+                            </span>
+                          ) : a.bidsRemaining === 0 ? (
                             <span className="btn sm" style={{ opacity: .55, pointerEvents: 'none' }}>No bids left</span>
                           ) : (
                             <Link to={`/auctions/${a.id}?bid=1`} className="btn sm">Bid Now</Link>
@@ -393,7 +397,19 @@ export default function EventsBrowse({ categorySlug }: { categorySlug?: string }
                     <td><span className={`badge ${eventStatus(e) === 'CLOSED' ? 'CLOSED' : eventStatus(e) === 'UPCOMING' ? 'SCHEDULED' : 'OPEN'}`}>{SLABEL[eventStatus(e)]}</span></td>
                     <td>{e.itemCount}</td>
                     <td className="muted">{vehicleTypesOf(e.id).join(', ') || '—'}</td>
-                    <td><button className="btn sm" onClick={() => setParam('event', e.id)}>Bid Now</button></td>
+                    <td>
+                      <button
+                        className={eventStatus(e) === 'LIVE' ? 'btn sm' : 'btn ghost sm'}
+                        onClick={() => {
+                          const p = new URLSearchParams(params)
+                          p.set('event', e.id)
+                          p.set('itab', eventStatus(e) === 'UPCOMING' ? 'SCHEDULED' : eventStatus(e) === 'CLOSED' ? 'CLOSED' : 'OPEN')
+                          setParams(p, { replace: true })
+                        }}
+                      >
+                        {eventStatus(e) === 'LIVE' ? 'Bid Now' : 'View Event'}
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>

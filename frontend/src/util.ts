@@ -97,6 +97,11 @@ export function cardImage(a: {
   return `https://loremflickr.com/600/400/${encodeURIComponent(keywords)}?lock=${hashCode(a.id)}`
 }
 
+/** Shared "19 Jul 2026, 07:34 pm" formatting for auction/event start & end times across list tables. */
+export function formatDateTime(iso: string): string {
+  return new Date(iso).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
 // ---- Individual auction status ----
 // Status only flips OPEN -> CLOSED/UNSOLD when the backend scheduler ticks (every few seconds
 // normally, but indefinitely if that particular auction's close keeps failing) — so a raw `status`

@@ -2,8 +2,12 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { getCategories, getEvents, type Category, type AuctionEvent, type SubscriptionTier } from '../api'
 import { useAuth } from '../auth'
-import { formatCountdown, msUntil } from '../util'
+import { formatCountdown, msUntil, eventStatus } from '../util'
 import TierCards from '../components/TierCards'
+import HeroVehicle from '../components/HeroVehicle'
+import CarSilhouette from '../components/CarSilhouette'
+
+const EVENT_STATUS_RANK: Record<string, number> = { LIVE: 0, UPCOMING: 1, CLOSED: 2 }
 
 const CATEGORY_ICONS: Record<string, string> = {
   vehicles: '🚗', properties: '🏠', 'bank-vehicles': '🏛️', insurance: '🛡️',
@@ -36,7 +40,14 @@ export default function HomePage() {
   useEffect(() => {
     if (!isAuthenticated) return
     getCategories().then((cats) => setCategories(cats.filter((c) => !c.parentId))).catch(() => {})
-    getEvents().then((evs) => setEvents(evs.slice(0, 3))).catch(() => {})
+    // Featured events on the homepage should only ever tease something a visitor can still act on —
+    // never a closed one. Live events surface first, then upcoming ones fill any remaining slots.
+    getEvents().then((evs) => {
+      const active = evs
+        .filter((e) => eventStatus(e) !== 'CLOSED')
+        .sort((a, b) => EVENT_STATUS_RANK[eventStatus(a)] - EVENT_STATUS_RANK[eventStatus(b)])
+      setEvents(active.slice(0, 3))
+    }).catch(() => {})
   }, [isAuthenticated])
 
   const search = () => navigate(`/auctions${q ? `?q=${encodeURIComponent(q)}` : ''}`)
@@ -55,6 +66,8 @@ export default function HomePage() {
     <>
       <div className="container">
         <section className="hero" id="hero">
+          <HeroVehicle side="left" />
+          <HeroVehicle side="right" />
           <div className="eyebrow">India's Premium Auction Marketplace</div>
           <h1>Premium Assets <span className="accent">for</span> Superstars</h1>
           <p className="sub">
@@ -134,6 +147,10 @@ export default function HomePage() {
 
       {isAuthenticated && events.length > 0 && (
         <section className="home-band band-events" id="events">
+          <div className="road-strip" aria-hidden="true">
+            <CarSilhouette className="road-car road-car-1" />
+            <CarSilhouette className="road-car road-car-2" />
+          </div>
           <div className="container">
             <div className="home-section">
               <div className="section-head">
@@ -159,6 +176,8 @@ export default function HomePage() {
       )}
 
       <section className="home-band band-membership" id="membership">
+        <div className="ghost-car ghost-car-1" aria-hidden="true"><CarSilhouette /></div>
+        <div className="ghost-car ghost-car-2" aria-hidden="true"><CarSilhouette /></div>
         <div className="container">
           <div className="home-section">
             <div className="section-head">
@@ -180,6 +199,7 @@ export default function HomePage() {
       </section>
 
       <section className="home-band band-how" id="how-it-works">
+        <div className="lane-line" aria-hidden="true" />
         <div className="container">
           <div className="home-section">
             <div className="section-head">

@@ -1,5 +1,5 @@
-import { Link, NavLink, useNavigate } from 'react-router-dom'
-import { useEffect, useRef, useState } from 'react'
+import { Link, NavLink, useNavigate, useLocation } from 'react-router-dom'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useAuth } from '../auth'
 import { useWallet } from '../WalletContext'
 import { useFloatingTabs } from '../FloatingTabsContext'
@@ -14,7 +14,24 @@ export default function Header() {
   const credit = wallet?.creditLimit ?? null
   const { tabCount, maxTabs, addTab } = useFloatingTabs()
   const navigate = useNavigate()
+  const location = useLocation()
   const isAdmin = role === 'ADMIN'
+  // The auctions/swipe-stock grid reads its query from the URL's `q` param — search from anywhere
+  // in the header by writing that same param, preserving whatever other filters are already applied
+  // if we're already on one of those pages.
+  const isBrowseRoute = location.pathname === '/auctions' || location.pathname === '/swipe-stock'
+  const [q, setQ] = useState('')
+  useEffect(() => {
+    setQ(isBrowseRoute ? new URLSearchParams(location.search).get('q') || '' : '')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname, location.search])
+  const submitSearch = (e: FormEvent) => {
+    e.preventDefault()
+    const target = location.pathname === '/swipe-stock' ? '/swipe-stock' : '/auctions'
+    const params = new URLSearchParams(isBrowseRoute ? location.search : '')
+    if (q) params.set('q', q); else params.delete('q')
+    navigate(`${target}${params.toString() ? `?${params.toString()}` : ''}`)
+  }
   // Whoever most recently signed out (manual logout or session expiry) should land back on their own
   // login page, not always the customer one.
   const loginPath = lastRole === 'ADMIN' ? '/admin-login' : '/login'
@@ -82,6 +99,15 @@ export default function Header() {
         </nav>
 
         <div className="header-right">
+          <form className="header-search" onSubmit={submitSearch}>
+            <span className="header-search-icon">🔍</span>
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search auctions…"
+              aria-label="Search auctions"
+            />
+          </form>
           <button
             type="button"
             className="icon-btn theme-toggle"
@@ -149,6 +175,14 @@ export default function Header() {
       </header>
 
       <nav className={`mobile-menu ${mobileOpen ? 'open' : ''}`}>
+        <form className="mobile-search" onSubmit={(e) => { submitSearch(e); closeMobile() }}>
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search auctions…"
+            aria-label="Search auctions"
+          />
+        </form>
         <NavLink to="/" end onClick={closeMobile}>Home</NavLink>
         <NavLink to="/auctions" onClick={closeMobile}>Auctions</NavLink>
         <NavLink to="/swipe-stock" onClick={closeMobile}>Swipe Stock</NavLink>
