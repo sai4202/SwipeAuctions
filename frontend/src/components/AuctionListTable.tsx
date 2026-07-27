@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
-import { money, cardImage, downloadValuation, effectiveStatus, formatDateTime, type Auction } from '../util'
+import { type Auction } from '../api'
+import { money, cardImage, downloadValuation, effectiveStatus, formatDateTime } from '../util'
 
 interface Props {
   auctions: Auction[]
