@@ -122,7 +122,9 @@ export default function MultiBiddingPage() {
           {list.map((tile) => {
             const a = tile.auction
             const current = a.currentHighestBid ?? a.basePrice
-            const minNext = a.currentHighestBid != null ? a.currentHighestBid + 1 : a.basePrice
+            // What THIS bidder must clear next — their own previous bid on this item, not
+            // necessarily the current leader's (see BidService.placeBid for why those differ).
+            const minNext = a.yourBid != null ? a.yourBid + 1 : a.basePrice
             // Status only flips OPEN -> CLOSED/UNSOLD on a scheduler tick, so a raw `status` read can
             // lag behind the real end time — compute what it effectively is right now instead.
             const es = effectiveStatus(a)

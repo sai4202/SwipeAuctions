@@ -180,8 +180,13 @@ public class AuctionController {
         }
         requireTierAccess(bidder, auctionService.get(id));
         Bid bid = bidService.placeBid(id, bidder, req.amount());
+        // A bid can be accepted (it beat the bidder's own last bid) without becoming the winning
+        // bid — the client can no longer assume its own amount is now the auction's highest, so it
+        // needs the real post-bid state back rather than inferring it from what it just sent.
+        Auction updated = bid.getAuction();
+        boolean leading = updated.getCurrentWinner() != null && updated.getCurrentWinner().getId().equals(bidder.getId());
         return new BidResponse(bid.getId(), id, bid.getAmount(), bid.getPlacedAt(),
-                bid.getAuction().getCurrentEndTime());
+                updated.getCurrentEndTime(), updated.getCurrentHighestBid(), leading);
     }
 
     /** Winner pays off the settlement remainder later, if it couldn't be captured in full at close time. */
@@ -289,7 +294,7 @@ public class AuctionController {
     public record PlaceBidRequest(@NotNull BigDecimal amount) {}
 
     public record BidResponse(UUID bidId, UUID auctionId, BigDecimal amount, LocalDateTime placedAt,
-                              LocalDateTime currentEndTime) {}
+                              LocalDateTime currentEndTime, BigDecimal currentHighestBid, boolean leading) {}
 
     public record RegisterResponse(String message, BigDecimal availableBalance, BigDecimal heldBalance) {}
 }

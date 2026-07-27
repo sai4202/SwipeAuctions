@@ -189,7 +189,9 @@ export default function AuctionDetailPage() {
   }
 
   const current = auction.currentHighestBid ?? auction.basePrice
-  const minNext = auction.currentHighestBid != null ? auction.currentHighestBid + MIN_INCREMENT : auction.basePrice
+  // What THIS bidder must clear next — their own previous bid on this item, not necessarily the
+  // current leader's (see BidService.placeBid for why those are different questions now).
+  const minNext = auction.yourBid != null ? auction.yourBid + MIN_INCREMENT : auction.basePrice
   const gallery = auction.images.length > 0 ? auction.images.map(resolveMediaUrl) : [cardImage(auction)]
   const specs = Object.entries(auction.attributes)
   const locked = auction.requiredTier !== 'NONE' && !tierMeets(subscriptionTier, auction.requiredTier)
@@ -270,7 +272,7 @@ export default function AuctionDetailPage() {
               <span className="price-now">{money(current)}</span>
               {auction.currentHighestBid != null && <span className="price-was">Base {money(auction.basePrice)}</span>}
             </div>
-            <div className="price-meta"><span>{auction.bidCount} bids</span><span>Min next {money(minNext)}</span></div>
+            <div className="price-meta"><span>{auction.bidCount} bids</span><span>Your min next {money(minNext)}</span></div>
             {auction.bidsRemaining != null && (
               <div className="price-meta"><span>{auction.bidsRemaining} bid{auction.bidsRemaining === 1 ? '' : 's'} remaining for you on this item</span></div>
             )}

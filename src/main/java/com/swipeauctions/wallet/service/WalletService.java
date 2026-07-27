@@ -113,9 +113,10 @@ public class WalletService {
         return holdRepository.save(hold);
     }
 
-    /** Loser (or cancellation): return the held EMD to available balance. */
+    /** Loser (or cancellation): return the held EMD to available balance. Returns the bidder's
+     *  resulting credit limit so callers (auction close) can tell the bidder it just went back up. */
     @Transactional
-    public void releaseHold(Auction auction, User bidder) {
+    public BigDecimal releaseHold(Auction auction, User bidder) {
         BidEligibilityHold hold = activeHold(auction, bidder);
         Wallet w = lockWallet(bidder.getId());
         w.setHeldBalance(w.getHeldBalance().subtract(hold.getAmount()));
@@ -125,6 +126,7 @@ public class WalletService {
         hold.setResolvedAt(LocalDateTime.now());
         holdRepository.save(hold);
         record(w, WalletTxnType.RELEASE, hold.getAmount(), "AUCTION", auction.getId().toString());
+        return creditLimitFor(w.getAvailableBalance());
     }
 
     /** Winner: capture the held EMD (funds leave the wallet toward settlement). */

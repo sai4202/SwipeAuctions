@@ -3,12 +3,17 @@ import { createPortal } from 'react-dom'
 import { Link, useNavigate } from 'react-router-dom'
 import { placeBid, errorMessage, type Auction } from '../api'
 import { useAuth } from '../auth'
-import { formatCountdown, msUntil, money, cardImage, tierMeets, effectiveStatus } from '../util'
+import { money, moneyCompact, formatDateTimeShort, cardImage, tierMeets, effectiveStatus } from '../util'
 import TermsModal from './TermsModal'
 
 const SLABEL: Record<string, string> = {
   OPEN: 'Live', SCHEDULED: 'Upcoming', CLOSED: 'Closed', UNSOLD: 'Unsold', CANCELLED: 'Cancelled',
 }
+
+// A plain "🔒 GOLD"/"🔒 DIAMOND" text ribbon has no background of its own and disappears against a
+// bright photo — a wishlist-heart-style solid icon badge reads at a glance regardless of what's
+// behind it, the same way the heart itself always does.
+const TIER_ICON: Record<string, string> = { SILVER: '🥈', GOLD: '🥇', DIAMOND: '💎' }
 
 /** Card image with a graceful gradient fallback if the photo fails to load. */
 function CardThumb({ auction }: { auction: Auction }) {
@@ -33,7 +38,7 @@ interface Props {
   onToggleTray: (id: string) => void
 }
 
-type ModalPhase = 'terms' | 'low' | 'confirm' | 'success'
+type ModalPhase = 'terms' | 'confirm' | 'success'
 
 /**
  * The auction browse-card used on the browse page and inside an auction event's item list —
@@ -60,19 +65,25 @@ export default function AuctionCard({ auction: a, inTray, onToggleTray }: Props)
   const [bidError, setBidError] = useState('')
   const [bidBusy, setBidBusy] = useState(false)
 
-  const hasBid = auction.currentHighestBid != null
-  const minNext = hasBid ? (auction.currentHighestBid as number) + 1 : auction.basePrice
+  // What THIS bidder must clear on their next bid — their own previous bid on this item, not
+  // necessarily the current leader's amount. A bidder can keep raising their own bid without
+  // needing to beat whoever else is ahead; whether that actually takes the lead is a separate
+  // question (see `leading` below), decided server-side the same way (BidService.placeBid).
+  const minNext = auction.yourBid != null ? auction.yourBid + 1 : auction.basePrice
 
   // Status only flips OPEN -> CLOSED/UNSOLD on a scheduler tick, so a raw `status` read can lag
   // behind the real end time — compute what it effectively is right now instead of trusting that.
   const es = effectiveStatus(auction)
   const isLive = es === 'OPEN'
-  const leading = auction.yourBid != null && hasBid && auction.yourBid >= (auction.currentHighestBid as number)
-  // Once the auction is closed, "leading/outbid" no longer means anything — show the final Won/Lost
-  // outcome instead so the card always reflects where the bidder actually stands.
+  // Must be `isWinner` (server truth: am I literally auction.currentWinner), NOT an amount
+  // comparison like `yourBid >= currentHighestBid`. Since bids only need to beat the bidder's OWN
+  // previous bid now, two different bidders can legitimately tie on amount — whoever got there
+  // first keeps the lead (BidService only promotes on a *strictly* higher bid), but a `>=` amount
+  // check would incorrectly show BOTH tied bidders as "Leading". isWinner has no such ambiguity.
+  const leading = auction.isWinner
+  // Once the auction is closed, "leading/outbid" becomes "won/lost" — same underlying flag.
   const closed = es === 'CLOSED' || es === 'UNSOLD'
-  const won = closed && auction.isWinner
-  const bidStatusLabel = closed ? (won ? 'Won' : 'Lost') : (leading ? 'Leading' : 'Outbid')
+  const bidStatusLabel = closed ? (leading ? 'Won' : 'Lost') : (leading ? 'Leading' : 'Outbid')
   const isAdmin = role === 'ADMIN'
   // Admins can't place bids at all (enforced server-side) but should still be able to browse and
   // open every listing for management/support purposes — the subscription paywall is for bidders.
@@ -87,16 +98,17 @@ export default function AuctionCard({ auction: a, inTray, onToggleTray }: Props)
       navigate('/login', { state: { from: `/auctions/${auction.id}` } })
       return
     }
-    const amt = Number(amount || minNext)
+    // Take exactly what the bidder typed — no client-side comparison against the minimum increment
+    // or credit limit. The backend is the single source of truth for whether an amount is valid
+    // (BidService checks both) and reports back through the normal confirm-modal error path if not;
+    // we only fall back to the suggested minimum when the field was left blank, never to override
+    // an amount the bidder actually entered.
+    const amt = amount ? Number(amount) : minNext
     setBidError('')
-    if (!Number.isFinite(amt) || amt <= 0 || amt < minNext) {
-      setModalPhase('low')
-    } else {
-      setPendingAmount(amt)
-      // Terms & Conditions are gated on the bidder's first bid on THIS auction (auction.yourBid ==
-      // null) — every increment bid after that goes straight to the normal confirm step.
-      setModalPhase(auction.yourBid == null ? 'terms' : 'confirm')
-    }
+    setPendingAmount(amt)
+    // Terms & Conditions are gated on the bidder's first bid on THIS auction (auction.yourBid ==
+    // null) — every increment bid after that goes straight to the normal confirm step.
+    setModalPhase(auction.yourBid == null ? 'terms' : 'confirm')
     setShowBidModal(true)
   }
 
@@ -104,7 +116,11 @@ export default function AuctionCard({ auction: a, inTray, onToggleTray }: Props)
     setBidError(''); setBidBusy(true)
     try {
       const res = await placeBid(auction.id, pendingAmount)
-      setOverride({ currentHighestBid: pendingAmount, bidCount: auction.bidCount + 1, yourBid: pendingAmount, currentEndTime: res.currentEndTime })
+      // currentHighestBid and isWinner come from the server's real post-bid state, not inferred
+      // from the amount just sent — an accepted bid doesn't necessarily become the new leader (see
+      // BidService.placeBid), so assuming pendingAmount is now the highest (or that placing a bid
+      // makes you the winner) would wrongly show "Leading" on a bid that's actually still trailing.
+      setOverride({ currentHighestBid: res.currentHighestBid, bidCount: auction.bidCount + 1, yourBid: pendingAmount, currentEndTime: res.currentEndTime, isWinner: res.leading })
       setAmount('')
       setModalPhase('success')
       // This confirmation is the one guaranteed thing the bidder sees — the live "Bid placed" toast
@@ -132,8 +148,19 @@ export default function AuctionCard({ auction: a, inTray, onToggleTray }: Props)
         <Link to={`/auctions/${auction.id}`} className="thumb-link">
           <CardThumb auction={auction} />
           <span className={`badge ${es} ribbon`}>{SLABEL[es] ?? es}</span>
-          {isLive && <span className="countdown ribbon-time">{formatCountdown(msUntil(auction.currentEndTime))}</span>}
-          {showTierBadge && <span className="badge ribbon" style={{ top: 34 }}>🔒 {auction.requiredTier}</span>}
+          {showTierBadge && (
+            <span className="tier-badge" style={{ top: 34 }} title={`${auction.requiredTier} tier required`}>
+              {TIER_ICON[auction.requiredTier] ?? '🔒'}
+            </span>
+          )}
+          {auction.yourBid != null && (
+            <span
+              className={`badge ${bidStatusLabel === 'Leading' || bidStatusLabel === 'Won' ? 'OPEN' : 'UNSOLD'} ribbon`}
+              style={{ top: showTierBadge ? 66 : 34 }}
+            >
+              {bidStatusLabel}
+            </span>
+          )}
         </Link>
         <button
           type="button"
@@ -150,9 +177,17 @@ export default function AuctionCard({ auction: a, inTray, onToggleTray }: Props)
       <div className="loc">◍ {[auction.city, auction.state].filter(Boolean).join(', ') || '—'}{auction.brand ? ` · ${auction.brand}` : ''}</div>
 
       <div className="price-block">
-        <span className="price-label">Reserve Price</span>
-        <div className="price-row">
-          <span className="price-now">{money(auction.basePrice)}</span>
+        <div className="price-head">
+          <div>
+            <span className="price-label">Reserve Price</span>
+            <div className="price-row">
+              <span className="price-now">{moneyCompact(auction.basePrice)}</span>
+            </div>
+          </div>
+          <div className="acard-times">
+            <span>Starts {formatDateTimeShort(auction.startTime)}</span>
+            <span>Ends {formatDateTimeShort(auction.currentEndTime)}</span>
+          </div>
         </div>
         {auction.bidsRemaining != null && (
           <div className="price-meta">
@@ -217,20 +252,7 @@ export default function AuctionCard({ auction: a, inTray, onToggleTray }: Props)
         // the mouse moves in and out of the card instead of covering the viewport.
         <div className="modal-backdrop" onClick={() => setShowBidModal(false)}>
           <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-            {modalPhase === 'low' ? (
-              <>
-                <div className="modal-head">
-                  <h3>Bid too low</h3>
-                  <button type="button" className="modal-close" onClick={() => setShowBidModal(false)} aria-label="Close">✕</button>
-                </div>
-                <div className="modal-body">
-                  <div className="error">Minimum bid is {money(minNext)}.</div>
-                </div>
-                <div className="modal-foot" style={{ justifyContent: 'flex-end' }}>
-                  <button type="button" className="btn" onClick={() => { setAmount(String(minNext)); setShowBidModal(false) }}>OK</button>
-                </div>
-              </>
-            ) : modalPhase === 'success' ? (
+            {modalPhase === 'success' ? (
               <>
                 <div className="modal-head">
                   <h3>✓ Bid confirmed</h3>

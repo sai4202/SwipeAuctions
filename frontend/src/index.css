@@ -635,7 +635,11 @@ button { font-family: inherit; }
 }
 
 /* ---------- Cards / grid ---------- */
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); gap: 13px; }
+/* minmax(210px, 1fr) is tuned against .container's own max-width (1160px, minus its 2x28px side
+   padding = 1104px usable): (1104 - 4*gap)/5 ≈ 210px, so exactly 5 columns fit on a laptop/desktop
+   screen — auto-fill then steps down to 4/3/2 on its own as the viewport narrows, with no extra
+   breakpoints needed, down to the explicit 2-column override below for phones. */
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 13px; align-items: stretch; }
 .card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 18px; }
 .acard.card { padding: 13px; }
 /* min-width: 0 overrides the browser default (min-width: auto) that grid/flex items get. Without
@@ -679,8 +683,6 @@ button { font-family: inherit; }
   background: linear-gradient(135deg, var(--red-2), var(--red)); color: #fff; }
 .thumb-fallback span { font-size: 13px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; opacity: .92; }
 .ribbon { position: absolute; top: 10px; left: 10px; }
-/* Stacked below the top-right wishlist heart (which always owns that corner) so the two never collide. */
-.ribbon-time { position: absolute; top: 48px; right: 10px; background: rgba(10,10,12,.72); padding: 3px 9px; border-radius: 999px; }
 
 /* Amazon/Flipkart-style wishlist heart, pinned to the image's top-right corner regardless of card width. */
 .wishlist-btn {
@@ -692,6 +694,15 @@ button { font-family: inherit; }
 .wishlist-btn:hover { border-color: var(--red); transform: scale(1.08); }
 .wishlist-btn.active { background: var(--red); border-color: var(--red); }
 
+/* Same solid-circle treatment as the wishlist heart (rather than a plain text ribbon, which has no
+   background of its own and disappears against a bright photo) so the tier-lock icon always reads
+   regardless of what's behind it. */
+.tier-badge {
+  position: absolute; left: 10px; width: 28px; height: 28px; border-radius: 50%;
+  background: rgba(10,10,12,.72); border: 1px solid rgba(255,255,255,.18); font-size: 14px;
+  display: grid; place-items: center; backdrop-filter: blur(2px);
+}
+
 /* ---------- Product card price block (Amazon/Flipkart-style) ---------- */
 .acard-title { margin: 2px 0; font-size: 13.5px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 2.2em; }
 .price-block { padding: 8px 0; border-top: 1px solid var(--border); }
@@ -701,9 +712,20 @@ button { font-family: inherit; }
 .price-block.big .price-now { font-size: 30px; }
 .price-was { color: var(--dim); font-size: 12.5px; text-decoration: line-through; }
 .price-label { color: var(--dim); font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; display: block; margin-bottom: 2px; }
+/* Start/end time now live beside the Reserve Price instead of overlaid on the image (where they'd
+   fight the LIVE/tier badges for the same corner and get lost against busy photos). min-width: 0
+   lets this side shrink/wrap on a narrow card instead of forcing the row wider than the column. */
+.price-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.acard-times { display: flex; flex-direction: column; gap: 2px; min-width: 0; text-align: right; flex: none; }
+.acard-times span { font-size: 10.5px; color: var(--muted); }
 .price-meta { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--muted); margin-top: 6px; }
 
-.card-cta { display: flex; gap: 8px; margin-top: 4px; }
+/* margin-top: auto pins this to the bottom of the card regardless of how much text sits above it —
+   .acard is a column flex that CSS Grid stretches to the tallest card in its row, so without this
+   a shorter card (e.g. a locked card with no "your bid" line) leaves its CTA sitting mid-card while
+   a taller neighbor's CTA sits lower, so buttons across a row land at different heights instead of
+   lining up along the same bottom edge. */
+.card-cta { display: flex; gap: 8px; margin-top: auto; padding-top: 4px; }
 .card-cta .btn { flex: 1; text-align: center; white-space: nowrap; }
 /* View Details / bid amount / Bid Now all on one row — keeps the card compact instead of the
    three-row stack this used to be. The input and Bid button share whatever's left after Details
@@ -1101,8 +1123,8 @@ h1.page { font-size: 28px; margin: 0 0 4px; font-weight: 800; letter-spacing: -.
   .acard .thumb-wrap { margin: -10px -10px 2px; }
   .acard .thumb, .acard .thumb-fallback { border-radius: 10px 10px 0 0; }
   .acard .wishlist-btn { width: 26px; height: 26px; font-size: 12px; top: 6px; right: 6px; }
+  .acard .tier-badge { width: 24px; height: 24px; font-size: 12px; left: 6px; }
   .acard .ribbon { top: 6px; left: 6px; }
-  .acard .ribbon-time { top: 32px; right: 6px; font-size: 10px; padding: 2px 7px; }
   .acard .cat, .acard .cond { font-size: 9.5px; }
   .acard .loc { font-size: 10.5px; }
   .acard-title { font-size: 12.5px; min-height: 2.2em; margin: 0; }
@@ -1110,6 +1132,9 @@ h1.page { font-size: 28px; margin: 0 0 4px; font-weight: 800; letter-spacing: -.
   .acard .price-now { font-size: 16px; }
   .acard .price-was { font-size: 10px; }
   .acard .price-label { font-size: 9px; }
+  .acard .price-head { flex-direction: column; align-items: flex-start; gap: 2px; }
+  .acard .acard-times { flex-direction: row; flex-wrap: wrap; gap: 6px; text-align: left; }
+  .acard .acard-times span { font-size: 9px; }
   .acard .price-meta { font-size: 9.5px; }
   .acard .badge { font-size: 9px; padding: 2px 7px; }
   .acard .countdown { font-size: 10.5px; }

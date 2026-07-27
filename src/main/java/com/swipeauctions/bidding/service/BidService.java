@@ -85,11 +85,17 @@ public class BidService {
                     + MAX_BIDS_PER_BIDDER_PER_AUCTION + " bids on this item.");
         }
 
-        BigDecimal minAllowed = auction.getCurrentHighestBid() != null
-                ? auction.getCurrentHighestBid().add(minIncrement)
-                : auction.getBasePrice();
+        // Each bidder only needs to beat their OWN previous bid on this item, not whatever the
+        // current leader happens to be — you can keep raising your own bid without needing to know
+        // (or clear) the exact figure someone else is at. Whether this particular bid actually takes
+        // the lead is a separate question, decided below — "accepted" and "currently winning" aren't
+        // the same thing once bids no longer have to leapfrog each other one at a time.
+        BigDecimal myPreviousBest = bidRepository.findFirstByAuction_IdAndBidder_IdOrderByAmountDesc(auctionId, bidder.getId())
+                .map(Bid::getAmount)
+                .orElse(null);
+        BigDecimal minAllowed = myPreviousBest != null ? myPreviousBest.add(minIncrement) : auction.getBasePrice();
         if (amount.compareTo(minAllowed) < 0) {
-            throw new BadRequestException("Bid must be at least " + minAllowed);
+            throw new BadRequestException("Bid must be at least " + minAllowed + " — more than your last bid on this item.");
         }
 
         BigDecimal creditLimit = walletService.getCreditLimit(bidder);
@@ -113,10 +119,18 @@ public class BidService {
         Bid bid = bidRepository.save(Bid.builder()
                 .auction(auction).bidder(bidder).amount(amount).placedAt(now).build());
 
-        auction.setCurrentHighestBid(amount);
-        auction.setCurrentWinner(bidder);
+        // Accepted doesn't automatically mean winning: only overwrite the auction's leader if this
+        // bid is actually higher than the current highest bid (someone else may still be ahead of it).
+        boolean becomesNewLeader = auction.getCurrentHighestBid() == null
+                || amount.compareTo(auction.getCurrentHighestBid()) > 0;
+        if (becomesNewLeader) {
+            auction.setCurrentHighestBid(amount);
+            auction.setCurrentWinner(bidder);
+        }
 
-        // Anti-snipe: a late bid extends the deadline, up to a cap.
+        // Anti-snipe: a late bid extends the deadline, up to a cap — applies to any accepted bid,
+        // not just one that takes the lead, since late activity from a trailing bidder still signals
+        // the item is contested.
         if (shouldExtend(now, auction.getCurrentEndTime(), auction.getExtensionCount(),
                 antiSnipeWindowSeconds, maxExtensions)) {
             auction.setCurrentEndTime(extend(auction.getCurrentEndTime(), antiSnipeExtensionSeconds));
@@ -124,13 +138,15 @@ public class BidService {
         }
         auctionRepository.save(auction);
 
-        broadcastAfterCommit(auctionId, amount, auction.getCurrentEndTime(), bidCountAfter);
+        // Broadcast the auction's real resulting highest bid, not necessarily this bid's own amount —
+        // a trailing bid that didn't take the lead must never make live viewers see the top bid drop.
+        broadcastAfterCommit(auctionId, auction.getCurrentHighestBid(), auction.getCurrentEndTime(), bidCountAfter);
 
         // Notify only once the bid is durably committed (async + non-fatal inside the service).
         String auctionIdStr = auctionId.toString();
         runAfterCommit(() -> {
-            notificationService.bidPlaced(bidderEmail, auctionIdStr, auctionTitle, amount, true);
-            if (previousWasSomeoneElse) {
+            notificationService.bidPlaced(bidderEmail, auctionIdStr, auctionTitle, amount, becomesNewLeader);
+            if (becomesNewLeader && previousWasSomeoneElse) {
                 notificationService.outbid(previousWinnerEmail, auctionIdStr, auctionTitle, amount);
             }
         });

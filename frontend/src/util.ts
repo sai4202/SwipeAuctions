@@ -102,6 +102,12 @@ export function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
+/** Same as {@link formatDateTime} without the year — for the catalogue card, where every listing
+ *  is near-term and the year is dead weight next to the Reserve Price it now sits beside. */
+export function formatDateTimeShort(iso: string): string {
+  return new Date(iso).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+}
+
 // ---- Individual auction status ----
 // Status only flips OPEN -> CLOSED/UNSOLD when the backend scheduler ticks (every few seconds
 // normally, but indefinitely if that particular auction's close keeps failing) — so a raw `status`

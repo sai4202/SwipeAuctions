@@ -472,7 +472,7 @@ export async function registerToBid(id: string): Promise<RegisterResult> {
   const res = await api.post<RegisterResult>(`/api/auctions/${id}/register`)
   return res.data
 }
-export interface PlaceBidResult { currentEndTime: string }
+export interface PlaceBidResult { currentEndTime: string; currentHighestBid: number; leading: boolean }
 export async function placeBid(id: string, amount: number): Promise<PlaceBidResult> {
   const res = await api.post<PlaceBidResult>(`/api/auctions/${id}/bids`, { amount })
   return res.data

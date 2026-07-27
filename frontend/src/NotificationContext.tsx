@@ -3,6 +3,7 @@ import { Client } from '@stomp/stompjs'
 import SockJS from 'sockjs-client'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from './auth'
+import { useWallet } from './WalletContext'
 import { API_BASE } from './api'
 
 type NotificationKind = 'BID_PLACED' | 'OUTBID' | 'AUCTION_WON' | 'AUCTION_LOST' | 'WALLET_TOPUP'
@@ -32,11 +33,20 @@ const AUTO_DISMISS_MS = 6000
 
 export function NotificationProvider({ children }: { children: ReactNode }) {
   const { isAuthenticated, token } = useAuth()
+  const { refreshWallet } = useWallet()
   const navigate = useNavigate()
   const [toasts, setToasts] = useState<Toast[]>([])
   const toastSeq = useRef(0)
 
   const dismiss = (toastId: number) => setToasts((t) => t.filter((x) => x.toastId !== toastId))
+
+  // These three kinds always mean the wallet just moved server-side (EMD released/captured on
+  // close, top-up landed) — none of that came from an action this tab took itself, so nothing
+  // else would otherwise trigger a re-fetch and the header's "Available Credit" would sit stale
+  // until the user happened to navigate somewhere that remounts it.
+  const WALLET_AFFECTING: Partial<Record<NotificationKind, true>> = {
+    AUCTION_WON: true, AUCTION_LOST: true, WALLET_TOPUP: true,
+  }
 
   useEffect(() => {
     if (!isAuthenticated || !token) return
@@ -51,11 +61,13 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
           const toastId = ++toastSeq.current
           setToasts((t) => [...t, { ...n, toastId }])
           setTimeout(() => dismiss(toastId), AUTO_DISMISS_MS)
+          if (WALLET_AFFECTING[n.type]) refreshWallet()
         })
       },
     })
     client.activate()
     return () => { void client.deactivate() }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated, token])
 
   return (

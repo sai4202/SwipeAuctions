@@ -228,8 +228,8 @@ public class AuctionService {
                     walletService.captureHold(a, b);
                     notificationService.auctionWon(b.getEmail(), auctionIdStr, title, a.getCurrentHighestBid());
                 } else {
-                    walletService.releaseHold(a, b);
-                    notificationService.auctionEndedNotWon(b.getEmail(), auctionIdStr, title, true);
+                    BigDecimal newCreditLimit = walletService.releaseHold(a, b);
+                    notificationService.auctionEndedNotWon(b.getEmail(), auctionIdStr, title, true, newCreditLimit);
                 }
             }
             // Settle the remainder immediately if funds allow (internal wallet debit, no Stripe call
@@ -244,8 +244,8 @@ public class AuctionService {
             a.setStatus(AuctionStatus.UNSOLD);
             for (BidEligibilityHold hold : holds) {
                 User b = hold.getBidder();
-                walletService.releaseHold(a, b);
-                notificationService.auctionEndedNotWon(b.getEmail(), auctionIdStr, title, false);
+                BigDecimal newCreditLimit = walletService.releaseHold(a, b);
+                notificationService.auctionEndedNotWon(b.getEmail(), auctionIdStr, title, false, newCreditLimit);
             }
         }
         auctionRepository.save(a);

@@ -86,16 +86,17 @@ public class AuctionNotificationService {
     }
 
     @Async
-    public void auctionEndedNotWon(String email, String auctionId, String auctionTitle, boolean sold) {
+    public void auctionEndedNotWon(String email, String auctionId, String auctionTitle, boolean sold, BigDecimal newCreditLimit) {
         send(email, "Auction ended — " + auctionTitle, wrap("Auction ended",
                 "<p>Bidding has closed on <strong>" + esc(auctionTitle) + "</strong>.</p>"
                         + "<p>" + (sold ? "This time the winning bid was someone else's."
                                         : "The reserve price wasn't met, so the item didn't sell.")
                         + " Your refundable deposit has been released back to your wallet.</p>"
+                        + row("Available credit limit now", moneyCompact(newCreditLimit))
                         + "<p style=\"margin-top:18px\">Plenty more lots are live — keep bidding!</p>"));
         push(email, NotificationKind.AUCTION_LOST, "Auction ended",
                 "\"" + auctionTitle + "\" — " + (sold ? "won by someone else." : "reserve not met.")
-                        + " Your deposit was released.", auctionId);
+                        + " Deposit released — credit limit is now " + moneyCompact(newCreditLimit) + ".", auctionId);
     }
 
     @Async
@@ -128,6 +129,22 @@ public class AuctionNotificationService {
 
     private static String money(BigDecimal n) {
         return n == null ? "—" : "₹" + n.stripTrailingZeros().toPlainString();
+    }
+
+    private static final BigDecimal ONE_LAKH = new BigDecimal("100000");
+    private static final BigDecimal ONE_CRORE = new BigDecimal("10000000");
+
+    /** Same as {@link #money}, but collapses lakh/crore-scale amounts (the leveraged credit limit is
+     *  always at least several lakh) into "₹2.50 Cr" / "₹4.50 L" instead of a wall of digits. */
+    private static String moneyCompact(BigDecimal n) {
+        if (n == null) return "—";
+        if (n.compareTo(ONE_CRORE) >= 0) {
+            return "₹" + n.divide(ONE_CRORE, 2, java.math.RoundingMode.HALF_UP).stripTrailingZeros().toPlainString() + " Cr";
+        }
+        if (n.compareTo(ONE_LAKH) >= 0) {
+            return "₹" + n.divide(ONE_LAKH, 2, java.math.RoundingMode.HALF_UP).stripTrailingZeros().toPlainString() + " L";
+        }
+        return money(n);
     }
 
     private static String row(String label, String value) {
