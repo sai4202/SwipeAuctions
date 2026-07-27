@@ -2,17 +2,17 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth'
 import {
-  getAdminStats, getAdminUsers, suspendUser, reactivateUser,
+  getAdminStats, getAdminUsers, suspendUser, reactivateUser, getAdminUserHolds, releaseAdminHold,
   getAdminAuctions, forceCloseAuction, updateAuction, getAdminDisputes, resolveDispute, errorMessage,
   getAdminCategories, createAdminCategory, getAdminCategoryAttributes, createAdminCategoryAttribute,
   createStockListing, uploadStockImage, createStockAuction, bulkImportStock, downloadStockTemplate,
   getAdminKycQueue, approveKyc, rejectKyc,
   getRegistrationFee, updateRegistrationFee, getSubscriptionPrices, updateSubscriptionPrices,
-  type AdminStats, type AdminUser, type AdminAuction, type Dispute,
+  type AdminStats, type AdminUser, type AdminAuction, type Dispute, type AdminHold, type ReleaseHoldResult,
   type AdminCategory, type AdminCategoryAttribute, type BulkImportResult, type AdminKyc,
   type SubscriptionPrice, type SubscriptionTier, type BillingCycle,
 } from '../api'
-import { money } from '../util'
+import { money, moneyCompact } from '../util'
 import { StatTilesSkeleton } from '../components/Skeleton'
 
 type Tab = 'overview' | 'users' | 'auctions' | 'disputes' | 'categories' | 'kyc' | 'settings'
@@ -104,6 +104,7 @@ function Users() {
   const [totalPages, setTotalPages] = useState(0)
   const [error, setError] = useState('')
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [walletUser, setWalletUser] = useState<AdminUser | null>(null)
 
   const load = () => {
     getAdminUsers({
@@ -125,6 +126,12 @@ function Users() {
     } catch (e) { setError(errorMessage(e)) } finally { setBusyId(null) }
   }
 
+  const applyWalletUpdate = (userId: string, res: ReleaseHoldResult) => {
+    const patch = { walletAvailableBalance: res.availableBalance, walletHeldBalance: res.heldBalance, walletCreditLimit: res.creditLimit }
+    setUsers((prev) => prev.map((x) => (x.id === userId ? { ...x, ...patch } : x)))
+    setWalletUser((prev) => (prev && prev.id === userId ? { ...prev, ...patch } : prev))
+  }
+
   return (
     <div className="card">
       <div className="admin-filters">
@@ -143,7 +150,7 @@ function Users() {
       {error && <div className="error">{error}</div>}
       <div style={{ overflowX: 'auto' }}>
         <table className="admin-table">
-          <thead><tr><th>Email</th><th>Mobile</th><th>Role</th><th>KYC</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Email</th><th>Mobile</th><th>Role</th><th>KYC</th><th>Deposit</th><th>Credit Limit</th><th>Status</th><th></th></tr></thead>
           <tbody>
             {users.map((u) => (
               <tr key={u.id}>
@@ -151,20 +158,112 @@ function Users() {
                 <td>{u.mobileNumber}</td>
                 <td>{u.role}</td>
                 <td>{u.kycStatus}</td>
+                <td>{money(u.walletAvailableBalance)}</td>
+                <td>{moneyCompact(u.walletCreditLimit)}</td>
                 <td>{u.active ? <span className="ok" style={{ margin: 0, display: 'inline-block' }}>Active</span>
                               : <span className="error" style={{ margin: 0, display: 'inline-block' }}>Suspended</span>}</td>
-                <td>
+                <td style={{ display: 'flex', gap: 6 }}>
                   <button type="button" className="btn ghost sm" disabled={busyId === u.id} onClick={() => toggle(u)}>
                     {busyId === u.id ? '…' : u.active ? 'Suspend' : 'Reactivate'}
                   </button>
+                  <button type="button" className="btn ghost sm" onClick={() => setWalletUser(u)}>Wallet</button>
                 </td>
               </tr>
             ))}
-            {users.length === 0 && <tr><td colSpan={6} className="muted">No users match.</td></tr>}
+            {users.length === 0 && <tr><td colSpan={8} className="muted">No users match.</td></tr>}
           </tbody>
         </table>
       </div>
       <Pager page={page} totalPages={totalPages} onChange={setPage} />
+
+      {walletUser && (
+        <WalletModal
+          user={walletUser}
+          onClose={() => setWalletUser(null)}
+          onReleased={(res) => applyWalletUpdate(walletUser.id, res)}
+        />
+      )}
+    </div>
+  )
+}
+
+/** Admin view of one user's wallet: deposit/credit summary plus their active (locked) EMD holds,
+ *  each individually releasable back to the user's available balance. */
+function WalletModal({ user, onClose, onReleased }: {
+  user: AdminUser
+  onClose: () => void
+  onReleased: (res: ReleaseHoldResult) => void
+}) {
+  const [holds, setHolds] = useState<AdminHold[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [confirmingId, setConfirmingId] = useState<string | null>(null)
+
+  useEffect(() => {
+    getAdminUserHolds(user.id).then(setHolds).catch((e) => setError(errorMessage(e))).finally(() => setLoading(false))
+  }, [user.id])
+
+  const release = async (hold: AdminHold) => {
+    setConfirmingId(null)
+    setBusyId(hold.id); setError('')
+    try {
+      const res = await releaseAdminHold(hold.id)
+      setHolds((prev) => prev.filter((h) => h.id !== hold.id))
+      onReleased(res)
+    } catch (e) { setError(errorMessage(e)) } finally { setBusyId(null) }
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-card" style={{ maxWidth: 560 }} onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <h3>Wallet — {user.email}</h3>
+          <button type="button" className="modal-close" onClick={onClose} aria-label="Close">✕</button>
+        </div>
+        <div className="modal-body">
+          <div className="stat" style={{ marginBottom: 16 }}>
+            <div><div className="k">Deposit (Available)</div><div className="v">{money(user.walletAvailableBalance)}</div></div>
+            <div><div className="k">Held (Locked)</div><div className="v">{money(user.walletHeldBalance)}</div></div>
+            <div><div className="k">Credit Limit</div><div className="v">{moneyCompact(user.walletCreditLimit)}</div></div>
+          </div>
+          {error && <div className="error">{error}</div>}
+          {loading ? (
+            <p className="muted">Loading locked amounts…</p>
+          ) : holds.length === 0 ? (
+            <p className="muted">No locked (active EMD) amounts for this user.</p>
+          ) : (
+            <table className="admin-table">
+              <thead><tr><th>Auction</th><th>Locked amount</th><th></th></tr></thead>
+              <tbody>
+                {holds.map((h) => (
+                  <tr key={h.id}>
+                    <td>{h.listingTitle}</td>
+                    <td>{money(h.amount)}</td>
+                    <td>
+                      {confirmingId === h.id ? (
+                        <span style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                          <span className="muted" style={{ fontSize: 12.5 }}>Release {money(h.amount)}?</span>
+                          <button type="button" className="btn sm" disabled={busyId === h.id} onClick={() => release(h)}>
+                            {busyId === h.id ? '…' : 'Confirm'}
+                          </button>
+                          <button type="button" className="btn ghost sm" disabled={busyId === h.id} onClick={() => setConfirmingId(null)}>
+                            Cancel
+                          </button>
+                        </span>
+                      ) : (
+                        <button type="button" className="btn ghost sm" onClick={() => setConfirmingId(h.id)}>
+                          Refund / Release
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
     </div>
   )
 }

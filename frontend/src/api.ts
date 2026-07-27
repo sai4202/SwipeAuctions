@@ -126,6 +126,7 @@ export interface Auction {
   swipeStock: boolean
   requiredTier: SubscriptionTier
   registered: boolean
+  bidsRemaining: number | null
 }
 export interface AuctionEvent {
   id: string
@@ -165,6 +166,7 @@ export interface ListingImageResult {
 export interface WalletBalance {
   availableBalance: number
   heldBalance: number
+  creditLimit: number
 }
 export interface RegisterResult {
   message: string
@@ -181,6 +183,21 @@ export interface AdminUser {
   emailVerified: boolean
   mobileVerified: boolean
   createdAt: string
+  walletAvailableBalance: number
+  walletHeldBalance: number
+  walletCreditLimit: number
+}
+export interface AdminHold {
+  id: string
+  auctionId: string
+  listingTitle: string
+  amount: number
+  createdAt: string
+}
+export interface ReleaseHoldResult {
+  availableBalance: number
+  heldBalance: number
+  creditLimit: number
 }
 export interface AdminListing {
   id: string
@@ -535,6 +552,14 @@ export async function suspendUser(id: string): Promise<AdminUser> {
 }
 export async function reactivateUser(id: string): Promise<AdminUser> {
   const res = await api.post<AdminUser>(`/api/admin/users/${id}/reactivate`)
+  return res.data
+}
+export async function getAdminUserHolds(id: string): Promise<AdminHold[]> {
+  const res = await api.get<AdminHold[]>(`/api/admin/users/${id}/holds`)
+  return res.data
+}
+export async function releaseAdminHold(holdId: string): Promise<ReleaseHoldResult> {
+  const res = await api.post<ReleaseHoldResult>(`/api/admin/holds/${holdId}/release`)
   return res.data
 }
 export async function getAdminListings(status?: string, page = 0, size = 20): Promise<PageResponse<AdminListing>> {

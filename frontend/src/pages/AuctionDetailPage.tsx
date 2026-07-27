@@ -271,6 +271,9 @@ export default function AuctionDetailPage() {
               {auction.currentHighestBid != null && <span className="price-was">Base {money(auction.basePrice)}</span>}
             </div>
             <div className="price-meta"><span>{auction.bidCount} bids</span><span>Min next {money(minNext)}</span></div>
+            {auction.bidsRemaining != null && (
+              <div className="price-meta"><span>{auction.bidsRemaining} bid{auction.bidsRemaining === 1 ? '' : 's'} remaining for you on this item</span></div>
+            )}
           </div>
 
           <div ref={actionRef}>
@@ -295,6 +298,8 @@ export default function AuctionDetailPage() {
                 <p className="muted">Registering requires a refundable EMD (Earnest Money Deposit) of {money(auction.basePrice)}, held on your wallet — fully refunded if you don't win.</p>
                 <button className="btn block" onClick={doRegister} disabled={busy}>{busy ? '…' : 'Pay EMD & Register to Bid'}</button>
               </>
+            ) : auction.bidsRemaining === 0 ? (
+              <p className="muted">No more bids available — you've used all 20 bids on this item.</p>
             ) : (
               <form onSubmit={doBid}>
                 <label>Your bid (min {money(minNext)})</label>

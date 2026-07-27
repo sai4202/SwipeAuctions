@@ -44,6 +44,22 @@ public class WalletService {
     private final SaleProceedsHoldRepository proceedsRepository;
     private final AuctionNotificationService notificationService;
 
+    private static final BigDecimal CREDIT_LIMIT_DEPOSIT_UNIT = new BigDecimal("5000");
+    private static final BigDecimal CREDIT_LIMIT_PER_UNIT = new BigDecimal("25000000"); // ₹2.5 crore
+
+    /** Leverage-style bidding cap: every complete ₹5,000 of available balance grants ₹2.5 crore of credit. */
+    public BigDecimal creditLimitFor(BigDecimal availableBalance) {
+        if (availableBalance == null || availableBalance.signum() <= 0) {
+            return BigDecimal.ZERO;
+        }
+        return availableBalance.divideToIntegralValue(CREDIT_LIMIT_DEPOSIT_UNIT).multiply(CREDIT_LIMIT_PER_UNIT);
+    }
+
+    @Transactional(readOnly = true)
+    public BigDecimal getCreditLimit(User user) {
+        return creditLimitFor(getWallet(user).getAvailableBalance());
+    }
+
     @Transactional
     public Wallet getOrCreateWallet(User user) {
         return walletRepository.findByUser_Id(user.getId())

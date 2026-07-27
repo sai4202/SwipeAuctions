@@ -6,7 +6,7 @@ import {
 } from '../api'
 import { useAuth } from '../auth'
 import { useWallet } from '../WalletContext'
-import { money } from '../util'
+import { money, moneyCompact } from '../util'
 import StripeTopUpForm from '../components/StripeTopUpForm'
 
 export default function WalletPage() {
@@ -80,11 +80,15 @@ export default function WalletPage() {
 
   return (
     <div className="container">
+      <div className="section-head">
+        <h1 className="page">Wallet</h1>
+      </div>
       <div className="card" style={{ maxWidth: 460 }}>
         <span className="eyebrow">Your Wallet</span>
         <div className="stat" style={{ marginTop: 16 }}>
           <div><div className="k">Available</div><div className="v">{money(wallet?.availableBalance)}</div></div>
           <div><div className="k">Held (EMD)</div><div className="v">{money(wallet?.heldBalance)}</div></div>
+          <div><div className="k">Credit Limit</div><div className="v">{moneyCompact(wallet?.creditLimit)}</div></div>
         </div>
         {error && <div className="error" style={{ marginTop: 12 }}>{error}</div>}
 

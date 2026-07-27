@@ -44,6 +44,25 @@ export function money(n: number | null | undefined): string {
   return (num < 0 ? '-₹' : '₹') + formatted
 }
 
+const ONE_LAKH = 100_000
+const ONE_CRORE = 10_000_000
+
+/** Same as {@link money}, but collapses lakh/crore-scale amounts (e.g. a leveraged credit limit)
+ *  into "₹1.25 Cr" / "₹4.50 L" instead of a wall of digits — full precision below ₹1 lakh. */
+export function moneyCompact(n: number | null | undefined): string {
+  if (n == null) return '—'
+  const num = Number(n)
+  const abs = Math.abs(num)
+  const sign = num < 0 ? '-₹' : '₹'
+  if (abs >= ONE_CRORE) {
+    return sign + (abs / ONE_CRORE).toLocaleString('en-IN', { maximumFractionDigits: 2 }) + ' Cr'
+  }
+  if (abs >= ONE_LAKH) {
+    return sign + (abs / ONE_LAKH).toLocaleString('en-IN', { maximumFractionDigits: 2 }) + ' L'
+  }
+  return money(n)
+}
+
 // ---- Gallery media ----
 const VIDEO_EXTENSIONS = ['.mp4', '.webm', '.mov', '.m4v', '.ogv']
 

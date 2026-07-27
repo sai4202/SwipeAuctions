@@ -85,6 +85,7 @@ public class AuctionController {
             Map<UUID, Map<String, String>> attributesByListingId,
             Map<UUID, Long> bidCountByAuctionId,
             Map<UUID, BigDecimal> yourBidByAuctionId,
+            Map<UUID, Long> yourBidCountByAuctionId,
             java.util.Set<UUID> auctionIdsWithActiveHold) {
     }
 
@@ -109,15 +110,18 @@ public class AuctionController {
                 : bidRepository.countByAuction_IdIn(auctionIds).stream()
                         .collect(Collectors.toMap(BidRepository.AuctionBidCount::getAuctionId, BidRepository.AuctionBidCount::getCnt));
 
-        Map<UUID, BigDecimal> yourBidByAuctionId = (viewerId == null || auctionIds.isEmpty()) ? Map.of()
-                : bidRepository.findByAuction_IdInAndBidder_Id(auctionIds, viewerId).stream()
-                        .collect(Collectors.toMap(b -> b.getAuction().getId(), Bid::getAmount, BigDecimal::max));
+        List<Bid> viewerBids = (viewerId == null || auctionIds.isEmpty()) ? List.of()
+                : bidRepository.findByAuction_IdInAndBidder_Id(auctionIds, viewerId);
+        Map<UUID, BigDecimal> yourBidByAuctionId = viewerBids.stream()
+                .collect(Collectors.toMap(b -> b.getAuction().getId(), Bid::getAmount, BigDecimal::max));
+        Map<UUID, Long> yourBidCountByAuctionId = viewerBids.stream()
+                .collect(Collectors.groupingBy(b -> b.getAuction().getId(), Collectors.counting()));
 
         java.util.Set<UUID> auctionIdsWithActiveHold = (viewerId == null || auctionIds.isEmpty()) ? java.util.Set.of()
                 : walletService.auctionIdsWithActiveHold(auctionIds, viewerId);
 
         return new BrowseBatch(listingsById, imagesByListingId, attributesByListingId,
-                bidCountByAuctionId, yourBidByAuctionId, auctionIdsWithActiveHold);
+                bidCountByAuctionId, yourBidByAuctionId, yourBidCountByAuctionId, auctionIdsWithActiveHold);
     }
 
     @PostMapping
@@ -222,6 +226,8 @@ public class AuctionController {
         // placed a bid — an active hold alone would under-report them, so also check for a bid on file.
         boolean registered = viewerId != null
                 && (walletService.hasActiveHold(a.getId(), viewerId) || yourBid != null);
+        Integer bidsRemaining = viewerId == null ? null : (int) Math.max(0,
+                BidService.MAX_BIDS_PER_BIDDER_PER_AUCTION - bidRepository.countByAuction_IdAndBidder_Id(a.getId(), viewerId));
         return new AuctionResponse(
                 a.getId(), l.getId(), l.getTitle(),
                 a.getBasePrice(), a.getCurrentHighestBid(), a.getStatus(),
@@ -232,7 +238,7 @@ public class AuctionController {
                 yourBid, attributes, isWinner, a.isSettlementPaid(),
                 a.getEvent() != null ? a.getEvent().getId() : null,
                 a.getEvent() != null ? a.getEvent().getName() : null,
-                l.getSeller().getEmail(), l.isSwipeStock(), l.getRequiredTier(), registered);
+                l.getSeller().getEmail(), l.isSwipeStock(), l.getRequiredTier(), registered, bidsRemaining);
     }
 
     /** Same shape as {@link #toResponse(Auction, UUID)} but reads from a pre-fetched {@link BrowseBatch}. */
@@ -249,6 +255,8 @@ public class AuctionController {
         // placed a bid — an active hold alone would under-report them, so also check for a bid on file.
         boolean registered = viewerId != null
                 && (batch.auctionIdsWithActiveHold().contains(a.getId()) || yourBid != null);
+        Integer bidsRemaining = viewerId == null ? null : (int) Math.max(0,
+                BidService.MAX_BIDS_PER_BIDDER_PER_AUCTION - batch.yourBidCountByAuctionId().getOrDefault(a.getId(), 0L));
         return new AuctionResponse(
                 a.getId(), l.getId(), l.getTitle(),
                 a.getBasePrice(), a.getCurrentHighestBid(), a.getStatus(),
@@ -259,7 +267,7 @@ public class AuctionController {
                 yourBid, attributes, isWinner, a.isSettlementPaid(),
                 a.getEvent() != null ? a.getEvent().getId() : null,
                 a.getEvent() != null ? a.getEvent().getName() : null,
-                l.getSeller().getEmail(), l.isSwipeStock(), l.getRequiredTier(), registered);
+                l.getSeller().getEmail(), l.isSwipeStock(), l.getRequiredTier(), registered, bidsRemaining);
     }
 
     public record CreateAuctionRequest(
@@ -276,7 +284,7 @@ public class AuctionController {
             String zip, String coverImageUrl, List<String> images, BigDecimal yourBid,
             Map<String, String> attributes, boolean isWinner, boolean settlementPaid,
             UUID eventId, String eventName, String sellerEmail, boolean swipeStock,
-            SubscriptionTier requiredTier, boolean registered) {}
+            SubscriptionTier requiredTier, boolean registered, Integer bidsRemaining) {}
 
     public record PlaceBidRequest(@NotNull BigDecimal amount) {}
 

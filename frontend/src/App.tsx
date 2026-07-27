@@ -1,5 +1,6 @@
 import { Routes, Route, Link } from 'react-router-dom'
 import Header from './components/Header'
+import Footer from './components/Footer'
 import HomePage from './pages/HomePage'
 import BrowsePage from './pages/BrowsePage'
 import AuctionDetailPage from './pages/AuctionDetailPage'
@@ -15,6 +16,8 @@ import SubscriptionPage from './pages/SubscriptionPage'
 import AdminDashboardPage from './pages/AdminDashboardPage'
 import AboutPage from './pages/AboutPage'
 import ContactPage from './pages/ContactPage'
+import PrivacyPage from './pages/PrivacyPage'
+import TermsPage from './pages/TermsPage'
 import KycPage from './pages/KycPage'
 import RequireAuth from './components/RequireAuth'
 
@@ -40,6 +43,8 @@ export default function App() {
         <Route path="/admin" element={<AdminDashboardPage />} />
         <Route path="/about" element={<AboutPage />} />
         <Route path="/contact" element={<ContactPage />} />
+        <Route path="/privacy" element={<PrivacyPage />} />
+        <Route path="/terms" element={<TermsPage />} />
         <Route path="*" element={
           <div className="container">
             <div className="card" style={{ maxWidth: 460, margin: '40px auto', textAlign: 'center' }}>
@@ -50,6 +55,7 @@ export default function App() {
           </div>
         } />
       </Routes>
+      <Footer />
     </div>
   )
 }

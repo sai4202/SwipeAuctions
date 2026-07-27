@@ -6,6 +6,7 @@ import {
   type SubscriptionPrice, type SubscriptionTier, type BillingCycle,
 } from '../api'
 import { money } from '../util'
+import TierCards from '../components/TierCards'
 
 const TIERS: SubscriptionTier[] = ['SILVER', 'GOLD', 'DIAMOND']
 const CYCLES: { key: BillingCycle; label: string }[] = [
@@ -71,6 +72,23 @@ export default function SubscriptionPage() {
       {error && <div className="error" style={{ marginBottom: 16 }}>{error}</div>}
       {ok && <div className="ok" style={{ marginBottom: 16 }}>{ok}</div>}
 
+      <TierCards
+        currentTier={isAuthenticated ? (subscriptionTier as SubscriptionTier) : undefined}
+        renderCta={(tier) => (
+          tier === 'NONE' ? null : (
+            <button
+              type="button"
+              className="btn block sm"
+              disabled={!isAuthenticated || busyKey === `${tier}-MONTHLY`}
+              onClick={() => subscribe(tier, 'MONTHLY')}
+            >
+              {busyKey === `${tier}-MONTHLY` ? '…' : isAuthenticated && subscriptionTier === tier ? 'Renew monthly' : 'Subscribe monthly'}
+            </button>
+          )
+        )}
+      />
+
+      <h2 style={{ fontSize: 17, margin: '30px 0 14px' }}>Prices by billing cycle</h2>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
         {TIERS.map((tier) => (
           <div key={tier} className="card">

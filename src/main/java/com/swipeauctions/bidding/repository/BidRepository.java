@@ -15,6 +15,8 @@ public interface BidRepository extends JpaRepository<Bid, UUID> {
 
     long countByAuction_Id(UUID auctionId);
 
+    long countByAuction_IdAndBidder_Id(UUID auctionId, UUID bidderId);
+
     /** The current user's highest bid on an auction, if any. */
     Optional<Bid> findFirstByAuction_IdAndBidder_IdOrderByAmountDesc(UUID auctionId, UUID bidderId);
 

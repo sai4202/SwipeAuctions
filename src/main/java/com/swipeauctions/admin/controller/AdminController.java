@@ -27,8 +27,13 @@ import com.swipeauctions.user.entity.KycVerification;
 import com.swipeauctions.user.entity.User;
 import com.swipeauctions.user.repository.UserRepository;
 import com.swipeauctions.user.service.KycService;
+import com.swipeauctions.wallet.entity.BidEligibilityHold;
+import com.swipeauctions.wallet.entity.Wallet;
+import com.swipeauctions.wallet.enums.HoldStatus;
 import com.swipeauctions.wallet.enums.WalletTxnType;
+import com.swipeauctions.wallet.repository.BidEligibilityHoldRepository;
 import com.swipeauctions.wallet.repository.WalletTransactionRepository;
+import com.swipeauctions.wallet.service.WalletService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import lombok.RequiredArgsConstructor;
@@ -61,6 +66,8 @@ public class AdminController {
     private final WalletTransactionRepository walletTransactionRepository;
     private final CatalogService catalogService;
     private final KycService kycService;
+    private final WalletService walletService;
+    private final BidEligibilityHoldRepository holdRepository;
 
     // ---- Users ----
 
@@ -71,7 +78,7 @@ public class AdminController {
                                              @RequestParam(defaultValue = "0") int page,
                                              @RequestParam(defaultValue = "20") int size) {
         return PageResponse.of(adminUserService.listUsers(search, role, active, pageable(page, size, "createdAt")),
-                AdminController::toUser);
+                this::toUser);
     }
 
     @GetMapping("/users/{id}")
@@ -87,6 +94,24 @@ public class AdminController {
     @PostMapping("/users/{id}/reactivate")
     public UserResponse reactivate(@PathVariable UUID id) {
         return toUser(adminUserService.reactivate(id));
+    }
+
+    /** Active (unresolved) EMD holds for a user — the "locked" amounts an admin can refund/release. */
+    @GetMapping("/users/{id}/holds")
+    public List<HoldResponse> userHolds(@PathVariable UUID id) {
+        User user = adminUserService.getUser(id);
+        return holdRepository.findByBidder_IdAndStatus(user.getId(), HoldStatus.ACTIVE).stream()
+                .map(AdminController::toHold).toList();
+    }
+
+    /** Force-release a stuck/locked EMD hold back to the bidder's available balance. */
+    @PostMapping("/holds/{holdId}/release")
+    public ReleaseHoldResponse releaseHold(@PathVariable UUID holdId) {
+        BidEligibilityHold hold = holdRepository.findById(holdId)
+                .orElseThrow(() -> new ResourceNotFoundException("Hold not found"));
+        walletService.releaseHold(hold.getAuction(), hold.getBidder());
+        Wallet w = walletService.getWallet(hold.getBidder());
+        return new ReleaseHoldResponse(w.getAvailableBalance(), w.getHeldBalance(), walletService.creditLimitFor(w.getAvailableBalance()));
     }
 
     // ---- Listings / auctions ----
@@ -224,9 +249,16 @@ public class AdminController {
         return PageRequest.of(Math.max(page, 0), Math.max(size, 1), Sort.by(Sort.Direction.DESC, sortProperty));
     }
 
-    static UserResponse toUser(User u) {
+    UserResponse toUser(User u) {
+        Wallet w = walletService.getWallet(u);
         return new UserResponse(u.getId(), u.getEmail(), u.getMobileNumber(), u.getRole(),
-                u.getActive(), u.getKycStatus(), u.getEmailVerified(), u.getMobileVerified(), u.getCreatedAt());
+                u.getActive(), u.getKycStatus(), u.getEmailVerified(), u.getMobileVerified(), u.getCreatedAt(),
+                w.getAvailableBalance(), w.getHeldBalance(), walletService.creditLimitFor(w.getAvailableBalance()));
+    }
+
+    static HoldResponse toHold(BidEligibilityHold h) {
+        return new HoldResponse(h.getId(), h.getAuction().getId(), h.getAuction().getListing().getTitle(),
+                h.getAmount(), h.getCreatedAt());
     }
 
     static ListingResponse toListing(Listing l) {
@@ -260,7 +292,12 @@ public class AdminController {
 
     public record UserResponse(UUID id, String email, String mobileNumber, Role role, Boolean active,
                                KycStatus kycStatus, Boolean emailVerified, Boolean mobileVerified,
-                               LocalDateTime createdAt) {}
+                               LocalDateTime createdAt, BigDecimal walletAvailableBalance,
+                               BigDecimal walletHeldBalance, BigDecimal walletCreditLimit) {}
+
+    public record HoldResponse(UUID id, UUID auctionId, String listingTitle, BigDecimal amount, LocalDateTime createdAt) {}
+
+    public record ReleaseHoldResponse(BigDecimal availableBalance, BigDecimal heldBalance, BigDecimal creditLimit) {}
 
     public record ListingResponse(UUID id, String title, String sellerEmail, String categoryName,
                                   ListingStatus status, BigDecimal reservePrice, LocalDateTime createdAt,

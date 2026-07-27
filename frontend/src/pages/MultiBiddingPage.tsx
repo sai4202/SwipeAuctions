@@ -142,10 +142,17 @@ export default function MultiBiddingPage() {
                   <span className="muted">{a.currentHighestBid != null ? 'Current' : 'Starting'} · {a.bidCount} bids</span>
                   <span className="price">{money(current)}</span>
                 </div>
+                {a.bidsRemaining != null && (
+                  <div className="muted" style={{ fontSize: 12, ...(a.bidsRemaining === 0 ? { color: 'var(--red-2)', fontWeight: 700 } : {}) }}>
+                    {a.bidsRemaining === 0 ? 'No bids left for you on this item' : `${a.bidsRemaining} bid${a.bidsRemaining === 1 ? '' : 's'} left for you`}
+                  </div>
+                )}
                 {es !== 'OPEN' ? (
                   <span className="muted">Bidding closed</span>
                 ) : !tile.registered ? (
                   <button className="btn sm" onClick={() => doRegister(a.id)}>Register — hold {money(a.basePrice)}</button>
+                ) : a.bidsRemaining === 0 ? (
+                  <span className="muted">No bids left</span>
                 ) : (
                   <div className="bidrow">
                     <input type="number" placeholder={`min ${minNext}`} value={tile.amount} onChange={(e) => upd(a.id, { amount: e.target.value })} />

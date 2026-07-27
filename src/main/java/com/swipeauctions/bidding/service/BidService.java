@@ -53,6 +53,9 @@ public class BidService {
     @Value("${auction.min-increment:1}")
     private BigDecimal minIncrement;
 
+    /** Per-(auction, bidder) cap — once a bidder has placed this many bids on one item, no more are allowed. */
+    public static final int MAX_BIDS_PER_BIDDER_PER_AUCTION = 20;
+
     @Transactional
     public Bid placeBid(UUID auctionId, User bidder, BigDecimal amount) {
         Auction auction = auctionRepository.findByIdForUpdate(auctionId)
@@ -76,11 +79,22 @@ public class BidService {
             throw new BadRequestException("Register to bid first — a refundable EMD deposit is required");
         }
 
+        long bidsPlaced = bidRepository.countByAuction_IdAndBidder_Id(auctionId, bidder.getId());
+        if (bidsPlaced >= MAX_BIDS_PER_BIDDER_PER_AUCTION) {
+            throw new BadRequestException("No more bids available — you've reached the maximum of "
+                    + MAX_BIDS_PER_BIDDER_PER_AUCTION + " bids on this item.");
+        }
+
         BigDecimal minAllowed = auction.getCurrentHighestBid() != null
                 ? auction.getCurrentHighestBid().add(minIncrement)
                 : auction.getBasePrice();
         if (amount.compareTo(minAllowed) < 0) {
             throw new BadRequestException("Bid must be at least " + minAllowed);
+        }
+
+        BigDecimal creditLimit = walletService.getCreditLimit(bidder);
+        if (amount.compareTo(creditLimit) > 0) {
+            throw new BadRequestException("Bid exceeds your credit limit of " + creditLimit + ". Top up your wallet to increase it.");
         }
 
         // Capture who currently leads (the person about to be outbid) before we overwrite the winner.

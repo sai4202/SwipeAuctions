@@ -254,11 +254,11 @@ export default function EventsBrowse({ categorySlug }: { categorySlug?: string }
                 <thead>
                   <tr>
                     <th>Image</th><th>Details</th><th>Start Time</th><th>End Time</th>
-                    <th>Base Price</th><th>Current Bid</th><th>Bids</th><th>Action</th>
+                    <th>Base Price</th><th>Current Bid</th><th>Bids</th><th>Bids Left</th><th>Action</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {loading && <SkeletonTableRows rows={5} cols={8} />}
+                  {loading && <SkeletonTableRows rows={5} cols={9} />}
                   {filteredItems.map((a) => (
                     <tr key={a.id}>
                       <td>
@@ -283,9 +283,18 @@ export default function EventsBrowse({ categorySlug }: { categorySlug?: string }
                       <td>{a.currentHighestBid != null ? money(a.currentHighestBid) : '—'}</td>
                       <td>{a.bidCount}</td>
                       <td>
+                        {a.bidsRemaining == null ? '—' : a.bidsRemaining === 0 ? (
+                          <span style={{ color: 'var(--red-2)', fontWeight: 700 }}>None left</span>
+                        ) : a.bidsRemaining}
+                      </td>
+                      <td>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 120 }}>
                           <Link to={`/auctions/${a.id}`} className="btn ghost sm">View Details</Link>
-                          <Link to={`/auctions/${a.id}?bid=1`} className="btn sm">Bid Now</Link>
+                          {a.bidsRemaining === 0 ? (
+                            <span className="btn sm" style={{ opacity: .55, pointerEvents: 'none' }}>No bids left</span>
+                          ) : (
+                            <Link to={`/auctions/${a.id}?bid=1`} className="btn sm">Bid Now</Link>
+                          )}
                           {multiIds.includes(a.id) ? (
                             <button className="btn light sm" onClick={() => toggleMulti(a.id)}>♥ In wishlist</button>
                           ) : (

@@ -3,13 +3,15 @@ import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../auth'
 import { useWallet } from '../WalletContext'
 import { useFloatingTabs } from '../FloatingTabsContext'
+import { useTheme } from '../ThemeContext'
 import { logout, adminLogout } from '../api'
-import { money } from '../util'
+import { moneyCompact } from '../util'
 
 export default function Header() {
   const { isAuthenticated, role, lastRole, kycCompleted, signOut } = useAuth()
   const { wallet } = useWallet()
-  const credit = wallet?.availableBalance ?? null
+  const { theme, toggleTheme } = useTheme()
+  const credit = wallet?.creditLimit ?? null
   const { tabCount, maxTabs, addTab } = useFloatingTabs()
   const navigate = useNavigate()
   const isAdmin = role === 'ADMIN'
@@ -80,11 +82,29 @@ export default function Header() {
         </nav>
 
         <div className="header-right">
+          <button
+            type="button"
+            className="icon-btn theme-toggle"
+            onClick={toggleTheme}
+            aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+            title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+          >
+            {theme === 'dark' ? (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="4" />
+                <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+              </svg>
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+              </svg>
+            )}
+          </button>
           {isAuthenticated && !isAdmin && !kycCompleted && (
             <Link to="/kyc" className="link-login" style={{ color: 'var(--orange, #d97706)', whiteSpace: 'nowrap' }}>Complete KYC</Link>
           )}
           {isAuthenticated && credit != null && (
-            <Link to="/wallet" className="credit"><span className="gdot" />Available Credit <b>{money(credit)}</b></Link>
+            <Link to="/wallet" className="credit"><span className="gdot" />Available Credit <b>{moneyCompact(credit)}</b></Link>
           )}
           {isAuthenticated && !isAdmin && (
             <div className="account-menu" ref={profileRef}>
@@ -149,12 +169,13 @@ export default function Header() {
             <NavLink to="/my-transactions" onClick={closeMobile}>My Transactions</NavLink>
             <NavLink to="/subscription" onClick={closeMobile}>Subscription</NavLink>
             <NavLink to="/wishlist" onClick={closeMobile}>Wishlist</NavLink>
-            {credit != null && <NavLink to="/wallet" onClick={closeMobile}>Wallet — <b>{money(credit)}</b></NavLink>}
+            {credit != null && <NavLink to="/wallet" onClick={closeMobile}>Wallet — <b>{moneyCompact(credit)}</b></NavLink>}
             <NavLink to="/about" onClick={closeMobile}>About Us</NavLink>
             <NavLink to="/contact" onClick={closeMobile}>Contact Us</NavLink>
           </>
         )}
         <div className="mobile-menu-divider" />
+        <button type="button" onClick={toggleTheme}>{theme === 'dark' ? '☀ Light mode' : '☾ Dark mode'}</button>
         {isAuthenticated ? (
           <button type="button" onClick={() => { doLogout(); closeMobile() }}>Logout</button>
         ) : (

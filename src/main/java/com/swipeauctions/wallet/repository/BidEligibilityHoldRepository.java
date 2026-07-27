@@ -20,6 +20,8 @@ public interface BidEligibilityHoldRepository extends JpaRepository<BidEligibili
 
     List<BidEligibilityHold> findByAuction_IdAndStatus(UUID auctionId, HoldStatus status);
 
+    List<BidEligibilityHold> findByBidder_IdAndStatus(UUID bidderId, HoldStatus status);
+
     /**
      * Batch "does this bidder have an active hold" check for the browse list — one round trip for
      * every auction instead of one per auction; caller collects the returned auction ids into a set.

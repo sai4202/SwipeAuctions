@@ -26,9 +26,21 @@ export default function AdminLoginPage() {
 
   return (
     <div className="login-wrap">
+      <aside className="login-brand admin-brand">
+        <div className="eyebrow">Restricted Access</div>
+        <h2>Run the <span className="accent">Marketplace</span></h2>
+        <p>Manage listings, resolve wallet holds, and keep every live auction running smoothly — all from one console.</p>
+        <ul>
+          <li>🛠️ Manage users, listings &amp; categories</li>
+          <li>🔓 Release or refund EMD holds in one click</li>
+          <li>📊 Monitor live auctions &amp; settlements in real time</li>
+        </ul>
+      </aside>
+
       <section className="login-panel">
         <form className="login-card" onSubmit={submit}>
           <h1>Admin sign in</h1>
+          <p className="lead">Authorized personnel only.</p>
           <label>Email</label>
           <input style={{ width: '100%' }} value={identifier} onChange={(e) => setIdentifier(e.target.value)} placeholder="admin@example.com" />
           <label>Password</label>
