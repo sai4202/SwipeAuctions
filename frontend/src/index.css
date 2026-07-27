@@ -222,7 +222,6 @@ button { font-family: inherit; }
   background-image:
     radial-gradient(60% 90% at 12% -10%, rgba(239,61,46,.16), transparent 65%),
     radial-gradient(55% 80% at 108% 25%, rgba(234,88,12,.14), transparent 60%),
-    repeating-linear-gradient(115deg, rgba(20,22,26,.045) 0px, rgba(20,22,26,.045) 2px, transparent 2px, transparent 34px),
     linear-gradient(180deg, #ffffff 0%, #fbfcfd 100%);
   border: 1px solid var(--border);
 }
@@ -230,8 +229,43 @@ button { font-family: inherit; }
   background-image:
     radial-gradient(60% 90% at 12% -10%, rgba(239,61,46,.22), transparent 65%),
     radial-gradient(55% 80% at 108% 25%, rgba(255,106,43,.18), transparent 60%),
-    repeating-linear-gradient(115deg, rgba(255,255,255,.035) 0px, rgba(255,255,255,.035) 2px, transparent 2px, transparent 34px),
     linear-gradient(180deg, #141418 0%, #0e0e11 100%);
+}
+/* Drifting speed-line texture (own layer, not baked into .hero's background-image) so it can be
+   animated independently — a slow diagonal crawl reads as ambient motion, like footage rather than
+   a still frame, without ever loading an external image/video asset. */
+.hero::before {
+  content: ''; position: absolute; inset: -20%; z-index: -1; pointer-events: none;
+  background-image: repeating-linear-gradient(115deg, rgba(20,22,26,.09) 0px, rgba(20,22,26,.09) 3px, transparent 3px, transparent 30px);
+  animation: hero-texture-drift 9s linear infinite;
+}
+[data-theme="dark"] .hero::before {
+  background-image: repeating-linear-gradient(115deg, rgba(255,255,255,.07) 0px, rgba(255,255,255,.07) 3px, transparent 3px, transparent 30px);
+}
+@keyframes hero-texture-drift { from { transform: translate(0, 0); } to { transform: translate(-120px, -60px); } }
+/* A bright headlight beam sweeps across the whole hero on a loop — the one "video-like" cue that
+   sells motion at a glance, sitting above the car art and below the text (stacking order = DOM
+   order at z-index:-1 inside .hero's isolated context, so it washes over the silhouettes too).
+   Wide, bright and fast on purpose — a subtle version of this reads as noise, not motion. */
+.hero::after {
+  content: ''; position: absolute; top: -40%; bottom: -40%; width: 46%; left: -60%; z-index: -1; pointer-events: none;
+  background: linear-gradient(100deg, transparent, rgba(255,255,255,.4) 35%, rgba(255,214,178,.85) 50%, rgba(255,255,255,.4) 65%, transparent);
+  filter: blur(4px); mix-blend-mode: overlay;
+  animation: hero-beam-sweep 3.8s ease-in-out infinite;
+}
+[data-theme="dark"] .hero::after {
+  background: linear-gradient(100deg, transparent, rgba(255,255,255,.1) 35%, rgba(255,255,255,.32) 50%, rgba(255,255,255,.1) 65%, transparent);
+}
+@keyframes hero-beam-sweep { 0%, 4% { left: -60%; } 60%, 100% { left: 140%; } }
+/* The accent word gets its own pulsing glow so the headline reads as "alive" without needing any
+   scroll or hover — the one animation visible in the very first frame. */
+.hero h1 .accent { animation: accent-glow-pulse 2.4s ease-in-out infinite; }
+@keyframes accent-glow-pulse {
+  0%, 100% { text-shadow: 0 0 0 rgba(255,106,43,0); }
+  50% { text-shadow: 0 0 28px rgba(255,106,43,.65), 0 0 60px rgba(239,61,46,.25); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero::before, .hero::after, .hero h1 .accent { animation: none; }
 }
 /* Two hand-drawn, animated car silhouettes (HeroVehicle.tsx) framing the hero — own artwork
    instead of a stock photo, so it's a network-free SVG that scales to any box and matches the
@@ -308,10 +342,49 @@ button { font-family: inherit; }
 .cat-tile-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 14px; }
 .cat-tile { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
   background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 22px 12px;
-  cursor: pointer; transition: transform .12s, border-color .12s; color: var(--text); }
-.cat-tile:hover { transform: translateY(-3px); border-color: var(--red); }
-.cat-tile-icon { font-size: 30px; line-height: 1; }
+  cursor: pointer; transition: transform .12s, border-color .12s; color: var(--text);
+  position: relative; overflow: hidden; }
+.cat-tile:hover { transform: translateY(-5px) scale(1.02); border-color: var(--red); }
+/* A diagonal shine continuously sweeps every tile (not just on hover) — reads as premium "gloss"
+   motion, staggered per-tile via nth-child so the grid shimmers in a wave rather than all at once. */
+.cat-tile::after {
+  content: ''; position: absolute; top: -60%; left: -70%; width: 45%; height: 220%;
+  background: linear-gradient(100deg, transparent, rgba(255,255,255,.7), transparent);
+  transform: rotate(20deg); pointer-events: none; animation: cat-shine 5s ease-in-out infinite;
+}
+[data-theme="dark"] .cat-tile::after { background: linear-gradient(100deg, transparent, rgba(255,255,255,.14), transparent); }
+@keyframes cat-shine { 0%, 35% { left: -70%; } 75%, 100% { left: 140%; } }
+.cat-tile-icon { font-size: 32px; line-height: 1; display: inline-block; animation: cat-icon-float 3.2s ease-in-out infinite; }
+/* Negative delays start each tile mid-cycle rather than in lockstep, so the grid reads as
+   gently alive at rest instead of every icon bobbing in unison. */
+.cat-tile:nth-child(3n+1) .cat-tile-icon { animation-delay: -.6s; }
+.cat-tile:nth-child(3n+2) .cat-tile-icon { animation-delay: -1.6s; }
+.cat-tile:nth-child(3n+3) .cat-tile-icon { animation-delay: -2.5s; }
+.cat-tile:nth-child(3n+1)::after { animation-delay: -1s; }
+.cat-tile:nth-child(3n+2)::after { animation-delay: -2.4s; }
+.cat-tile:nth-child(3n+3)::after { animation-delay: -3.7s; }
+@keyframes cat-icon-float { 0%, 100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-7px) scale(1.1); } }
+@media (prefers-reduced-motion: reduce) { .cat-tile-icon, .cat-tile::after { animation: none; } }
 .cat-tile-label { font-size: 12.5px; font-weight: 700; text-align: center; color: var(--muted); }
+
+/* Scroll-reveal: elements start faded/offset and settle into place the first time they cross into
+   view (see useReveal.ts, which toggles .in-view via IntersectionObserver). Per-grid nth-child
+   rules stagger the delay so tiles arrive one after another rather than all at once. */
+[data-reveal] { opacity: 0; transform: translateY(20px); transition: opacity .55s ease, transform .55s ease; }
+[data-reveal].in-view { opacity: 1; transform: translateY(0); }
+.cat-tile-grid [data-reveal], .event-tile-grid [data-reveal], .step-grid [data-reveal] { transition-delay: calc(var(--reveal-i, 0) * 70ms); }
+.cat-tile-grid [data-reveal]:nth-child(1) { --reveal-i: 0; } .cat-tile-grid [data-reveal]:nth-child(2) { --reveal-i: 1; }
+.cat-tile-grid [data-reveal]:nth-child(3) { --reveal-i: 2; } .cat-tile-grid [data-reveal]:nth-child(4) { --reveal-i: 3; }
+.cat-tile-grid [data-reveal]:nth-child(5) { --reveal-i: 4; } .cat-tile-grid [data-reveal]:nth-child(6) { --reveal-i: 5; }
+.cat-tile-grid [data-reveal]:nth-child(7) { --reveal-i: 6; } .cat-tile-grid [data-reveal]:nth-child(8) { --reveal-i: 7; }
+.cat-tile-grid [data-reveal]:nth-child(n+9) { --reveal-i: 8; }
+.event-tile-grid [data-reveal]:nth-child(1) { --reveal-i: 0; } .event-tile-grid [data-reveal]:nth-child(2) { --reveal-i: 1; }
+.event-tile-grid [data-reveal]:nth-child(3) { --reveal-i: 2; }
+.step-grid [data-reveal]:nth-child(1) { --reveal-i: 0; } .step-grid [data-reveal]:nth-child(2) { --reveal-i: 1; }
+.step-grid [data-reveal]:nth-child(3) { --reveal-i: 2; } .step-grid [data-reveal]:nth-child(4) { --reveal-i: 3; }
+@media (prefers-reduced-motion: reduce) {
+  [data-reveal] { opacity: 1; transform: none; transition: none; }
+}
 
 .cta-banner { display: flex; align-items: center; justify-content: space-between; gap: 24px; flex-wrap: wrap;
   background: linear-gradient(120deg, rgba(239,61,46,.14), rgba(255,106,43,.06)), var(--panel);
@@ -328,6 +401,72 @@ button { font-family: inherit; }
 .event-tile-meta { color: var(--muted); font-size: 12.5px; }
 .event-tile-countdown { color: var(--orange); font-size: 12px; font-weight: 700; }
 .event-tile-cta { margin-top: 8px; color: var(--red); font-size: 12.5px; font-weight: 700; }
+
+/* The animated "route" above the step cards — a fill bar and a car (CarSilhouette) race across
+   the same 8s loop, and each numbered checkpoint (positioned to match a step's rank, 0%-100%)
+   pulses red right as the car reaches it. All three share one duration/timing-function so they
+   stay in lockstep without any JS driving the animation. */
+.how-track { position: relative; height: 76px; margin: 0 0 8px; }
+.how-track-line { position: absolute; left: 0; right: 0; top: 50%; height: 6px; transform: translateY(-50%);
+  background-image: repeating-linear-gradient(90deg, var(--border) 0 14px, transparent 14px 28px); border-radius: 3px; }
+.how-track-fill { position: absolute; left: 0; top: 50%; height: 6px; transform: translateY(-50%); border-radius: 3px;
+  background: linear-gradient(90deg, var(--red), var(--orange));
+  box-shadow: 0 0 16px rgba(239,61,46,.5);
+  animation: how-fill-grow 6s linear infinite; }
+/* A trailing streak plus a quick vertical bounce sell "driving fast" much harder than the plain
+   float used elsewhere on the page — this is the section the user singled out to animate, so it
+   gets the boldest treatment on the whole homepage. */
+.how-track-car { position: absolute; top: 50%; width: 48px; color: var(--red);
+  filter: drop-shadow(0 6px 10px rgba(20,22,26,.35));
+  animation: how-car-move 6s linear infinite; }
+.how-track-car::before {
+  content: ''; position: absolute; right: 100%; top: 50%; width: 60px; height: 6px; transform: translateY(-50%);
+  background: linear-gradient(90deg, transparent, rgba(239,61,46,.55)); border-radius: 3px;
+}
+.how-track-car svg { width: 100%; height: auto; display: block; animation: how-car-bounce .45s ease-in-out infinite; }
+.how-track-point { position: absolute; top: 50%; transform: translate(-50%, -50%); width: 40px; height: 40px;
+  border-radius: 999px; background: var(--panel); border: 3px solid var(--border); z-index: 1;
+  display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 800;
+  color: var(--muted); animation: how-point-pulse 6s linear infinite; animation-delay: var(--delay, 0s); }
+.how-track-point::after {
+  content: ''; position: absolute; inset: -6px; border-radius: 999px; border: 3px solid var(--red);
+  opacity: 0; pointer-events: none; animation: how-point-ring 6s linear infinite; animation-delay: var(--delay, 0s);
+}
+@keyframes how-fill-grow { 0% { width: 0%; } 100% { width: 100%; } }
+@keyframes how-car-move { 0% { left: 0%; transform: translate(-50%, -60%); } 100% { left: 100%; transform: translate(-50%, -60%); } }
+@keyframes how-car-bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+@keyframes how-point-pulse {
+  0%, 3% { border-color: var(--border); color: var(--muted); background: var(--panel); }
+  6%, 16% { border-color: var(--red); color: #fff; background: var(--red); box-shadow: 0 0 22px rgba(239,61,46,.6); }
+  19%, 99% { border-color: var(--red); color: #fff; background: var(--red); box-shadow: 0 0 14px rgba(239,61,46,.35); }
+  100% { border-color: var(--border); color: var(--muted); background: var(--panel); box-shadow: none; }
+}
+@keyframes how-point-ring {
+  0%, 4% { opacity: 0; transform: scale(.6); }
+  8% { opacity: .9; transform: scale(1); }
+  24% { opacity: 0; transform: scale(2.2); }
+  100% { opacity: 0; }
+}
+/* Each step card lights up in sync with its checkpoint above it — same duration/delay, so the
+   "journey" reads as one continuous animation rather than a decoration bolted on top of static cards. */
+.step-tile { animation: how-tile-glow 6s linear infinite; animation-delay: var(--delay, 0s); }
+@keyframes how-tile-glow {
+  0%, 3% { border-color: var(--border); box-shadow: 0 1px 3px rgba(20,22,26,.04); }
+  6%, 18% { border-color: var(--red); box-shadow: 0 16px 34px rgba(239,61,46,.28); }
+  24%, 100% { border-color: var(--border); box-shadow: 0 1px 3px rgba(20,22,26,.04); }
+}
+@media (max-width: 480px) {
+  .how-track { height: 56px; }
+  .how-track-point { width: 30px; height: 30px; font-size: 12px; }
+  .how-track-car { width: 34px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .how-track-fill, .how-track-car, .how-track-car svg, .how-track-point, .how-track-point::after, .step-tile {
+    animation: none;
+  }
+  .how-track-fill { width: 100%; }
+  .how-track-point { border-color: var(--red); color: #fff; background: var(--red); }
+}
 
 .step-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
 .step-tile { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 20px; }
@@ -499,7 +638,14 @@ button { font-family: inherit; }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); gap: 13px; }
 .card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 18px; }
 .acard.card { padding: 13px; }
-.acard { display: flex; flex-direction: column; gap: 9px; transition: transform .12s, border-color .12s; }
+/* min-width: 0 overrides the browser default (min-width: auto) that grid/flex items get. Without
+   it, this card's automatic minimum width is driven by its widest piece of content — and a real
+   auction photo's own intrinsic pixel size (e.g. a 1600px-wide upload) wins that contest even
+   though the <img> is styled width:100%, because percentages don't resolve during min-content
+   sizing and the browser falls back to the image's natural size. That forced every grid track to
+   grow to fit the widest photo among all the cards, blowing the whole row past the viewport on
+   phones (root cause of the "2-up grid still needs horizontal scrolling" bug). */
+.acard { display: flex; flex-direction: column; gap: 9px; min-width: 0; transition: transform .12s, border-color .12s; }
 .acard:hover { transform: translateY(-3px); border-color: var(--red); }
 .acard h3 { margin: 2px 0; font-size: 15px; }
 .acard .cat { color: var(--red); font-size: 11px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
@@ -803,14 +949,14 @@ label { display: block; font-size: 12.5px; color: var(--muted); margin: 14px 0 6
 /* ---------- Multi-bidding ---------- */
 .multi-toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 18px; }
 .multi-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
-.mtile { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.mtile { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .mthumb { display: block; margin: -16px -16px 2px; aspect-ratio: 16 / 7; overflow: hidden; border-radius: 14px 14px 0 0; background: var(--panel-2); }
 .mthumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .mtile.leading { border-color: var(--green); box-shadow: 0 0 0 1px rgba(52,211,153,.25); }
 .mtile .x { cursor: pointer; color: var(--dim); font-size: 18px; line-height: 1; }
 .mtile .x:hover { color: var(--red); }
 .mtile .bidrow { display: flex; gap: 8px; }
-.mtile .bidrow input { flex: 1; }
+.mtile .bidrow input { flex: 1; min-width: 0; }
 .flash { animation: flash .8s ease; }
 @keyframes flash { 0% { background: rgba(52,211,153,.22); } 100% { background: transparent; } }
 

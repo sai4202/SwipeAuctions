@@ -6,6 +6,7 @@ import { formatCountdown, msUntil, eventStatus } from '../util'
 import TierCards from '../components/TierCards'
 import HeroVehicle from '../components/HeroVehicle'
 import CarSilhouette from '../components/CarSilhouette'
+import { useReveal } from '../useReveal'
 
 const EVENT_STATUS_RANK: Record<string, number> = { LIVE: 0, UPCOMING: 1, CLOSED: 2 }
 
@@ -49,6 +50,8 @@ export default function HomePage() {
       setEvents(active.slice(0, 3))
     }).catch(() => {})
   }, [isAuthenticated])
+
+  useReveal([categories, events])
 
   const search = () => navigate(`/auctions${q ? `?q=${encodeURIComponent(q)}` : ''}`)
   const chip = (slug: string, label: string, icon: string) => (
@@ -135,7 +138,7 @@ export default function HomePage() {
             </div>
             <div className="cat-tile-grid">
               {catTiles.map((c) => (
-                <button key={c.slug} className="cat-tile" onClick={() => navigate(`/auctions?category=${c.slug}`)}>
+                <button key={c.slug} className="cat-tile" data-reveal onClick={() => navigate(`/auctions?category=${c.slug}`)}>
                   <span className="cat-tile-icon">{CATEGORY_ICONS[c.slug] ?? '📦'}</span>
                   <span className="cat-tile-label">{c.name}</span>
                 </button>
@@ -158,7 +161,7 @@ export default function HomePage() {
               </div>
               <div className="event-tile-grid">
                 {events.map((e) => (
-                  <Link key={e.id} to={`/auctions?eventId=${e.id}`} className="event-tile">
+                  <Link key={e.id} to={`/auctions?eventId=${e.id}`} className="event-tile" data-reveal>
                     <span className="event-tile-name">{e.name}</span>
                     <span className="event-tile-meta">
                       {e.itemCount} item{e.itemCount === 1 ? '' : 's'}{e.location ? ` · ${e.location}` : ''}
@@ -205,9 +208,28 @@ export default function HomePage() {
             <div className="section-head">
               <h2>How SwipeAuctions works</h2>
             </div>
+            <div className="how-track" aria-hidden="true">
+              <div className="how-track-line" />
+              <div className="how-track-fill" />
+              <div className="how-track-car"><CarSilhouette /></div>
+              {STEPS.map((s, i) => (
+                <div
+                  className="how-track-point"
+                  style={{ left: `${(i / (STEPS.length - 1)) * 100}%`, '--delay': `${(i / (STEPS.length - 1)) * 6}s` } as React.CSSProperties}
+                  key={s.n}
+                >
+                  {s.n}
+                </div>
+              ))}
+            </div>
             <div className="step-grid">
-              {STEPS.map((s) => (
-                <div className="step-tile" key={s.n}>
+              {STEPS.map((s, i) => (
+                <div
+                  className="step-tile"
+                  data-reveal
+                  style={{ '--delay': `${(i / (STEPS.length - 1)) * 6}s` } as React.CSSProperties}
+                  key={s.n}
+                >
                   <span className="step-num">{s.n}</span>
                   <h3>{s.title}</h3>
                   <p>{s.body}</p>
@@ -226,7 +248,7 @@ export default function HomePage() {
       <section className="home-band band-contact" id="contact">
         <div className="container">
           <div className="home-section">
-            <div className="cta-banner">
+            <div className="cta-banner" data-reveal>
               <div>
                 <h2>We're here to help</h2>
                 <p>Question about a live auction, a wallet hold, or your subscription? Reach out any time.</p>
