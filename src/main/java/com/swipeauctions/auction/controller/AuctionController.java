@@ -51,17 +51,25 @@ public class AuctionController {
     @GetMapping
     public List<AuctionResponse> list(@RequestParam(required = false) AuctionStatus status,
                                        @RequestParam(required = false) UUID eventId) {
-        UUID viewerId = currentUserIdOrNull();
+        Viewer viewer = currentViewer();
         List<Auction> auctions = auctionService.list(status).stream()
                 .filter(a -> eventId == null || (a.getEvent() != null && a.getEvent().getId().equals(eventId)))
                 .toList();
-        BrowseBatch batch = loadBrowseBatch(auctions, viewerId);
-        return auctions.stream().map(a -> toResponse(a, viewerId, batch)).toList();
+        BrowseBatch batch = loadBrowseBatch(auctions, viewer.id());
+        return auctions.stream().map(a -> toResponse(a, viewer.id(), batch, viewer.admin())).toList();
     }
 
     @GetMapping("/{id}")
     public AuctionResponse get(@PathVariable UUID id) {
-        return toResponse(auctionService.get(id), currentUserIdOrNull());
+        Viewer viewer = currentViewer();
+        if (viewer.id() != null && !viewer.admin()) {
+            User u = loggedInUserUtil.getCurrentUser();
+            if (!Boolean.TRUE.equals(u.getRegistrationFeePaid())) {
+                throw new com.swipeauctions.common.exception.BadRequestException(
+                        "Pay the one-time registration fee to view auction details and bid.");
+            }
+        }
+        return toResponse(auctionService.get(id), viewer.id(), viewer.admin());
     }
 
     /** Auctions the current user has won (settled/CLOSED with them as the current winner). */
@@ -70,7 +78,7 @@ public class AuctionController {
         User me = loggedInUserUtil.getCurrentUser();
         List<Auction> auctions = auctionService.listWonBy(me.getId());
         BrowseBatch batch = loadBrowseBatch(auctions, me.getId());
-        return auctions.stream().map(a -> toResponse(a, me.getId(), batch)).toList();
+        return auctions.stream().map(a -> toResponse(a, me.getId(), batch, me.getRole() == Role.ADMIN)).toList();
     }
 
     /**
@@ -129,7 +137,7 @@ public class AuctionController {
         User seller = loggedInUserUtil.getCurrentUser();
         Auction a = auctionService.createAuction(seller, req.listingId(), req.basePrice(),
                 req.startTime(), req.endTime(), req.eventId());
-        return toResponse(a, seller.getId());
+        return toResponse(a, seller.getId(), seller.getRole() == Role.ADMIN);
     }
 
     /** Register to bid: places the refundable EMD (Earnest Money Deposit) hold. Dealers are exempt from the EMD, but not from KYC. */
@@ -194,7 +202,7 @@ public class AuctionController {
     public AuctionResponse completePayment(@PathVariable UUID id) {
         User winner = loggedInUserUtil.getCurrentUser();
         Auction a = auctionService.completeSettlement(id, winner);
-        return toResponse(a, winner.getId());
+        return toResponse(a, winner.getId(), winner.getRole() == Role.ADMIN);
     }
 
     private void requireTierAccess(User bidder, Auction a) {
@@ -205,16 +213,30 @@ public class AuctionController {
         }
     }
 
-    /** Current user's id if a valid JWT is present, else null (browse is public). */
-    private UUID currentUserIdOrNull() {
+    private record Viewer(UUID id, boolean admin) {}
+
+    /**
+     * Current viewer's id/role if a valid JWT is present, else an anonymous {@link Viewer} (browse
+     * is public). Admin-portal logins authenticate against a separate {@code Admin} table/JWT realm
+     * — {@link LoggedInUserUtil#getCurrentUser()} throws for them since they have no {@code User}
+     * row, so a real admin session must be detected via {@link LoggedInUserUtil#getCurrentAdmin()}
+     * instead, not just treated as anonymous.
+     */
+    private Viewer currentViewer() {
         try {
-            return loggedInUserUtil.getCurrentUser().getId();
+            User u = loggedInUserUtil.getCurrentUser();
+            return new Viewer(u.getId(), u.getRole() == Role.ADMIN);
         } catch (RuntimeException e) {
-            return null;
+            try {
+                loggedInUserUtil.getCurrentAdmin();
+                return new Viewer(null, true);
+            } catch (RuntimeException e2) {
+                return new Viewer(null, false);
+            }
         }
     }
 
-    private AuctionResponse toResponse(Auction a, UUID viewerId) {
+    private AuctionResponse toResponse(Auction a, UUID viewerId, boolean isAdminViewer) {
         var l = a.getListing();
         List<ListingImage> images = listingImageRepository.findByListing_IdOrderBySortOrderAsc(l.getId());
         String coverImageUrl = images.stream().filter(ListingImage::isCover).findFirst()
@@ -233,6 +255,7 @@ public class AuctionController {
                 && (walletService.hasActiveHold(a.getId(), viewerId) || yourBid != null);
         Integer bidsRemaining = viewerId == null ? null : (int) Math.max(0,
                 BidService.MAX_BIDS_PER_BIDDER_PER_AUCTION - bidRepository.countByAuction_IdAndBidder_Id(a.getId(), viewerId));
+        User winner = a.getCurrentWinner();
         return new AuctionResponse(
                 a.getId(), l.getId(), l.getTitle(),
                 a.getBasePrice(), a.getCurrentHighestBid(), a.getStatus(),
@@ -243,11 +266,13 @@ public class AuctionController {
                 yourBid, attributes, isWinner, a.isSettlementPaid(),
                 a.getEvent() != null ? a.getEvent().getId() : null,
                 a.getEvent() != null ? a.getEvent().getName() : null,
-                l.getSeller().getEmail(), l.isSwipeStock(), l.getRequiredTier(), registered, bidsRemaining);
+                l.getSeller().getEmail(), l.isSwipeStock(), l.getRequiredTier(), registered, bidsRemaining,
+                isAdminViewer && winner != null ? winner.getId() : null,
+                isAdminViewer && winner != null ? winner.getEmail() : null);
     }
 
-    /** Same shape as {@link #toResponse(Auction, UUID)} but reads from a pre-fetched {@link BrowseBatch}. */
-    private AuctionResponse toResponse(Auction a, UUID viewerId, BrowseBatch batch) {
+    /** Same shape as {@link #toResponse(Auction, UUID, boolean)} but reads from a pre-fetched {@link BrowseBatch}. */
+    private AuctionResponse toResponse(Auction a, UUID viewerId, BrowseBatch batch, boolean isAdminViewer) {
         var l = batch.listingsById().getOrDefault(a.getListing().getId(), a.getListing());
         List<ListingImage> images = batch.imagesByListingId().getOrDefault(l.getId(), List.of());
         String coverImageUrl = images.stream().filter(ListingImage::isCover).findFirst()
@@ -262,6 +287,7 @@ public class AuctionController {
                 && (batch.auctionIdsWithActiveHold().contains(a.getId()) || yourBid != null);
         Integer bidsRemaining = viewerId == null ? null : (int) Math.max(0,
                 BidService.MAX_BIDS_PER_BIDDER_PER_AUCTION - batch.yourBidCountByAuctionId().getOrDefault(a.getId(), 0L));
+        User winner = a.getCurrentWinner();
         return new AuctionResponse(
                 a.getId(), l.getId(), l.getTitle(),
                 a.getBasePrice(), a.getCurrentHighestBid(), a.getStatus(),
@@ -272,7 +298,9 @@ public class AuctionController {
                 yourBid, attributes, isWinner, a.isSettlementPaid(),
                 a.getEvent() != null ? a.getEvent().getId() : null,
                 a.getEvent() != null ? a.getEvent().getName() : null,
-                l.getSeller().getEmail(), l.isSwipeStock(), l.getRequiredTier(), registered, bidsRemaining);
+                l.getSeller().getEmail(), l.isSwipeStock(), l.getRequiredTier(), registered, bidsRemaining,
+                isAdminViewer && winner != null ? winner.getId() : null,
+                isAdminViewer && winner != null ? winner.getEmail() : null);
     }
 
     public record CreateAuctionRequest(
@@ -289,7 +317,10 @@ public class AuctionController {
             String zip, String coverImageUrl, List<String> images, BigDecimal yourBid,
             Map<String, String> attributes, boolean isWinner, boolean settlementPaid,
             UUID eventId, String eventName, String sellerEmail, boolean swipeStock,
-            SubscriptionTier requiredTier, boolean registered, Integer bidsRemaining) {}
+            SubscriptionTier requiredTier, boolean registered, Integer bidsRemaining,
+            // Only populated for an admin viewer (see toResponse) — the current highest bidder's
+            // identity is private and must never leak to regular bidders browsing the same catalogue.
+            UUID currentWinnerId, String currentWinnerEmail) {}
 
     public record PlaceBidRequest(@NotNull BigDecimal amount) {}
 

@@ -8,9 +8,10 @@ export default function TermsPage() {
         <section>
           <h3 style={{ marginBottom: 6 }}>Registering to bid</h3>
           <p className="muted">
-            You must complete KYC verification before bidding. Most auctions require a refundable EMD
-            (Earnest Money Deposit), held from your wallet balance when you register — it's fully refunded
-            within 48 hours if you don't win. Dealers are exempt from the EMD but still require KYC.
+            New accounts pay a one-time registration fee to unlock auction details and bidding — see the
+            current fee on the registration page. You must also complete KYC verification before bidding.
+            There's no separate deposit required per auction: your wallet's bidding credit limit (unlocked
+            by depositing funds) is what determines what you can bid on any given item.
           </p>
         </section>
         <section>
@@ -25,9 +26,9 @@ export default function TermsPage() {
         <section>
           <h3 style={{ marginBottom: 6 }}>Winning & settlement</h3>
           <p className="muted">
-            The winning bidder's EMD is captured toward the final price; any remaining balance owed must be
-            settled from wallet funds to complete the purchase. Listings requiring a subscription tier can
-            only be bid on by accounts holding that tier or higher.
+            The winning bidder must settle the full winning amount from their wallet to complete the
+            purchase. Listings requiring a subscription tier can only be bid on by accounts holding that
+            tier or higher.
           </p>
         </section>
         <section>

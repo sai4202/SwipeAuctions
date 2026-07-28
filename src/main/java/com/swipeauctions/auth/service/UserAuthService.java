@@ -61,4 +61,12 @@ public interface UserAuthService {
     String logoutDevice(
             LogoutDeviceRequestDTO request
     );
+
+    /**
+     * Final step of registration: a dev-instant "payment" (no real gateway, mirrors
+     * WalletService.topUp's "bypasses Stripe entirely" stub pattern) that marks the platform's
+     * one-time registration fee as paid for this account. Called authenticated — the frontend logs
+     * the user in immediately after mobile-OTP verification specifically so this call has a JWT.
+     */
+    String payRegistrationFee(String email);
 }

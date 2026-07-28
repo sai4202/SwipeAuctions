@@ -13,6 +13,7 @@ import com.swipeauctions.catalog.repository.ListingImageRepository;
 import com.swipeauctions.catalog.repository.ListingRepository;
 import com.swipeauctions.common.exception.UnauthorizedException;
 import com.swipeauctions.common.util.LoggedInUserUtil;
+import com.swipeauctions.enums.Role;
 import com.swipeauctions.event.entity.AuctionEvent;
 import com.swipeauctions.notification.AuctionNotificationService;
 import com.swipeauctions.settings.service.SubscriptionService;
@@ -56,6 +57,10 @@ class AuctionControllerListTest {
                 listingImageRepository, listingAttributeRepository, listingRepository, notificationService,
                 loggedInUserUtil, subscriptionService);
         lenient().when(loggedInUserUtil.getCurrentUser()).thenThrow(new UnauthorizedException("anonymous"));
+        // Without this, an unstubbed mock call to getCurrentAdmin() returns null instead of throwing,
+        // which AuctionController.currentViewer() would read as "found an admin" — silently resolving
+        // every "anonymous" call in this test as an admin viewer instead of a real anonymous one.
+        lenient().when(loggedInUserUtil.getCurrentAdmin()).thenThrow(new UnauthorizedException("anonymous"));
         lenient().when(listingImageRepository.findByListing_IdOrderBySortOrderAsc(any())).thenReturn(List.of());
         lenient().when(listingAttributeRepository.findByListing_Id(any())).thenReturn(List.of());
         lenient().when(bidRepository.countByAuction_Id(any())).thenReturn(0L);
@@ -102,5 +107,31 @@ class AuctionControllerListTest {
 
         assertThat(result).extracting(AuctionController.AuctionResponse::id)
                 .containsExactly(inMatchingEvent.getId());
+    }
+
+    @Test
+    void currentWinnerIdentity_hiddenFromAnonymousViewer_visibleToAdminViewer() {
+        User winner = User.builder().email("winner@swipeauctions.test").build();
+        winner.setId(UUID.randomUUID());
+        Auction auction = auctionFor(null);
+        auction.setCurrentWinner(winner);
+        when(auctionService.list(null)).thenReturn(List.of(auction));
+
+        List<AuctionController.AuctionResponse> anonymousResult = controller.list(null, null);
+        assertThat(anonymousResult).hasSize(1);
+        assertThat(anonymousResult.get(0).currentWinnerId()).isNull();
+        assertThat(anonymousResult.get(0).currentWinnerEmail()).isNull();
+
+        User admin = User.builder().role(Role.ADMIN).email("admin@swipeauctions.test").build();
+        admin.setId(UUID.randomUUID());
+        // doReturn(...), not when(...).thenReturn(...): getCurrentUser() is currently stubbed to
+        // throw (setUp), and when(mock.method()) would invoke that throwing stub before Mockito
+        // gets a chance to record the new one.
+        org.mockito.Mockito.doReturn(admin).when(loggedInUserUtil).getCurrentUser();
+
+        List<AuctionController.AuctionResponse> adminResult = controller.list(null, null);
+        assertThat(adminResult).hasSize(1);
+        assertThat(adminResult.get(0).currentWinnerId()).isEqualTo(winner.getId());
+        assertThat(adminResult.get(0).currentWinnerEmail()).isEqualTo(winner.getEmail());
     }
 }

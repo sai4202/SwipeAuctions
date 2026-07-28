@@ -32,7 +32,7 @@ export default function AdminLoginPage() {
         <p>Manage listings, resolve wallet holds, and keep every live auction running smoothly — all from one console.</p>
         <ul>
           <li>🛠️ Manage users, listings &amp; categories</li>
-          <li>🔓 Release or refund EMD holds in one click</li>
+          <li>🔓 Release or refund wallet holds in one click</li>
           <li>📊 Monitor live auctions &amp; settlements in real time</li>
         </ul>
       </aside>

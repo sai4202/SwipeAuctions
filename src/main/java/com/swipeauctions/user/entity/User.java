@@ -49,6 +49,13 @@ public class User extends BaseEntity {
     private KycStatus kycStatus =
             KycStatus.NOT_SUBMITTED;
 
+    @Builder.Default
+    @Column(name = "registration_fee_paid", nullable = false)
+    private Boolean registrationFeePaid = false;
+
+    @Column(name = "registration_fee_paid_at")
+    private LocalDateTime registrationFeePaidAt;
+
     @Column(
             name = "user_reference_number",
             nullable = false,

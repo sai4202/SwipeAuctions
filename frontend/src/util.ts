@@ -37,6 +37,13 @@ export function formatCountdown(ms: number): string {
   return `${pad(m)}:${pad(sec)}`
 }
 
+/** Opens a user's admin "User Details" view as its own browser tab — used wherever an admin can
+ *  see a bidder's identity (admin dashboard tables, the current-bid link on a catalogue card) so
+ *  jumping to that person's profile never loses the page the admin was already on. */
+export function openUserDetails(userId: string) {
+  window.open(`/admin?tab=users&userId=${userId}`, '_blank', 'noopener,noreferrer')
+}
+
 export function money(n: number | null | undefined): string {
   if (n == null) return '—'
   const num = Number(n)

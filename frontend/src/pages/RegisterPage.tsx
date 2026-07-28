@@ -1,13 +1,19 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
-import { register, verifyEmailOtp, verifyMobileOtp, resendOtp, getRegistrationFee, errorMessage } from '../api'
+import { useNavigate, useLocation, Link } from 'react-router-dom'
+import { register, verifyEmailOtp, verifyMobileOtp, resendOtp, getRegistrationFee, login, payRegistrationFee, errorMessage } from '../api'
+import { useAuth } from '../auth'
 import { money } from '../util'
 
 const RESEND_COOLDOWN_SECONDS = 30
 
 export default function RegisterPage() {
   const navigate = useNavigate()
-  const [step, setStep] = useState<'form' | 'email-otp' | 'mobile-otp'>('form')
+  const location = useLocation()
+  const { signIn, markRegistrationFeePaid } = useAuth()
+  // Anonymous visitors bounced here from an auction detail page (RequireAuth redirectTo="/register")
+  // carry the page they were headed to — send them back there once the fee is paid.
+  const returnTo = (location.state as { from?: string } | null)?.from
+  const [step, setStep] = useState<'form' | 'email-otp' | 'mobile-otp' | 'pay-fee'>('form')
   const [email, setEmail] = useState('')
   const [mobileNumber, setMobileNumber] = useState('')
   const [password, setPassword] = useState('')
@@ -77,8 +83,31 @@ export default function RegisterPage() {
     e.preventDefault(); setError(''); setOk(''); setBusy(true)
     try {
       await verifyMobileOtp(email, otp)
-      setOk('Mobile verified! Redirecting to sign in…')
-      setTimeout(() => navigate('/login'), 1200)
+      // Sign in immediately (both OTPs are now verified, so the account is active) so the final
+      // "pay the registration fee" step can call an authenticated endpoint, instead of making the
+      // user log in separately just to reach it.
+      const data = await login(email, password)
+      if (data.deviceLimitReached) {
+        setOk('Mobile verified! Redirecting to sign in…')
+        setTimeout(() => navigate('/login'), 1200)
+        return
+      }
+      signIn({
+        token: data.token, email: data.email, role: data.role, kycCompleted: data.kycCompleted,
+        registrationFeePaid: data.registrationFeePaid,
+        subscriptionTier: data.subscriptionTier, subscriptionExpiresAt: data.subscriptionExpiresAt,
+      })
+      setOk('')
+      setStep('pay-fee')
+    } catch (err) { setError(errorMessage(err)) } finally { setBusy(false) }
+  }
+
+  const doPayFee = async () => {
+    setError(''); setOk(''); setBusy(true)
+    try {
+      await payRegistrationFee()
+      markRegistrationFeePaid()
+      navigate(returnTo || '/')
     } catch (err) { setError(errorMessage(err)) } finally { setBusy(false) }
   }
 
@@ -155,6 +184,22 @@ export default function RegisterPage() {
                 : <button type="button" className="linkbtn" onClick={handleResend} disabled={resending}>{resending ? 'Resending…' : 'Resend OTP'}</button>}
             </p>
           </form>
+        )}
+        {step === 'pay-fee' && (
+          <div>
+            <h1 className="page">Complete registration</h1>
+            <p className="muted">
+              {registrationFee
+                ? `Pay a one-time registration fee of ${money(registrationFee)} to activate your account and start browsing and bidding.`
+                : 'Complete your one-time registration payment to activate your account.'}
+            </p>
+            {error && <div className="error">{error}</div>}
+            <div style={{ marginTop: 18 }}>
+              <button className="btn block" disabled={busy} onClick={doPayFee}>
+                {busy ? 'Processing…' : `Pay ${registrationFee ? money(registrationFee) : ''} to complete registration`}
+              </button>
+            </div>
+          </div>
         )}
       </div>
     </div>

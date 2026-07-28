@@ -6,7 +6,7 @@ import { money } from '../util'
 const BASE_FEATURES = [
   'Browse & bid on standard listings',
   'Real-time live bidding',
-  'Refundable EMD — refunded within 48 hours on losing bids',
+  'No per-item deposits — bid freely within your wallet credit limit',
   'Leveraged wallet credit limit on every deposit',
 ]
 

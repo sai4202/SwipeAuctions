@@ -10,7 +10,7 @@ function auction(overrides: Partial<Auction> = {}): Auction {
     city: null, state: null, zip: null, coverImageUrl: null, images: [], yourBid: null,
     attributes: {}, isWinner: false, settlementPaid: false, eventId: null, eventName: null,
     sellerEmail: 'seller@swipeauctions.test', swipeStock: false, requiredTier: 'NONE', registered: false,
-    bidsRemaining: null,
+    bidsRemaining: null, currentWinnerId: null, currentWinnerEmail: null,
     ...overrides,
   }
 }

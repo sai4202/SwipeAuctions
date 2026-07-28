@@ -24,10 +24,10 @@ const FALLBACK_CATEGORIES = [
 ]
 
 const STEPS = [
-  { n: '1', title: 'Sign up & verify KYC', body: 'Create an account and complete a quick, RBI-regulated identity check.' },
+  { n: '1', title: 'Register & verify KYC', body: 'Create an account, pay a one-time registration fee, and complete a quick, RBI-regulated identity check.' },
   { n: '2', title: 'Deposit & unlock credit', body: 'Every ₹5,000 you deposit unlocks ₹2.5 crore of bidding credit on your wallet.' },
-  { n: '3', title: 'Bid live', body: 'Register with a refundable EMD and bid in real time as the clock counts down.' },
-  { n: '4', title: 'Win & settle', body: 'Winners settle instantly; everyone else gets their EMD refunded within 48 hours.' },
+  { n: '3', title: 'Bid live', body: 'Place bids in real time as the clock counts down — no per-item deposits once you’re registered.' },
+  { n: '4', title: 'Win & settle', body: 'Winners settle instantly from their wallet; everyone else keeps their full credit limit intact.' },
 ]
 
 export default function HomePage() {
@@ -107,7 +107,7 @@ export default function HomePage() {
           </div>
           <div className="trust-item">
             <span className="trust-icon">⚡</span>
-            <span className="trust-label">48-Hour EMD Refund</span>
+            <span className="trust-label">Instant Credit Unlock</span>
           </div>
           <div className="trust-item">
             <span className="trust-icon">✅</span>

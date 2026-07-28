@@ -27,6 +27,15 @@ public interface BidRepository extends JpaRepository<Bid, UUID> {
     /** All of one bidder's bids across a set of auctions — grouped/maxed in-memory to get "your bid" per auction. */
     List<Bid> findByAuction_IdInAndBidder_Id(List<UUID> auctionIds, UUID bidderId);
 
+    /** Every bid a user has ever placed, across every auction — the admin "bidding activity" view
+     *  groups/maxes these in-memory per auction the same way findByAuction_IdInAndBidder_Id's callers do. */
+    List<Bid> findByBidder_Id(UUID bidderId);
+
+    /** How many auctions this user is *currently* bidding on (item still OPEN) — the admin user list's
+     *  "Active Bids" column. Distinct because a bidder can have placed several bids on one auction. */
+    @Query("select count(distinct b.auction.id) from Bid b where b.bidder.id = :bidderId and b.auction.status = com.swipeauctions.auction.enums.AuctionStatus.OPEN")
+    long countDistinctOpenAuctionsByBidder(@Param("bidderId") UUID bidderId);
+
     interface AuctionBidCount {
         UUID getAuctionId();
         long getCnt();

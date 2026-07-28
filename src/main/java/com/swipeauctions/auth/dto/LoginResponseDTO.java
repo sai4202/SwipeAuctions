@@ -35,6 +35,8 @@ public class LoginResponseDTO {
 
     private Boolean kycCompleted;
 
+    private Boolean registrationFeePaid;
+
     private SubscriptionTier subscriptionTier;
 
     private LocalDateTime subscriptionExpiresAt;

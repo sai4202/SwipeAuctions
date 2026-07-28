@@ -5,6 +5,7 @@ import com.swipeauctions.auction.entity.Auction;
 import com.swipeauctions.auction.enums.AuctionStatus;
 import com.swipeauctions.auction.repository.AuctionRepository;
 import com.swipeauctions.auction.service.AuctionService;
+import com.swipeauctions.bidding.entity.Bid;
 import com.swipeauctions.bidding.repository.BidRepository;
 import com.swipeauctions.catalog.entity.Category;
 import com.swipeauctions.catalog.entity.CategoryAttributeDef;
@@ -102,6 +103,21 @@ public class AdminController {
         User user = adminUserService.getUser(id);
         return holdRepository.findByBidder_IdAndStatus(user.getId(), HoldStatus.ACTIVE).stream()
                 .map(AdminController::toHold).toList();
+    }
+
+    /** Everything this user has bid on, one row per auction (their own best bid on it) — the "how
+     *  many items is he bidding" detail view, newest activity first. */
+    @GetMapping("/users/{id}/bids")
+    public List<UserBidResponse> userBids(@PathVariable UUID id) {
+        User user = adminUserService.getUser(id);
+        java.util.Map<UUID, Bid> bestPerAuction = new java.util.LinkedHashMap<>();
+        for (Bid b : bidRepository.findByBidder_Id(user.getId())) {
+            bestPerAuction.merge(b.getAuction().getId(), b,
+                    (existing, candidate) -> candidate.getAmount().compareTo(existing.getAmount()) > 0 ? candidate : existing);
+        }
+        return bestPerAuction.values().stream()
+                .sorted(java.util.Comparator.comparing(Bid::getPlacedAt).reversed())
+                .map(AdminController::toUserBid).toList();
     }
 
     /** Force-release a stuck/locked EMD hold back to the bidder's available balance. */
@@ -251,9 +267,18 @@ public class AdminController {
 
     UserResponse toUser(User u) {
         Wallet w = walletService.getWallet(u);
+        long activeBidCount = bidRepository.countDistinctOpenAuctionsByBidder(u.getId());
         return new UserResponse(u.getId(), u.getEmail(), u.getMobileNumber(), u.getRole(),
                 u.getActive(), u.getKycStatus(), u.getEmailVerified(), u.getMobileVerified(), u.getCreatedAt(),
-                w.getAvailableBalance(), w.getHeldBalance(), walletService.creditLimitFor(w.getAvailableBalance()));
+                w.getAvailableBalance(), w.getHeldBalance(), walletService.creditLimitFor(w.getAvailableBalance()),
+                u.getSubscriptionTier(), u.getSubscriptionExpiresAt(), activeBidCount);
+    }
+
+    static UserBidResponse toUserBid(Bid b) {
+        Auction a = b.getAuction();
+        boolean leading = a.getCurrentWinner() != null && a.getCurrentWinner().getId().equals(b.getBidder().getId());
+        return new UserBidResponse(a.getId(), a.getListing().getTitle(), a.getListing().getCategory().getName(),
+                b.getAmount(), a.getCurrentHighestBid(), a.getStatus(), leading, b.getPlacedAt(), a.getCurrentEndTime());
     }
 
     static HoldResponse toHold(BidEligibilityHold h) {
@@ -284,18 +309,28 @@ public class AdminController {
     }
 
     AuctionResponse toAuction(Auction a) {
+        User winner = a.getCurrentWinner();
         return new AuctionResponse(a.getId(), a.getListing().getId(), a.getListing().getTitle(),
                 a.getListing().getSeller().getEmail(), a.getBasePrice(), a.getCurrentHighestBid(),
                 a.getStatus(), a.getStartTime(), a.getCurrentEndTime(),
-                bidRepository.countByAuction_Id(a.getId()));
+                bidRepository.countByAuction_Id(a.getId()),
+                winner != null ? winner.getId() : null, winner != null ? winner.getEmail() : null);
     }
 
     public record UserResponse(UUID id, String email, String mobileNumber, Role role, Boolean active,
                                KycStatus kycStatus, Boolean emailVerified, Boolean mobileVerified,
                                LocalDateTime createdAt, BigDecimal walletAvailableBalance,
-                               BigDecimal walletHeldBalance, BigDecimal walletCreditLimit) {}
+                               BigDecimal walletHeldBalance, BigDecimal walletCreditLimit,
+                               SubscriptionTier subscriptionTier, LocalDateTime subscriptionExpiresAt,
+                               long activeBidCount) {}
 
     public record HoldResponse(UUID id, UUID auctionId, String listingTitle, BigDecimal amount, LocalDateTime createdAt) {}
+
+    /** One row per auction this user has bid on — their own best bid vs. the auction's real current
+     *  highest, so the admin can tell "accepted but trailing" from "actually winning" at a glance. */
+    public record UserBidResponse(UUID auctionId, String listingTitle, String categoryName,
+                                  BigDecimal yourBid, BigDecimal currentHighestBid, AuctionStatus auctionStatus,
+                                  boolean leading, LocalDateTime placedAt, LocalDateTime currentEndTime) {}
 
     public record ReleaseHoldResponse(BigDecimal availableBalance, BigDecimal heldBalance, BigDecimal creditLimit) {}
 
@@ -307,7 +342,8 @@ public class AdminController {
 
     public record AuctionResponse(UUID id, UUID listingId, String title, String sellerEmail,
                                   BigDecimal basePrice, BigDecimal currentHighestBid, AuctionStatus status,
-                                  LocalDateTime startTime, LocalDateTime currentEndTime, long bidCount) {}
+                                  LocalDateTime startTime, LocalDateTime currentEndTime, long bidCount,
+                                  UUID currentWinnerId, String currentWinnerEmail) {}
 
     public record UpdateAuctionRequest(@NotBlank String title,
                                        @jakarta.validation.constraints.NotNull @jakarta.validation.constraints.Positive BigDecimal basePrice,

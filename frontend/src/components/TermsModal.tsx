@@ -9,10 +9,10 @@ interface Props {
 
 const TERMS: { text: string; highlight?: boolean }[] = [
   { text: 'All bids are final and binding — once placed, a bid cannot be withdrawn or cancelled.', highlight: true },
-  { text: 'Your refundable EMD (Earnest Money Deposit) is forfeited if you win this auction and do not complete settlement within the payment window.', highlight: true },
+  { text: 'Bidding is backed by your wallet\'s bidding credit limit — you cannot bid beyond what your current deposit unlocks.', highlight: true },
   { text: 'Items are sold on an "as-is, where-is" basis. Review the listing photos, specifications, and condition notes carefully before bidding.' },
   { text: 'A bid placed close to the closing time may trigger an anti-snipe extension, pushing the auction’s end time back to give other bidders a fair chance to respond.' },
-  { text: 'Winning the auction obligates you to pay the full winning amount (beyond your EMD, if any remains) to claim the item.' },
+  { text: 'Winning the auction obligates you to pay the full winning amount from your wallet within the settlement window to claim the item.' },
   { text: 'Your KYC details must stay accurate and complete for the life of this auction — false or incomplete KYC can void your bid.' },
   { text: 'Any dispute about this auction or item must be raised through SwipeAuctions’ in-app reporting before pursuing any other remedy.' },
 ]

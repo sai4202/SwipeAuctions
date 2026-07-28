@@ -7,7 +7,6 @@ import com.swipeauctions.bidding.entity.Bid;
 import com.swipeauctions.bidding.repository.BidRepository;
 import com.swipeauctions.common.exception.BadRequestException;
 import com.swipeauctions.common.exception.ResourceNotFoundException;
-import com.swipeauctions.enums.Role;
 import com.swipeauctions.notification.AuctionNotificationService;
 import com.swipeauctions.user.entity.User;
 import com.swipeauctions.wallet.service.WalletService;
@@ -27,9 +26,9 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Core bid placement. One transaction: pessimistic-lock the auction, validate, check the wallet
- * deposit hold (the bidding gate), insert the bid, update the highest bid, apply anti-snipe, and
- * broadcast to STOMP subscribers only AFTER_COMMIT.
+ * Core bid placement. One transaction: pessimistic-lock the auction, validate, check the
+ * registration-fee-paid and credit-limit gates, insert the bid, update the highest bid, apply
+ * anti-snipe, and broadcast to STOMP subscribers only AFTER_COMMIT.
  */
 @Service
 @RequiredArgsConstructor
@@ -74,9 +73,8 @@ public class BidService {
         if (!Boolean.TRUE.equals(bidder.getKycCompleted())) {
             throw new BadRequestException("Complete your KYC verification before bidding.");
         }
-        // Dealers are pre-vetted and skip the EMD bidding gate entirely (KYC is still required, above).
-        if (bidder.getRole() != Role.DEALER && !walletService.hasActiveHold(auctionId, bidder.getId())) {
-            throw new BadRequestException("Register to bid first — a refundable EMD deposit is required");
+        if (!Boolean.TRUE.equals(bidder.getRegistrationFeePaid())) {
+            throw new BadRequestException("Pay the one-time registration fee to unlock bidding.");
         }
 
         long bidsPlaced = bidRepository.countByAuction_IdAndBidder_Id(auctionId, bidder.getId());

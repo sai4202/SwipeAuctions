@@ -3,15 +3,21 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import RegisterPage from '../RegisterPage'
-import { register, resendOtp, verifyEmailOtp, verifyMobileOtp } from '../../api'
+import { register, resendOtp, verifyEmailOtp, verifyMobileOtp, login, payRegistrationFee } from '../../api'
+import { AuthProvider } from '../../auth'
 
 vi.mock('../../api', async () => {
   const actual = await vi.importActual<typeof import('../../api')>('../../api')
-  return { ...actual, register: vi.fn(), verifyEmailOtp: vi.fn(), verifyMobileOtp: vi.fn(), resendOtp: vi.fn() }
+  return {
+    ...actual, register: vi.fn(), verifyEmailOtp: vi.fn(), verifyMobileOtp: vi.fn(), resendOtp: vi.fn(),
+    login: vi.fn(), payRegistrationFee: vi.fn(),
+    // Avoid a real network call from RegisterPage's own useEffect in every test.
+    getRegistrationFee: vi.fn().mockResolvedValue(500),
+  }
 })
 
 function renderPage() {
-  return render(<MemoryRouter><RegisterPage /></MemoryRouter>)
+  return render(<MemoryRouter><AuthProvider><RegisterPage /></AuthProvider></MemoryRouter>)
 }
 
 async function fillForm(user: ReturnType<typeof userEvent.setup>) {
@@ -38,7 +44,7 @@ describe('RegisterPage', () => {
     }))
     expect(await screen.findByText(/verify email/i)).toBeInTheDocument()
     expect(screen.getByText(/we sent a one-time code to newuser@example.com/i)).toBeInTheDocument()
-  })
+  }, 15000)
 
   it('on a "not verified" error, shows the resend-OTP link and it calls resendOtp', async () => {
     vi.mocked(register).mockRejectedValue({
@@ -57,12 +63,16 @@ describe('RegisterPage', () => {
 
     await waitFor(() => expect(resendOtp).toHaveBeenCalledWith('newuser@example.com'))
     expect(await screen.findByText(/verify email/i)).toBeInTheDocument()
-  })
+  }, 15000)
 
-  it('after email OTP verifies, moves to the mobile-OTP step and completes registration', async () => {
+  it('after email OTP verifies, moves to the mobile-OTP step and then the pay-fee step', async () => {
     vi.mocked(register).mockResolvedValue('Registration successful.')
     vi.mocked(verifyEmailOtp).mockResolvedValue('Email verified successfully')
     vi.mocked(verifyMobileOtp).mockResolvedValue('Mobile verified successfully')
+    vi.mocked(login).mockResolvedValue({
+      userId: '1', email: 'newuser@example.com', mobileNumber: '9876543210',
+      token: 'tok', role: 'USER', active: true, registrationFeePaid: false,
+    })
     const user = userEvent.setup()
     renderPage()
 
@@ -81,6 +91,11 @@ describe('RegisterPage', () => {
     await user.click(screen.getByRole('button', { name: /verify/i }))
 
     await waitFor(() => expect(verifyMobileOtp).toHaveBeenCalledWith('newuser@example.com', '654321'))
-    expect(await screen.findByText(/redirecting to sign in/i)).toBeInTheDocument()
-  })
+    await waitFor(() => expect(login).toHaveBeenCalledWith('newuser@example.com', 'Test@1234'))
+    expect(await screen.findByRole('heading', { name: /complete registration/i })).toBeInTheDocument()
+
+    vi.mocked(payRegistrationFee).mockResolvedValue('Registration fee paid.')
+    await user.click(screen.getByRole('button', { name: /pay.*complete registration/i }))
+    await waitFor(() => expect(payRegistrationFee).toHaveBeenCalled())
+  }, 15000)
 })

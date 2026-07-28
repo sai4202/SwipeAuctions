@@ -3,7 +3,7 @@ import { useParams, useSearchParams, Link } from 'react-router-dom'
 import { Client } from '@stomp/stompjs'
 import SockJS from 'sockjs-client'
 import {
-  getAuction, registerToBid, placeBid, raiseDispute, completeAuctionPayment, errorMessage,
+  getAuction, placeBid, raiseDispute, completeAuctionPayment, getRegistrationFee, payRegistrationFee, errorMessage,
   API_BASE, type Auction,
 } from '../api'
 import { useAuth } from '../auth'
@@ -29,7 +29,7 @@ export default function AuctionDetailPage() {
   // everything. A link below lets them reveal the gallery/specs without losing this focused view.
   const cameFromBidNow = searchParams.get('bid') === '1'
   const [showFullDetails, setShowFullDetails] = useState(!cameFromBidNow)
-  const { isAuthenticated, kycCompleted, role, subscriptionTier } = useAuth()
+  const { isAuthenticated, kycCompleted, role, subscriptionTier, markRegistrationFeePaid } = useAuth()
   const isAdmin = role === 'ADMIN'
   const { wallet, refreshWallet } = useWallet()
   const [error, setError] = useState('')
@@ -40,7 +40,6 @@ export default function AuctionDetailPage() {
     () => getAuction(id as string),
     { onError: (e) => setError(errorMessage(e)) },
   )
-  const [registered, setRegistered] = useState(false)
   const [amount, setAmount] = useState('')
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState(false)
@@ -54,15 +53,19 @@ export default function AuctionDetailPage() {
   const [confirmingBid, setConfirmingBid] = useState(false)
   const [showTerms, setShowTerms] = useState(false)
   const [activeImage, setActiveImage] = useState(0)
+  // Registration-fee "pay to view" wall — shown in place of the whole page when getAuction() fails
+  // with the fee-required error (see the `!auction` early return below).
+  const [registrationFee, setRegistrationFee] = useState<number | null>(null)
+  const [payingFee, setPayingFee] = useState(false)
+  const [feeError, setFeeError] = useState('')
+  // Insufficient-credit-limit is surfaced as a popup (not an inline banner/pre-emptive block) —
+  // the bid form always shows once fee-paid/KYC/tier pass; only a failed bid submission triggers this.
+  const [creditLimitError, setCreditLimitError] = useState('')
   const actionRef = useRef<HTMLDivElement>(null)
   const amountRef = useRef<HTMLInputElement>(null)
   const jumpedToBid = useRef(false)
 
-  useEffect(() => { setActiveImage(0); setRegistered(false); jumpedToBid.current = false }, [id])
-  // The backend knows whether this user already has an active EMD hold (or has already bid) on this
-  // auction — without this, `registered` would reset to false on every reload/revisit and show "Pay
-  // EMD & Register" again even though they're already registered.
-  useEffect(() => { if (auction?.registered) setRegistered(true) }, [auction])
+  useEffect(() => { setActiveImage(0); jumpedToBid.current = false }, [id])
   useEffect(() => { const t = setInterval(() => setTick((x) => x + 1), 1000); return () => clearInterval(t) }, [])
 
   // "Bid Now" (vs. "View Details") on the card links here with ?bid=1[&amount=N] — jump straight to
@@ -100,22 +103,20 @@ export default function AuctionDetailPage() {
     return () => { void client.deactivate() }
   }, [id])
 
-  const doRegister = async () => {
-    if (!id) return
-    setError(''); setMsg(''); setBusy(true)
-    try {
-      const r = await registerToBid(id)
-      setRegistered(true)
-      refreshWallet()
-      setMsg(r.message)
-    } catch (e) {
-      const m = errorMessage(e)
-      if (m.toLowerCase().includes('already registered')) { setRegistered(true); setMsg('Already registered — place your bid.') }
-      else setError(m)
-    } finally { setBusy(false) }
-  }
+  useEffect(() => { getRegistrationFee().then(setRegistrationFee).catch(() => {}) }, [])
 
   const needsKyc = (msg: string) => msg.toLowerCase().includes('kyc')
+
+  const doPayFee = async () => {
+    setFeeError(''); setPayingFee(true)
+    try {
+      await payRegistrationFee()
+      markRegistrationFeePaid()
+      refresh()
+    } catch (e) {
+      setFeeError(errorMessage(e))
+    } finally { setPayingFee(false) }
+  }
 
   // First click (field empty) fills in the current minimum valid bid; every click after that just
   // steps by the minimum increment, floored so it can never drop below that minimum.
@@ -152,7 +153,9 @@ export default function AuctionDetailPage() {
       refresh()
       refreshWallet()
     } catch (e2) {
-      setError(errorMessage(e2))
+      const m = errorMessage(e2)
+      if (m.toLowerCase().includes('credit limit')) setCreditLimitError(m)
+      else setError(m)
     } finally { setBusy(false) }
   }
 
@@ -180,10 +183,30 @@ export default function AuctionDetailPage() {
   }
 
   if (!auction) {
+    const feeRequired = !auctionLoading && error.toLowerCase().includes('registration fee')
     return (
       <div className="container">
         <p><Link to="/auctions">← Back to auctions</Link></p>
-        {auctionLoading ? <AuctionDetailSkeleton /> : error ? <div className="error">{error}</div> : null}
+        {auctionLoading ? (
+          <AuctionDetailSkeleton />
+        ) : feeRequired ? (
+          <div className="card" style={{ maxWidth: 460, margin: '20px auto', textAlign: 'center' }}>
+            <h1 className="page">Complete registration to view this item</h1>
+            <p className="muted">
+              {registrationFee
+                ? `Pay a one-time registration fee of ${money(registrationFee)} to view auction details and start bidding.`
+                : 'Pay the one-time registration fee to view auction details and start bidding.'}
+            </p>
+            {feeError && <div className="error">{feeError}</div>}
+            <div style={{ marginTop: 16 }}>
+              <button className="btn block" disabled={payingFee} onClick={doPayFee}>
+                {payingFee ? 'Processing…' : `Pay ${registrationFee ? money(registrationFee) : ''} to continue`}
+              </button>
+            </div>
+          </div>
+        ) : error ? (
+          <div className="error">{error}</div>
+        ) : null}
       </div>
     )
   }
@@ -267,12 +290,7 @@ export default function AuctionDetailPage() {
           <div className="loc">◍ {[auction.city, auction.state].filter(Boolean).join(', ') || '—'}{auction.brand ? ` · ${auction.brand}` : ''}</div>
 
           <div className="price-block big">
-            <span className="price-label">{auction.currentHighestBid != null ? 'Current bid' : 'Starting price'}</span>
-            <div className="price-row">
-              <span className="price-now">{money(current)}</span>
-              {auction.currentHighestBid != null && <span className="price-was">Base {money(auction.basePrice)}</span>}
-            </div>
-            <div className="price-meta"><span>{auction.bidCount} bids</span><span>Your min next {money(minNext)}</span></div>
+            <div className="price-meta"><span>{auction.bidCount} bids</span></div>
             {auction.bidsRemaining != null && (
               <div className="price-meta"><span>{auction.bidsRemaining} bid{auction.bidsRemaining === 1 ? '' : 's'} remaining for you on this item</span></div>
             )}
@@ -295,11 +313,6 @@ export default function AuctionDetailPage() {
                 Complete your KYC verification before bidding.{' '}
                 <Link to="/kyc" state={{ from: `/auctions/${id}` }}>Complete KYC now</Link>
               </div>
-            ) : !registered ? (
-              <>
-                <p className="muted">Registering requires a refundable EMD (Earnest Money Deposit) of {money(auction.basePrice)}, held on your wallet — fully refunded if you don't win.</p>
-                <button className="btn block" onClick={doRegister} disabled={busy}>{busy ? '…' : 'Pay EMD & Register to Bid'}</button>
-              </>
             ) : auction.bidsRemaining === 0 ? (
               <p className="muted">No more bids available — you've used all 20 bids on this item.</p>
             ) : (
@@ -318,7 +331,7 @@ export default function AuctionDetailPage() {
 
           {auction.isWinner && es === 'CLOSED' && !auction.settlementPaid && (
             <div className="error" style={{ marginTop: 12 }}>
-              You won this auction — {money(Math.max(0, current - auction.basePrice))} still owed beyond your EMD.
+              You won this auction — {money(current)} still owed to complete settlement.
               <div style={{ marginTop: 8 }}>
                 <button type="button" className="btn sm" disabled={settleBusy} onClick={doCompletePayment}>
                   {settleBusy ? 'Processing…' : 'Complete payment'}
@@ -363,6 +376,24 @@ export default function AuctionDetailPage() {
           onAccept={() => { setShowTerms(false); setConfirmingBid(true) }}
           onCancel={() => setShowTerms(false)}
         />
+      )}
+
+      {creditLimitError && (
+        <div className="modal-backdrop" onClick={() => setCreditLimitError('')}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <h3>Not enough bidding credit</h3>
+              <button type="button" className="modal-close" onClick={() => setCreditLimitError('')} aria-label="Close">✕</button>
+            </div>
+            <div className="modal-body">
+              <p>{creditLimitError}</p>
+            </div>
+            <div className="modal-foot">
+              <button type="button" className="linkbtn" onClick={() => setCreditLimitError('')}>Cancel</button>
+              <Link to="/wallet" className="btn">Top up</Link>
+            </div>
+          </div>
+        </div>
       )}
 
       {confirmingBid && (

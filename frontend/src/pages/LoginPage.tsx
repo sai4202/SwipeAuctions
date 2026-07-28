@@ -40,6 +40,7 @@ export default function LoginPage() {
     }
     signIn({
       token: data.token, email: data.email, role: data.role, kycCompleted: data.kycCompleted,
+      registrationFeePaid: data.registrationFeePaid,
       subscriptionTier: data.subscriptionTier, subscriptionExpiresAt: data.subscriptionExpiresAt,
     })
     navigate(returnTo || '/auctions')
@@ -137,7 +138,7 @@ export default function LoginPage() {
         <p>Vehicles, properties, bank assets and insurance salvage — transparent, compliant and real-time, across India.</p>
         <ul>
           <li>🔒 <b>SARFAESI</b> compliant &amp; RBI regulated</li>
-          <li>⚡ 48-hour EMD refund on losing bids</li>
+          <li>⚡ No per-item deposits — bid within your wallet credit limit</li>
           <li>🛡️ Bank-grade security · ISO 27001 certified</li>
         </ul>
       </aside>

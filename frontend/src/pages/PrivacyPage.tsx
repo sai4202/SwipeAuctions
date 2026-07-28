@@ -15,9 +15,9 @@ export default function PrivacyPage() {
         <section>
           <h3 style={{ marginBottom: 6 }}>How we use it</h3>
           <p className="muted">
-            To verify your identity before you can bid, to hold and release refundable EMD deposits, to
-            enforce your wallet's bidding credit limit, and to contact you about auctions you've registered
-            for or won.
+            To verify your identity before you can bid, to process your one-time registration fee, to
+            enforce your wallet's bidding credit limit, and to contact you about auctions you've bid on
+            or won.
           </p>
         </section>
         <section>

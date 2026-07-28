@@ -1,21 +1,44 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../auth'
 import {
-  getAdminStats, getAdminUsers, suspendUser, reactivateUser, getAdminUserHolds, releaseAdminHold,
+  getAdminStats, getAdminUsers, getAdminUser, suspendUser, reactivateUser, getAdminUserHolds, releaseAdminHold,
+  getAdminUserBids,
   getAdminAuctions, forceCloseAuction, updateAuction, getAdminDisputes, resolveDispute, errorMessage,
   getAdminCategories, createAdminCategory, getAdminCategoryAttributes, createAdminCategoryAttribute,
   createStockListing, uploadStockImage, createStockAuction, bulkImportStock, downloadStockTemplate,
   getAdminKycQueue, approveKyc, rejectKyc,
   getRegistrationFee, updateRegistrationFee, getSubscriptionPrices, updateSubscriptionPrices,
   type AdminStats, type AdminUser, type AdminAuction, type Dispute, type AdminHold, type ReleaseHoldResult,
+  type AdminUserBid,
   type AdminCategory, type AdminCategoryAttribute, type BulkImportResult, type AdminKyc,
   type SubscriptionPrice, type SubscriptionTier, type BillingCycle,
 } from '../api'
-import { money, moneyCompact } from '../util'
+import { money, moneyCompact, formatDateTimeShort, openUserDetails } from '../util'
 import { StatTilesSkeleton } from '../components/Skeleton'
 
 type Tab = 'overview' | 'users' | 'auctions' | 'disputes' | 'categories' | 'kyc' | 'settings'
+
+/** Counts up from 0 to `value` on mount/change, honoring prefers-reduced-motion. */
+function AnimatedNumber({ value, format }: { value: number; format: (n: number) => string }) {
+  const [display, setDisplay] = useState(0)
+
+  useEffect(() => {
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) { setDisplay(value); return }
+    const duration = 650
+    const start = performance.now()
+    let raf = 0
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - start) / duration)
+      setDisplay(value * (1 - Math.pow(1 - t, 3)))
+      if (t < 1) raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [value])
+
+  return <>{format(Math.round(display))}</>
+}
 
 /** Shared Prev/Next pager for the paginated admin dashboard tabs. 0-indexed `page`, 1-indexed display. */
 function Pager({ page, totalPages, onChange }: { page: number; totalPages: number; onChange: (page: number) => void }) {
@@ -32,9 +55,12 @@ function Pager({ page, totalPages, onChange }: { page: number; totalPages: numbe
 export default function AdminDashboardPage() {
   const { isAuthenticated, role, email } = useAuth()
   const navigate = useNavigate()
-  const [tab, setTab] = useState<Tab>('overview')
+  const [searchParams] = useSearchParams()
+  const linkedUserId = searchParams.get('userId')
+  const [tab, setTab] = useState<Tab>(linkedUserId ? 'users' : 'overview')
   const [addStockOpen, setAddStockOpen] = useState(false)
   const [refreshTick, setRefreshTick] = useState(0)
+  const [focusUserId, setFocusUserId] = useState<string | null>(linkedUserId)
 
   useEffect(() => {
     if (!isAuthenticated || role !== 'ADMIN') navigate('/admin-login')
@@ -62,7 +88,7 @@ export default function AdminDashboardPage() {
       </div>
 
       {tab === 'overview' && <Overview />}
-      {tab === 'users' && <Users />}
+      {tab === 'users' && <Users focusUserId={focusUserId} onFocusHandled={() => setFocusUserId(null)} />}
       {tab === 'auctions' && <Auctions key={refreshTick} />}
       {tab === 'disputes' && <Disputes />}
       {tab === 'categories' && <Categories key={refreshTick} />}
@@ -95,7 +121,7 @@ function Overview() {
   )
 }
 
-function Users() {
+function Users({ focusUserId, onFocusHandled }: { focusUserId: string | null; onFocusHandled: () => void }) {
   const [users, setUsers] = useState<AdminUser[]>([])
   const [search, setSearch] = useState('')
   const [roleFilter, setRoleFilter] = useState('')
@@ -105,6 +131,11 @@ function Users() {
   const [error, setError] = useState('')
   const [busyId, setBusyId] = useState<string | null>(null)
   const [walletUser, setWalletUser] = useState<AdminUser | null>(null)
+
+  useEffect(() => {
+    if (!focusUserId) return
+    getAdminUser(focusUserId).then(setWalletUser).catch((e) => setError(errorMessage(e))).finally(onFocusHandled)
+  }, [focusUserId])
 
   const load = () => {
     getAdminUsers({
@@ -150,27 +181,31 @@ function Users() {
       {error && <div className="error">{error}</div>}
       <div style={{ overflowX: 'auto' }}>
         <table className="admin-table">
-          <thead><tr><th>Email</th><th>Mobile</th><th>Role</th><th>KYC</th><th>Deposit</th><th>Credit Limit</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Email</th><th>Mobile</th><th>Role</th><th>Tier</th><th>KYC</th><th>Deposit</th><th>Credit Limit</th><th>Active Bids</th><th>Status</th><th></th></tr></thead>
           <tbody>
             {users.map((u) => (
               <tr key={u.id}>
-                <td>{u.email}</td>
-                <td>{u.mobileNumber}</td>
+                {/* Opens the same User Details modal in place, not a new tab — unlike openUserDetails()
+                    (used from the Auctions tab / catalogue cards), clicking a row already on this
+                    Users tab doesn't need to preserve a "page admin was on", since it's this one. */}
+                <td><button type="button" className="linkbtn" onClick={() => setWalletUser(u)}>{u.email}</button></td>
+                <td><button type="button" className="linkbtn" onClick={() => setWalletUser(u)}>{u.mobileNumber}</button></td>
                 <td>{u.role}</td>
+                <td>{u.subscriptionTier}</td>
                 <td>{u.kycStatus}</td>
                 <td>{money(u.walletAvailableBalance)}</td>
                 <td>{moneyCompact(u.walletCreditLimit)}</td>
+                <td>{u.activeBidCount}</td>
                 <td>{u.active ? <span className="ok" style={{ margin: 0, display: 'inline-block' }}>Active</span>
                               : <span className="error" style={{ margin: 0, display: 'inline-block' }}>Suspended</span>}</td>
                 <td style={{ display: 'flex', gap: 6 }}>
                   <button type="button" className="btn ghost sm" disabled={busyId === u.id} onClick={() => toggle(u)}>
                     {busyId === u.id ? '…' : u.active ? 'Suspend' : 'Reactivate'}
                   </button>
-                  <button type="button" className="btn ghost sm" onClick={() => setWalletUser(u)}>Wallet</button>
                 </td>
               </tr>
             ))}
-            {users.length === 0 && <tr><td colSpan={8} className="muted">No users match.</td></tr>}
+            {users.length === 0 && <tr><td colSpan={10} className="muted">No users match.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -187,21 +222,35 @@ function Users() {
   )
 }
 
-/** Admin view of one user's wallet: deposit/credit summary plus their active (locked) EMD holds,
- *  each individually releasable back to the user's available balance. */
+/** What to call a bid row given the auction's actual state — mirrors the same OPEN-vs-closed,
+ *  isWinner-driven logic the bidder-facing card uses (AuctionCard.tsx), so admin and bidder never
+ *  disagree about who's actually winning. */
+function bidRowStatus(b: AdminUserBid): { label: string; cls: 'ok' | 'error' } {
+  const closed = b.auctionStatus === 'CLOSED' || b.auctionStatus === 'UNSOLD'
+  if (closed) return b.leading ? { label: 'Won', cls: 'ok' } : { label: 'Lost', cls: 'error' }
+  return b.leading ? { label: 'Leading', cls: 'ok' } : { label: 'Outbid', cls: 'error' }
+}
+
+/** Everything about one user an admin might need in one place: profile, wallet + locked EMD
+ *  holds (each individually releasable), and every auction they've ever bid on — so "how many
+ *  items is this person bidding on right now" is a glance, not a hunt across several screens. */
 function WalletModal({ user, onClose, onReleased }: {
   user: AdminUser
   onClose: () => void
   onReleased: (res: ReleaseHoldResult) => void
 }) {
   const [holds, setHolds] = useState<AdminHold[]>([])
+  const [bids, setBids] = useState<AdminUserBid[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [busyId, setBusyId] = useState<string | null>(null)
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
 
   useEffect(() => {
-    getAdminUserHolds(user.id).then(setHolds).catch((e) => setError(errorMessage(e))).finally(() => setLoading(false))
+    Promise.all([getAdminUserHolds(user.id), getAdminUserBids(user.id)])
+      .then(([h, b]) => { setHolds(h); setBids(b) })
+      .catch((e) => setError(errorMessage(e)))
+      .finally(() => setLoading(false))
   }, [user.id])
 
   const release = async (hold: AdminHold) => {
@@ -214,54 +263,108 @@ function WalletModal({ user, onClose, onReleased }: {
     } catch (e) { setError(errorMessage(e)) } finally { setBusyId(null) }
   }
 
+  const openBidCount = bids.filter((b) => b.auctionStatus === 'OPEN').length
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal-card" style={{ maxWidth: 560 }} onClick={(e) => e.stopPropagation()}>
+      <div className="modal-card" style={{ maxWidth: 720 }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <h3>Wallet — {user.email}</h3>
+          <h3>User Details — {user.email}</h3>
           <button type="button" className="modal-close" onClick={onClose} aria-label="Close">✕</button>
         </div>
         <div className="modal-body">
-          <div className="stat" style={{ marginBottom: 16 }}>
-            <div><div className="k">Deposit (Available)</div><div className="v">{money(user.walletAvailableBalance)}</div></div>
-            <div><div className="k">Held (Locked)</div><div className="v">{money(user.walletHeldBalance)}</div></div>
-            <div><div className="k">Credit Limit</div><div className="v">{moneyCompact(user.walletCreditLimit)}</div></div>
-          </div>
           {error && <div className="error">{error}</div>}
-          {loading ? (
-            <p className="muted">Loading locked amounts…</p>
-          ) : holds.length === 0 ? (
-            <p className="muted">No locked (active EMD) amounts for this user.</p>
-          ) : (
-            <table className="admin-table">
-              <thead><tr><th>Auction</th><th>Locked amount</th><th></th></tr></thead>
-              <tbody>
-                {holds.map((h) => (
-                  <tr key={h.id}>
-                    <td>{h.listingTitle}</td>
-                    <td>{money(h.amount)}</td>
-                    <td>
-                      {confirmingId === h.id ? (
-                        <span style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                          <span className="muted" style={{ fontSize: 12.5 }}>Release {money(h.amount)}?</span>
-                          <button type="button" className="btn sm" disabled={busyId === h.id} onClick={() => release(h)}>
-                            {busyId === h.id ? '…' : 'Confirm'}
+
+          <div className="udetail-section" style={{ animationDelay: '40ms' }}>
+            <h4 style={{ margin: '0 0 8px' }}>Profile</h4>
+            <div className="stat" style={{ marginBottom: 18 }}>
+              <div><div className="k">Mobile</div><div className="v" style={{ fontSize: 15 }}>{user.mobileNumber}</div></div>
+              <div><div className="k">Role</div><div className="v" style={{ fontSize: 15 }}>{user.role}</div></div>
+              <div><div className="k">Subscription</div><div className="v" style={{ fontSize: 15 }}>
+                {user.subscriptionTier}{user.subscriptionExpiresAt ? ` · until ${formatDateTimeShort(user.subscriptionExpiresAt)}` : ''}
+              </div></div>
+              <div><div className="k">KYC</div><div className="v" style={{ fontSize: 15 }}>{user.kycStatus}</div></div>
+              <div><div className="k">Verified</div><div className="v" style={{ fontSize: 15 }}>
+                {[user.emailVerified && 'Email', user.mobileVerified && 'Mobile'].filter(Boolean).join(', ') || 'None'}
+              </div></div>
+              <div><div className="k">Joined</div><div className="v" style={{ fontSize: 15 }}>{formatDateTimeShort(user.createdAt)}</div></div>
+            </div>
+          </div>
+
+          <div className="udetail-section" style={{ animationDelay: '130ms' }}>
+            <h4 style={{ margin: '0 0 8px' }}>Wallet</h4>
+            <div className="stat" style={{ marginBottom: 16 }}>
+              <div><div className="k">Deposit (Available)</div><div className="v"><AnimatedNumber value={user.walletAvailableBalance} format={money} /></div></div>
+              <div><div className="k">Held (Locked)</div><div className="v"><AnimatedNumber value={user.walletHeldBalance} format={money} /></div></div>
+              <div><div className="k">Credit Limit</div><div className="v"><AnimatedNumber value={user.walletCreditLimit} format={moneyCompact} /></div></div>
+            </div>
+            {loading ? (
+              <p className="muted">Loading…</p>
+            ) : holds.length === 0 ? (
+              <p className="muted">No locked wallet holds for this user.</p>
+            ) : (
+              <table className="admin-table">
+                <thead><tr><th>Auction</th><th>Locked amount</th><th></th></tr></thead>
+                <tbody>
+                  {holds.map((h) => (
+                    <tr key={h.id}>
+                      <td>{h.listingTitle}</td>
+                      <td>{money(h.amount)}</td>
+                      <td>
+                        {confirmingId === h.id ? (
+                          <span style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                            <span className="muted" style={{ fontSize: 12.5 }}>Release {money(h.amount)}?</span>
+                            <button type="button" className="btn sm" disabled={busyId === h.id} onClick={() => release(h)}>
+                              {busyId === h.id ? '…' : 'Confirm'}
+                            </button>
+                            <button type="button" className="btn ghost sm" disabled={busyId === h.id} onClick={() => setConfirmingId(null)}>
+                              Cancel
+                            </button>
+                          </span>
+                        ) : (
+                          <button type="button" className="btn ghost sm" onClick={() => setConfirmingId(h.id)}>
+                            Refund / Release
                           </button>
-                          <button type="button" className="btn ghost sm" disabled={busyId === h.id} onClick={() => setConfirmingId(null)}>
-                            Cancel
-                          </button>
-                        </span>
-                      ) : (
-                        <button type="button" className="btn ghost sm" onClick={() => setConfirmingId(h.id)}>
-                          Refund / Release
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          <div className="udetail-section" style={{ animationDelay: '220ms' }}>
+            <h4 style={{ margin: '20px 0 8px' }}>
+              Bidding Activity {!loading && <span className="muted" style={{ fontWeight: 400, fontSize: 13 }}>— {openBidCount} item{openBidCount === 1 ? '' : 's'} currently bidding on, {bids.length} total</span>}
+            </h4>
+            {loading ? (
+              <p className="muted">Loading…</p>
+            ) : bids.length === 0 ? (
+              <p className="muted">This user hasn't bid on anything yet.</p>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table className="admin-table">
+                  <thead><tr><th>Item</th><th>Category</th><th>Your Bid</th><th>Current Highest</th><th>Status</th><th>Auction</th></tr></thead>
+                  <tbody>
+                    {bids.map((b) => {
+                      const st = bidRowStatus(b)
+                      return (
+                        <tr key={b.auctionId}>
+                          <td>{b.listingTitle}</td>
+                          <td>{b.categoryName}</td>
+                          <td>{money(b.yourBid)}</td>
+                          <td>{money(b.currentHighestBid)}</td>
+                          <td><span className={st.cls} style={{ margin: 0, display: 'inline-block' }}>{st.label}</span></td>
+                          <td>{b.auctionStatus}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -317,7 +420,14 @@ function Auctions() {
                 <td>{a.title}</td>
                 <td>{a.sellerEmail}</td>
                 <td>{money(a.basePrice)}</td>
-                <td>{money(a.currentHighestBid)}</td>
+                <td>
+                  {a.currentWinnerId ? (
+                    <button type="button" className="linkbtn" title={a.currentWinnerEmail ?? undefined}
+                            onClick={() => openUserDetails(a.currentWinnerId!)}>
+                      {money(a.currentHighestBid)}
+                    </button>
+                  ) : money(a.currentHighestBid)}
+                </td>
                 <td>{a.bidCount}</td>
                 <td><span className={`badge ${a.status}`}>{a.status}</span></td>
                 <td style={{ display: 'flex', gap: 8 }}>

@@ -17,9 +17,7 @@ import com.swipeauctions.enums.KycStatus;
 import com.swipeauctions.enums.Role;
 import com.swipeauctions.user.entity.User;
 import com.swipeauctions.user.repository.UserRepository;
-import com.swipeauctions.wallet.entity.BidEligibilityHold;
 import com.swipeauctions.wallet.entity.Wallet;
-import com.swipeauctions.wallet.repository.BidEligibilityHoldRepository;
 import com.swipeauctions.wallet.repository.WalletRepository;
 import com.swipeauctions.wallet.repository.WalletTransactionRepository;
 import com.swipeauctions.wallet.service.WalletService;
@@ -62,7 +60,6 @@ class BidServiceConcurrencyTest {
     @Autowired private ListingRepository listingRepository;
     @Autowired private AuctionRepository auctionRepository;
     @Autowired private BidRepository bidRepository;
-    @Autowired private BidEligibilityHoldRepository holdRepository;
     @Autowired private WalletRepository walletRepository;
     @Autowired private WalletTransactionRepository walletTransactionRepository;
     @Autowired private PasswordEncoder passwordEncoder;
@@ -71,10 +68,9 @@ class BidServiceConcurrencyTest {
     private User seller;
     private User bidder1;
     private User bidder2;
-    private User bidderNoHold;
+    private User bidderNoCredit;
     private Listing listing;
     private Auction auction;
-    private final List<BidEligibilityHold> holds = new ArrayList<>();
     private final List<Wallet> wallets = new ArrayList<>();
 
     @BeforeEach
@@ -90,11 +86,11 @@ class BidServiceConcurrencyTest {
         seller = createUser("concurrency-seller-" + suffix + "@swipeauctions.test", "97" + mobileBase + "01", Role.USER);
         bidder1 = createUser("concurrency-bidder1-" + suffix + "@swipeauctions.test", "97" + mobileBase + "02", Role.USER);
         bidder2 = createUser("concurrency-bidder2-" + suffix + "@swipeauctions.test", "97" + mobileBase + "03", Role.USER);
-        bidderNoHold = createUser("concurrency-nohold-" + suffix + "@swipeauctions.test", "97" + mobileBase + "04", Role.USER);
+        bidderNoCredit = createUser("concurrency-nohold-" + suffix + "@swipeauctions.test", "97" + mobileBase + "04", Role.USER);
 
         wallets.add(walletService.topUp(bidder1, new BigDecimal("100000.00")));
         wallets.add(walletService.topUp(bidder2, new BigDecimal("100000.00")));
-        wallets.add(walletService.topUp(bidderNoHold, new BigDecimal("100000.00")));
+        // Deliberately never topped up — zero credit limit is what the gating test below relies on.
 
         listing = catalogService.createListing(seller, category.getId(), "Concurrency test item " + suffix,
                 "Created by BidServiceConcurrencyTest", null, ItemCondition.USED, "Test City", "TS", null,
@@ -103,16 +99,11 @@ class BidServiceConcurrencyTest {
         LocalDateTime now = LocalDateTime.now();
         auction = auctionService.createAuction(seller, listing.getId(), new BigDecimal("1000.00"),
                 now.minusMinutes(1), now.plusMinutes(30), null);
-
-        holds.add(walletService.placeHold(bidder1, auction));
-        holds.add(walletService.placeHold(bidder2, auction));
-        // bidderNoHold is deliberately left unregistered — used by the gating test below.
     }
 
     @AfterEach
     void tearDown() {
         bidRepository.deleteAll(bidRepository.findByAuction_IdOrderByAmountDesc(auction.getId()));
-        holdRepository.deleteAll(holds);
         for (Wallet w : wallets) {
             walletTransactionRepository.deleteAll(walletTransactionRepository.findByWallet_IdOrderByCreatedAtDesc(w.getId()));
         }
@@ -121,7 +112,7 @@ class BidServiceConcurrencyTest {
         // in-memory reference captured at setUp is stale and would fail an optimistic-lock check on delete.
         auctionRepository.findById(auction.getId()).ifPresent(auctionRepository::delete);
         listingRepository.delete(listing);
-        userRepository.delete(bidderNoHold);
+        userRepository.delete(bidderNoCredit);
         userRepository.delete(bidder2);
         userRepository.delete(bidder1);
         userRepository.delete(seller);
@@ -138,6 +129,7 @@ class BidServiceConcurrencyTest {
                 .password(passwordEncoder.encode("Test@1234"))
                 .active(true).emailVerified(true).mobileVerified(true)
                 .kycCompleted(true).kycStatus(KycStatus.APPROVED)
+                .registrationFeePaid(true)
                 .userRefNumber("CONC-" + mobile).build());
     }
 
@@ -195,9 +187,9 @@ class BidServiceConcurrencyTest {
         assertThat(bidRepository.countByAuction_Id(auction.getId())).isEqualTo(accepted);
     }
 
-    /** A bidder without an active EMD hold must never win a bid, even racing against valid bidders. */
+    /** A bidder with zero credit limit (never deposited) must never win a bid, even racing against valid bidders. */
     @Test
-    void bidderWithoutActiveHold_isRejectedEvenUnderConcurrentLoad() throws InterruptedException {
+    void bidderWithoutCreditLimit_isRejectedEvenUnderConcurrentLoad() throws InterruptedException {
         int attempts = 6;
         ExecutorService pool = Executors.newFixedThreadPool(attempts);
         CountDownLatch ready = new CountDownLatch(attempts);
@@ -206,7 +198,7 @@ class BidServiceConcurrencyTest {
 
         for (int i = 1; i <= attempts; i++) {
             BigDecimal amount = new BigDecimal("1000.00").add(BigDecimal.valueOf(i * 50L));
-            futures.add(submitBid(pool, ready, go, bidderNoHold, amount));
+            futures.add(submitBid(pool, ready, go, bidderNoCredit, amount));
         }
 
         ready.await(10, TimeUnit.SECONDS);

@@ -87,7 +87,7 @@ export default function WalletPage() {
         <span className="eyebrow">Your Wallet</span>
         <div className="stat" style={{ marginTop: 16 }}>
           <div><div className="k">Available</div><div className="v">{money(wallet?.availableBalance)}</div></div>
-          <div><div className="k">Held (EMD)</div><div className="v">{money(wallet?.heldBalance)}</div></div>
+          <div><div className="k">Held</div><div className="v">{money(wallet?.heldBalance)}</div></div>
           <div><div className="k">Credit Limit</div><div className="v">{moneyCompact(wallet?.creditLimit)}</div></div>
         </div>
         {error && <div className="error" style={{ marginTop: 12 }}>{error}</div>}

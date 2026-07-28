@@ -126,6 +126,14 @@ public class UserAuthController {
         return ResponseEntity.ok(ApiResponse.success(userAuthService.changePassword(request, principal.getName()), null));
     }
 
+    // Final step of registration: authenticated dev-instant "payment" of the one-time platform
+    // registration fee. The frontend logs the user in right after mobile-OTP verification so this
+    // call has a JWT — see RegisterPage's post-OTP flow.
+    @PostMapping("/registration-fee/pay")
+    public ResponseEntity<ApiResponse<String>> payRegistrationFee(Principal principal) {
+        return ResponseEntity.ok(ApiResponse.success(userAuthService.payRegistrationFee(principal.getName()), null));
+    }
+
     @PostMapping("/resend-otp")
     public ResponseEntity<ApiResponse<String>> resendOtp(
 

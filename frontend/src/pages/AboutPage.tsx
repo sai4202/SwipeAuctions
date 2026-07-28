@@ -2,14 +2,14 @@ import { Link } from 'react-router-dom'
 
 const PILLARS = [
   { icon: '⚡', title: 'Live & Transparent', text: 'Every bid lands in real time over a live feed — no sealed envelopes, no back-room deals. What you see is the auction, happening.' },
-  { icon: '🔐', title: 'EMD-Secured Bidding', text: 'A refundable EMD (Earnest Money Deposit) — held, not spent — is what earns you a seat at the table. It keeps every bidder honest and every seller protected.' },
+  { icon: '🔐', title: 'Wallet-Backed Bidding', text: 'Deposit once and your wallet unlocks real bidding credit — no per-item deposits, no waiting between auctions. Just bid within your limit.' },
   { icon: '🗂️', title: 'Any Category, One Marketplace', text: 'Vehicles, properties, bank-seized assets, insurance salvage, electronics — one platform, one login, one wallet.' },
   { icon: '🛡️', title: 'Built for Trust', text: 'SARFAESI-aware, RBI-mindful, bank-grade security by default. Auctions people can actually rely on.' },
 ]
 
 const STEPS = [
   { n: '01', title: 'Swipe through listings', text: 'Browse by category, filter by what actually matters — mileage, floor area, RAM, whatever the item calls for.' },
-  { n: '02', title: 'Verify KYC & pay EMD', text: 'Complete KYC once, then a small refundable EMD hold on your wallet unlocks bidding on that auction. It comes straight back if you don’t win.' },
+  { n: '02', title: 'Verify KYC & unlock credit', text: 'Complete KYC once, then every ₹5,000 you deposit unlocks ₹2.5 crore of bidding credit on your wallet — no per-auction deposit required.' },
   { n: '03', title: 'Bid, win, done', text: 'Anti-snipe protection means the last five seconds can’t rob you of a fair auction. Highest honest bid wins.' },
 ]
 

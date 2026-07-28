@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { Link, useNavigate } from 'react-router-dom'
 import { placeBid, errorMessage, type Auction } from '../api'
 import { useAuth } from '../auth'
-import { money, moneyCompact, formatDateTimeShort, cardImage, tierMeets, effectiveStatus } from '../util'
+import { money, moneyCompact, formatDateTimeShort, cardImage, tierMeets, effectiveStatus, openUserDetails } from '../util'
 import TermsModal from './TermsModal'
 
 const SLABEL: Record<string, string> = {
@@ -130,8 +130,9 @@ export default function AuctionCard({ auction: a, inTray, onToggleTray }: Props)
       setTimeout(() => setShowBidModal(false), 3000)
     } catch (e) {
       const m = errorMessage(e)
-      if (m.toLowerCase().includes('register to bid first')) {
-        // Not registered (no EMD hold) yet — that flow still needs the full auction page.
+      if (m.toLowerCase().includes('registration fee')) {
+        // Fee unpaid — the full auction page shows the "pay to view/bid" wall; this quick-bid
+        // popup has no room to collect payment itself.
         setShowBidModal(false)
         navigate(`/auctions/${auction.id}`)
         return
@@ -189,6 +190,19 @@ export default function AuctionCard({ auction: a, inTray, onToggleTray }: Props)
             <span>Ends {formatDateTimeShort(auction.currentEndTime)}</span>
           </div>
         </div>
+        {isAdmin && (
+          <div className="price-meta">
+            <span className="muted" style={{ marginRight: 4 }}>Current max bid:</span>
+            {auction.currentWinnerId ? (
+              <button type="button" className="linkbtn" title={auction.currentWinnerEmail ?? undefined}
+                      onClick={() => openUserDetails(auction.currentWinnerId!)}>
+                {money(auction.currentHighestBid)}
+              </button>
+            ) : (
+              <span>{money(auction.currentHighestBid)}</span>
+            )}
+          </div>
+        )}
         {auction.bidsRemaining != null && (
           <div className="price-meta">
             <span style={auction.bidsRemaining === 0 ? { color: 'var(--red-2)', fontWeight: 700 } : undefined}>
@@ -273,7 +287,12 @@ export default function AuctionCard({ auction: a, inTray, onToggleTray }: Props)
                 </div>
                 <div className="modal-body">
                   <p>Place a bid of <strong>{money(pendingAmount)}</strong> on "{auction.title}"?</p>
-                  {bidError && <div className="error" style={{ marginTop: 10 }}>{bidError}</div>}
+                  {bidError && (
+                    <div className="error" style={{ marginTop: 10 }}>
+                      {bidError}
+                      {bidError.toLowerCase().includes('credit limit') && <> — <Link to="/wallet">Top up</Link></>}
+                    </div>
+                  )}
                 </div>
                 <div className="modal-foot">
                   <button type="button" className="linkbtn" onClick={() => setShowBidModal(false)}>Cancel</button>

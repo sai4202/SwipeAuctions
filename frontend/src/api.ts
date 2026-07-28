@@ -65,6 +65,7 @@ export interface LoginData {
   role: string
   active: boolean
   kycCompleted?: boolean
+  registrationFeePaid?: boolean
   subscriptionTier?: SubscriptionTier
   subscriptionExpiresAt?: string | null
   deviceLimitReached?: boolean
@@ -127,6 +128,8 @@ export interface Auction {
   requiredTier: SubscriptionTier
   registered: boolean
   bidsRemaining: number | null
+  currentWinnerId: string | null
+  currentWinnerEmail: string | null
 }
 export interface AuctionEvent {
   id: string
@@ -186,6 +189,9 @@ export interface AdminUser {
   walletAvailableBalance: number
   walletHeldBalance: number
   walletCreditLimit: number
+  subscriptionTier: SubscriptionTier
+  subscriptionExpiresAt: string | null
+  activeBidCount: number
 }
 export interface AdminHold {
   id: string
@@ -193,6 +199,17 @@ export interface AdminHold {
   listingTitle: string
   amount: number
   createdAt: string
+}
+export interface AdminUserBid {
+  auctionId: string
+  listingTitle: string
+  categoryName: string
+  yourBid: number
+  currentHighestBid: number | null
+  auctionStatus: string
+  leading: boolean
+  placedAt: string
+  currentEndTime: string
 }
 export interface ReleaseHoldResult {
   availableBalance: number
@@ -220,6 +237,8 @@ export interface AdminAuction {
   startTime: string
   currentEndTime: string
   bidCount: number
+  currentWinnerId: string | null
+  currentWinnerEmail: string | null
 }
 export interface Dispute {
   id: string
@@ -367,6 +386,12 @@ export async function verifyMobileOtp(email: string, otp: string): Promise<strin
 }
 export async function resendOtp(email: string): Promise<string> {
   const res = await api.post<ApiEnvelope<string>>('/api/auth/resend-otp', { email })
+  return res.data.message
+}
+// Final step of registration: dev-instant "payment" of the one-time platform registration fee.
+// Requires a JWT — RegisterPage signs the user in right after mobile-OTP verification for this.
+export async function payRegistrationFee(): Promise<string> {
+  const res = await api.post<ApiEnvelope<string>>('/api/auth/registration-fee/pay')
   return res.data.message
 }
 export async function requestLoginOtp(emailOrMobile: string): Promise<string> {
@@ -546,6 +571,10 @@ export async function getAdminUsers(params?: { search?: string; role?: string; a
   const res = await api.get<PageResponse<AdminUser>>('/api/admin/users', { params })
   return res.data
 }
+export async function getAdminUser(id: string): Promise<AdminUser> {
+  const res = await api.get<AdminUser>(`/api/admin/users/${id}`)
+  return res.data
+}
 export async function suspendUser(id: string): Promise<AdminUser> {
   const res = await api.post<AdminUser>(`/api/admin/users/${id}/suspend`)
   return res.data
@@ -556,6 +585,10 @@ export async function reactivateUser(id: string): Promise<AdminUser> {
 }
 export async function getAdminUserHolds(id: string): Promise<AdminHold[]> {
   const res = await api.get<AdminHold[]>(`/api/admin/users/${id}/holds`)
+  return res.data
+}
+export async function getAdminUserBids(id: string): Promise<AdminUserBid[]> {
+  const res = await api.get<AdminUserBid[]>(`/api/admin/users/${id}/bids`)
   return res.data
 }
 export async function releaseAdminHold(holdId: string): Promise<ReleaseHoldResult> {

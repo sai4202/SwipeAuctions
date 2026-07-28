@@ -986,9 +986,16 @@ label { display: block; font-size: 12.5px; color: var(--muted); margin: 14px 0 6
 .admin-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .admin-table th, .admin-table td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
 .admin-table th { color: var(--muted); font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+.admin-table tbody tr { transition: background-color var(--transition-fast); }
 .admin-table tbody tr:hover { background: var(--panel-2); cursor: default; }
 .admin-filters { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
 .admin-filters input, .admin-filters select { width: auto; }
+
+/* User Details modal — staggered section reveal */
+.udetail-section { opacity: 0; animation: udetail-in .4s var(--ease) both; }
+@keyframes udetail-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+.udetail-section .stat .v { font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: reduce) { .udetail-section { animation: none; opacity: 1; } }
 
 /* ---------- Events browse filter bar (Bank Vehicles / Insurance / Premium / Auto) ---------- */
 .event-filter-bar { display: flex; flex-direction: column; gap: 14px; padding: 16px; margin-bottom: 14px; }

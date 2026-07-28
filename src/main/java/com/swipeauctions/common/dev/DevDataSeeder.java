@@ -131,6 +131,7 @@ public class DevDataSeeder implements CommandLineRunner {
         seedEventCategoryDemoData(seller, bankVehicles, insurance, premium, auto);
         seedSwipeStockDemoData();
         seedTieredLiveDemoData(seller, electronics, vehicles, properties, premium);
+        seedMoreLiveDemoData(seller, vehicles, electronics, properties, bankVehicles, insurance);
         seedCoverImages();
 
         log.info("[dev-seed] login: {} / {} (also {}, {})", BIDDER_EMAIL, DEMO_PASSWORD, BIDDER2_EMAIL, SELLER_EMAIL);
@@ -307,6 +308,74 @@ public class DevDataSeeder implements CommandLineRunner {
                 "Year", "2022", "Fuel", "Petrol", "Transmission", "Manual", "KM driven", "15000"));
     }
 
+    /**
+     * A larger spread of untiered, no-subscription-required live auctions across every existing
+     * category, purely so there's plenty of real live inventory to click through manually on the
+     * public /auctions page (rather than the handful of earlier demo items, most of which have long
+     * since closed since their end times were fixed relative to whatever "now" was when this seeder
+     * first ran). Idempotent by title, end times computed relative to the CURRENT boot's "now" so
+     * they stay live for a good while after this runs.
+     */
+    private void seedMoreLiveDemoData(User seller, Category vehicles, Category electronics,
+                                      Category properties, Category bankVehicles, Category insurance) {
+        LocalDateTime now = LocalDateTime.now();
+
+        ensureAuction(seller, vehicles, "2020 Kia Seltos (Repo)", "Kia", ItemCondition.USED,
+                "Chennai", "TN", "950000", now.minusMinutes(1), now.plusDays(2));
+        addAttributes("2020 Kia Seltos (Repo)", Map.of(
+                "Year", "2020", "Fuel", "Petrol", "Transmission", "Automatic", "KM driven", "38000"));
+
+        ensureAuction(seller, vehicles, "2021 Tata Nexon (Repo)", "Tata", ItemCondition.USED,
+                "Ahmedabad", "GJ", "680000", now.minusMinutes(1), now.plusHours(10));
+        addAttributes("2021 Tata Nexon (Repo)", Map.of(
+                "Year", "2021", "Fuel", "Diesel", "Transmission", "Manual", "KM driven", "27000"));
+
+        ensureAuction(seller, vehicles, "2022 Skoda Slavia (Repo)", "Skoda", ItemCondition.USED,
+                "Pune", "MH", "1150000", now.minusMinutes(1), now.plusDays(3));
+        addAttributes("2022 Skoda Slavia (Repo)", Map.of(
+                "Year", "2022", "Fuel", "Petrol", "Transmission", "Automatic", "KM driven", "12000"));
+
+        ensureAuction(seller, vehicles, "2018 Honda City (Repo)", "Honda", ItemCondition.USED,
+                "Lucknow", "UP", "580000", now.minusMinutes(1), now.plusHours(20));
+        addAttributes("2018 Honda City (Repo)", Map.of(
+                "Year", "2018", "Fuel", "Petrol", "Transmission", "Manual", "KM driven", "64000"));
+
+        ensureAuction(seller, electronics, "Samsung Galaxy S24 Ultra (Sealed)", "Samsung", ItemCondition.NEW,
+                "Hyderabad", "TG", "125000", now.minusMinutes(1), now.plusHours(12));
+        addAttributes("Samsung Galaxy S24 Ultra (Sealed)", Map.of(
+                "RAM", "12 GB", "Storage", "512 GB", "Screen size", "6.8\""));
+
+        ensureAuction(seller, electronics, "Sony PS5 Slim (Sealed)", "Sony", ItemCondition.NEW,
+                "Bengaluru", "KA", "48000", now.minusMinutes(1), now.plusDays(1));
+
+        ensureAuction(seller, electronics, "Apple iPad Pro 12.9\" (Sealed)", "Apple", ItemCondition.NEW,
+                "Mumbai", "MH", "110000", now.minusMinutes(1), now.plusDays(2));
+        addAttributes("Apple iPad Pro 12.9\" (Sealed)", Map.of(
+                "RAM", "8 GB", "Storage", "256 GB", "Screen size", "12.9\""));
+
+        ensureAuction(seller, properties, "3BHK Villa — Bengaluru (Bank Auction)", null, ItemCondition.USED,
+                "Bengaluru", "KA", "9500000", now.minusMinutes(1), now.plusDays(4));
+        addAttributes("3BHK Villa — Bengaluru (Bank Auction)", Map.of(
+                "Bedrooms", "3 BHK", "Furnishing", "Unfurnished", "Area (sqft)", "2400"));
+
+        ensureAuction(seller, properties, "1BHK Flat — Thane (Bank Auction)", null, ItemCondition.USED,
+                "Thane", "MH", "3200000", now.minusMinutes(1), now.plusDays(2));
+        addAttributes("1BHK Flat — Thane (Bank Auction)", Map.of(
+                "Bedrooms", "1 BHK", "Furnishing", "Semi-furnished", "Area (sqft)", "620"));
+
+        ensureAuction(seller, bankVehicles, "Repossessed Tata Ace Gold", "Tata", ItemCondition.USED,
+                "Kanpur", "UP", "310000", now.minusMinutes(1), now.plusDays(2));
+        addAttributes("Repossessed Tata Ace Gold", Map.of(
+                "Year", "2020", "Fuel", "Diesel", "KM driven", "58000"));
+
+        ensureAuction(seller, insurance, "Water-Damaged Kia Sonet", "Kia", ItemCondition.FOR_PARTS,
+                "Chennai", "TN", "260000", now.minusMinutes(1), now.plusDays(1));
+        addAttributes("Water-Damaged Kia Sonet", Map.of(
+                "Policy Type", "Motor", "IDV", "780000", "Claim No", "TATAAIG-2026-77310"));
+
+        log.info("[dev-seed] extra live demo auctions ensured across categories");
+    }
+
     /** Like {@link #ensureAuction}, but for a listing gated behind a subscription tier. */
     private void ensureAuctionWithTier(User seller, Category category, String title, String brand,
                                        ItemCondition condition, String city, String state, String price,
@@ -469,6 +538,19 @@ public class DevDataSeeder implements CommandLineRunner {
         covers.put("2019 Ford EcoSport (Repo)", demoGallery("2019 Ford EcoSport (Repo)", "ford,ecosport,suv,car", 3));
         covers.put("2022 Maruti Suzuki Swift (Repo)", demoGallery("2022 Maruti Suzuki Swift (Repo)", "maruti,swift,hatchback,car", 3));
 
+        // seedMoreLiveDemoData's items — same keyword-matched loremflickr fallback approach.
+        covers.put("2020 Kia Seltos (Repo)", demoGallery("2020 Kia Seltos (Repo)", "kia,seltos,suv,car", 3));
+        covers.put("2021 Tata Nexon (Repo)", demoGallery("2021 Tata Nexon (Repo)", "tata,nexon,suv,car", 3));
+        covers.put("2022 Skoda Slavia (Repo)", demoGallery("2022 Skoda Slavia (Repo)", "skoda,slavia,sedan,car", 3));
+        covers.put("2018 Honda City (Repo)", demoGallery("2018 Honda City (Repo)", "honda,city,sedan,car", 3));
+        covers.put("Samsung Galaxy S24 Ultra (Sealed)", demoGallery("Samsung Galaxy S24 Ultra (Sealed)", "samsung,galaxy,smartphone", 3));
+        covers.put("Sony PS5 Slim (Sealed)", demoGallery("Sony PS5 Slim (Sealed)", "playstation,ps5,console", 3));
+        covers.put("Apple iPad Pro 12.9\" (Sealed)", demoGallery("Apple iPad Pro 12.9\" (Sealed)", "ipad,tablet,apple", 3));
+        covers.put("3BHK Villa — Bengaluru (Bank Auction)", demoGallery("3BHK Villa — Bengaluru (Bank Auction)", "villa,house,property", 3));
+        covers.put("1BHK Flat — Thane (Bank Auction)", demoGallery("1BHK Flat — Thane (Bank Auction)", "apartment,flat,interior", 3));
+        covers.put("Repossessed Tata Ace Gold", demoGallery("Repossessed Tata Ace Gold", "tata-ace,truck,pickup", 3));
+        covers.put("Water-Damaged Kia Sonet", demoGallery("Water-Damaged Kia Sonet", "kia,sonet,suv,car", 3));
+
         int added = 0;
         for (Listing l : listingRepository.findAll()) {
             List<String> urls = covers.get(l.getTitle());
@@ -537,6 +619,8 @@ public class DevDataSeeder implements CommandLineRunner {
                     .active(true).emailVerified(true).mobileVerified(true)
                     // Pre-verified so demo bidding isn't blocked by the KYC-before-bidding gate.
                     .kycCompleted(true).kycStatus(com.swipeauctions.enums.KycStatus.APPROVED)
+                    // Pre-paid so demo browsing/bidding isn't blocked by the registration-fee wall.
+                    .registrationFeePaid(true)
                     .userRefNumber(ref).build());
             walletService.topUp(u, new BigDecimal("100000.00"));
             return u;

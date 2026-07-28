@@ -138,11 +138,15 @@ public class SecurityConfig {
                         .requestMatchers("/ws/**")
                         .permitAll()
 
-                        // Catalog/auctions/events browsing requires sign-in (falls through to
-                        // anyRequest().authenticated() below) — matches the frontend's RequireAuth gate:
-                        // only the Home page is reachable while signed out. Locking this down server-side
-                        // too, not just in the SPA router, since the API would otherwise still be directly
-                        // callable by anyone who skips the UI.
+                        // The auction catalogue/list is public — browsing doesn't require sign-in,
+                        // matching the frontend's public /auctions route. The detail endpoint
+                        // (GET /api/auctions/{id}) is deliberately NOT matched here: it falls through to
+                        // anyRequest().authenticated() below, and AuctionController.get() additionally
+                        // requires registrationFeePaid before returning full details. Everything else
+                        // under auctions/events (create, register, bid, "my wins", etc.) also stays
+                        // behind the same catch-all.
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/auctions")
+                        .permitAll()
 
                         // User Session APIs
                         .requestMatchers("/api/sessions/**")

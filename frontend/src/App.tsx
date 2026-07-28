@@ -27,8 +27,8 @@ export default function App() {
       <Header />
       <Routes>
         <Route path="/" element={<HomePage />} />
-        <Route path="/auctions" element={<RequireAuth><BrowsePage /></RequireAuth>} />
-        <Route path="/auctions/:id" element={<RequireAuth><AuctionDetailPage /></RequireAuth>} />
+        <Route path="/auctions" element={<BrowsePage />} />
+        <Route path="/auctions/:id" element={<RequireAuth redirectTo="/register"><AuctionDetailPage /></RequireAuth>} />
         <Route path="/wishlist" element={<RequireAuth><MultiBiddingPage /></RequireAuth>} />
         <Route path="/swipe-stock" element={<RequireAuth><BrowsePage /></RequireAuth>} />
         <Route path="/login" element={<LoginPage />} />

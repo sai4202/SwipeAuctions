@@ -2,13 +2,13 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Client } from '@stomp/stompjs'
 import SockJS from 'sockjs-client'
-import { getAuction, registerToBid, placeBid, errorMessage, API_BASE, type Auction } from '../api'
+import { getAuction, placeBid, errorMessage, API_BASE, type Auction } from '../api'
 import { useAuth } from '../auth'
 import { useWallet } from '../WalletContext'
 import { getMultiBidIds, removeMultiBid, formatCountdown, msUntil, money, cardImage, effectiveStatus, MULTI_KEY } from '../util'
 import TermsModal from '../components/TermsModal'
 
-interface Tile { auction: Auction; registered: boolean; amount: string; msg: string; err: string; flash: boolean }
+interface Tile { auction: Auction; amount: string; msg: string; err: string; flash: boolean }
 
 export default function MultiBiddingPage() {
   const { isAuthenticated } = useAuth()
@@ -23,8 +23,8 @@ export default function MultiBiddingPage() {
     ids.forEach((id) => {
       getAuction(id)
         .then((a) => setTiles((t) => (t[id]
-          ? { ...t, [id]: { ...t[id], auction: a, registered: t[id].registered || a.registered } }
-          : { ...t, [id]: { auction: a, registered: a.registered, amount: '', msg: '', err: '', flash: false } })))
+          ? { ...t, [id]: { ...t[id], auction: a } }
+          : { ...t, [id]: { auction: a, amount: '', msg: '', err: '', flash: false } })))
         .catch(() => {})
     })
     setTiles((t) => {
@@ -69,15 +69,6 @@ export default function MultiBiddingPage() {
   const remove = (id: string) => setIds(removeMultiBid(id))
   const upd = (id: string, patch: Partial<Tile>) => setTiles((t) => (t[id] ? { ...t, [id]: { ...t[id], ...patch } } : t))
 
-  const doRegister = async (id: string) => {
-    upd(id, { err: '', msg: '' })
-    try { const r = await registerToBid(id); upd(id, { registered: true, msg: r.message }); refreshWallet() }
-    catch (e) {
-      const m = errorMessage(e)
-      if (m.toLowerCase().includes('already registered')) upd(id, { registered: true, msg: 'Registered' })
-      else upd(id, { err: m })
-    }
-  }
   const proceedBid = async (id: string) => {
     const tile = tiles[id]; if (!tile) return
     const amt = Number(tile.amount)
@@ -151,8 +142,6 @@ export default function MultiBiddingPage() {
                 )}
                 {es !== 'OPEN' ? (
                   <span className="muted">Bidding closed</span>
-                ) : !tile.registered ? (
-                  <button className="btn sm" onClick={() => doRegister(a.id)}>Register — hold {money(a.basePrice)}</button>
                 ) : a.bidsRemaining === 0 ? (
                   <span className="muted">No bids left</span>
                 ) : (
@@ -162,7 +151,12 @@ export default function MultiBiddingPage() {
                   </div>
                 )}
                 {tile.msg && <div className="ok" style={{ marginTop: 0, padding: '6px 10px' }}>{tile.msg}</div>}
-                {tile.err && <div className="error" style={{ marginTop: 0, padding: '6px 10px' }}>{tile.err}</div>}
+                {tile.err && (
+                  <div className="error" style={{ marginTop: 0, padding: '6px 10px' }}>
+                    {tile.err}
+                    {tile.err.toLowerCase().includes('credit limit') && <> — <Link to="/wallet">Top up</Link></>}
+                  </div>
+                )}
               </div>
             )
           })}
