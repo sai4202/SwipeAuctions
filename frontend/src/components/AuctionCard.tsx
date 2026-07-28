@@ -242,8 +242,8 @@ export default function AuctionCard({ auction: a, inTray, onToggleTray }: Props)
               <>
                 <input
                   type="number" className="card-cta-input" value={amount}
-                  onChange={(e) => setAmount(e.target.value)} min={minNext}
-                  aria-label={`Your bid amount, minimum ${minNext}`}
+                  onChange={(e) => setAmount(e.target.value)} min={auction.yourBid != null ? minNext : 1}
+                  aria-label={auction.yourBid != null ? `Your bid amount, minimum ${minNext}` : `Your bid amount, suggested ${minNext}`}
                 />
                 <button type="button" className="btn sm" onClick={clickBidNow}>Bid</button>
               </>

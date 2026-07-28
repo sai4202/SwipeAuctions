@@ -89,7 +89,13 @@ export default function WalletPage() {
           <div><div className="k">Available</div><div className="v">{money(wallet?.availableBalance)}</div></div>
           <div><div className="k">Held</div><div className="v">{money(wallet?.heldBalance)}</div></div>
           <div><div className="k">Credit Limit</div><div className="v">{moneyCompact(wallet?.creditLimit)}</div></div>
+          <div><div className="k">Available Credit</div><div className="v">{moneyCompact(wallet?.availableCreditLimit)}</div></div>
         </div>
+        {wallet && wallet.creditLimit !== wallet.availableCreditLimit && (
+          <p className="muted" style={{ marginTop: -8, marginBottom: 16, fontSize: 13 }}>
+            {moneyCompact(wallet.creditLimit - wallet.availableCreditLimit)} is currently committed to your other open bids.
+          </p>
+        )}
         {error && <div className="error" style={{ marginTop: 12 }}>{error}</div>}
 
         <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px dashed var(--border)' }}>

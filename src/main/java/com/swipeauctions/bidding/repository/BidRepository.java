@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -35,6 +36,14 @@ public interface BidRepository extends JpaRepository<Bid, UUID> {
      *  "Active Bids" column. Distinct because a bidder can have placed several bids on one auction. */
     @Query("select count(distinct b.auction.id) from Bid b where b.bidder.id = :bidderId and b.auction.status = com.swipeauctions.auction.enums.AuctionStatus.OPEN")
     long countDistinctOpenAuctionsByBidder(@Param("bidderId") UUID bidderId);
+
+    /** This bidder's own current (max) bid on each of their still-OPEN auctions — what's presently
+     *  "committed" out of their credit limit while those auctions remain live (see
+     *  WalletService.committedCredit / BidService.placeBid's credit-limit check). An auction drops
+     *  out the moment it closes, which is what makes a lost auction's exposure free itself
+     *  automatically with no separate "release" step needed. */
+    @Query("select max(b.amount) from Bid b where b.bidder.id = :bidderId and b.auction.status = com.swipeauctions.auction.enums.AuctionStatus.OPEN group by b.auction.id")
+    List<BigDecimal> findMaxBidPerOpenAuctionForBidder(@Param("bidderId") UUID bidderId);
 
     interface AuctionBidCount {
         UUID getAuctionId();

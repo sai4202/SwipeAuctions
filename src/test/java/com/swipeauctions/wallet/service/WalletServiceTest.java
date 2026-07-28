@@ -1,6 +1,7 @@
 package com.swipeauctions.wallet.service;
 
 import com.swipeauctions.auction.entity.Auction;
+import com.swipeauctions.bidding.repository.BidRepository;
 import com.swipeauctions.notification.AuctionNotificationService;
 import com.swipeauctions.user.entity.User;
 import com.swipeauctions.wallet.entity.BidEligibilityHold;
@@ -45,13 +46,14 @@ class WalletServiceTest {
     @Mock private WalletWithdrawalRepository withdrawalRepository;
     @Mock private SaleProceedsHoldRepository proceedsRepository;
     @Mock private AuctionNotificationService notificationService;
+    @Mock private BidRepository bidRepository;
 
     private WalletService walletService;
 
     @BeforeEach
     void setUp() {
         walletService = new WalletService(walletRepository, txnRepository, holdRepository,
-                withdrawalRepository, proceedsRepository, notificationService);
+                withdrawalRepository, proceedsRepository, notificationService, bidRepository);
     }
 
     private static User user(BigDecimal unused) {

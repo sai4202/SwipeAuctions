@@ -1,6 +1,7 @@
 package com.swipeauctions.wallet.service;
 
 import com.swipeauctions.auction.entity.Auction;
+import com.swipeauctions.bidding.repository.BidRepository;
 import com.swipeauctions.common.exception.BadRequestException;
 import com.swipeauctions.common.exception.ResourceNotFoundException;
 import com.swipeauctions.notification.AuctionNotificationService;
@@ -43,6 +44,7 @@ public class WalletService {
     private final WalletWithdrawalRepository withdrawalRepository;
     private final SaleProceedsHoldRepository proceedsRepository;
     private final AuctionNotificationService notificationService;
+    private final BidRepository bidRepository;
 
     private static final BigDecimal CREDIT_LIMIT_DEPOSIT_UNIT = new BigDecimal("5000");
     private static final BigDecimal CREDIT_LIMIT_PER_UNIT = new BigDecimal("25000000"); // ₹2.5 crore
@@ -58,6 +60,26 @@ public class WalletService {
     @Transactional(readOnly = true)
     public BigDecimal getCreditLimit(User user) {
         return creditLimitFor(getWallet(user).getAvailableBalance());
+    }
+
+    /**
+     * Sum of this bidder's own current (max) bid across every auction they're still actively
+     * bidding on (status OPEN) — the amount presently "committed" out of their credit limit. An
+     * auction that closes simply stops appearing in this sum on the next call, which is what frees
+     * a losing bidder's exposure back up automatically (and, for a winner, the real charge is handled
+     * separately by the settlement/captureRemainder flow against the wallet balance itself).
+     */
+    @Transactional(readOnly = true)
+    public BigDecimal committedCredit(UUID bidderId) {
+        return bidRepository.findMaxBidPerOpenAuctionForBidder(bidderId).stream()
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    /** Credit limit minus whatever's already committed to the bidder's other open auctions — what
+     *  they can actually still bid up to, right now, across everything. */
+    @Transactional(readOnly = true)
+    public BigDecimal availableCreditLimit(User user) {
+        return getCreditLimit(user).subtract(committedCredit(user.getId()));
     }
 
     @Transactional

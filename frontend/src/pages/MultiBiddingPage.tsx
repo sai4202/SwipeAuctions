@@ -146,7 +146,7 @@ export default function MultiBiddingPage() {
                   <span className="muted">No bids left</span>
                 ) : (
                   <div className="bidrow">
-                    <input type="number" placeholder={`min ${minNext}`} value={tile.amount} onChange={(e) => upd(a.id, { amount: e.target.value })} />
+                    <input type="number" placeholder={a.yourBid != null ? `min ${minNext}` : `suggested ${minNext}`} value={tile.amount} onChange={(e) => upd(a.id, { amount: e.target.value })} />
                     <button className="btn sm" onClick={() => doBid(a.id)}>Bid</button>
                   </div>
                 )}

@@ -11,7 +11,7 @@ export default function Header() {
   const { isAuthenticated, role, lastRole, kycCompleted, signOut } = useAuth()
   const { wallet } = useWallet()
   const { theme, toggleTheme } = useTheme()
-  const credit = wallet?.creditLimit ?? null
+  const credit = wallet?.availableCreditLimit ?? null
   const { tabCount, maxTabs, addTab } = useFloatingTabs()
   const navigate = useNavigate()
   const location = useLocation()

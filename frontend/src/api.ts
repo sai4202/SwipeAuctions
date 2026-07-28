@@ -170,6 +170,9 @@ export interface WalletBalance {
   availableBalance: number
   heldBalance: number
   creditLimit: number
+  /** creditLimit minus whatever's already committed to this user's other open bids — what they can
+   *  actually still bid up to right now, across every auction at once. */
+  availableCreditLimit: number
 }
 export interface RegisterResult {
   message: string

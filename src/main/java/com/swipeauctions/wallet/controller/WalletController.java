@@ -33,7 +33,7 @@ public class WalletController {
     public WalletResponse balance() {
         User user = loggedInUserUtil.getCurrentUser();
         Wallet w = walletService.getWallet(user);
-        return toResponse(w);
+        return toResponse(w, user);
     }
 
     /** This user's wallet ledger, most recent first. */
@@ -46,8 +46,10 @@ public class WalletController {
                 .map(this::toResponse).toList();
     }
 
-    private WalletResponse toResponse(Wallet w) {
-        return new WalletResponse(w.getAvailableBalance(), w.getHeldBalance(), walletService.creditLimitFor(w.getAvailableBalance()));
+    private WalletResponse toResponse(Wallet w, User user) {
+        BigDecimal creditLimit = walletService.creditLimitFor(w.getAvailableBalance());
+        BigDecimal available = creditLimit.subtract(walletService.committedCredit(user.getId()));
+        return new WalletResponse(w.getAvailableBalance(), w.getHeldBalance(), creditLimit, available);
     }
 
     private WalletTransactionResponse toResponse(WalletTransaction t) {
@@ -60,7 +62,7 @@ public class WalletController {
     public WalletResponse topUp(@Valid @RequestBody TopUpRequest req) {
         User user = loggedInUserUtil.getCurrentUser();
         Wallet w = walletService.topUp(user, req.amount());
-        return toResponse(w);
+        return toResponse(w, user);
     }
 
     /** Real top-up: creates a Stripe PaymentIntent; the wallet is credited by the success webhook. */
@@ -81,7 +83,8 @@ public class WalletController {
 
     public record TopUpRequest(@NotNull BigDecimal amount) {}
 
-    public record WalletResponse(BigDecimal availableBalance, BigDecimal heldBalance, BigDecimal creditLimit) {}
+    public record WalletResponse(BigDecimal availableBalance, BigDecimal heldBalance, BigDecimal creditLimit,
+                                  BigDecimal availableCreditLimit) {}
 
     public record WithdrawResponse(String status, BigDecimal availableBalance) {}
 

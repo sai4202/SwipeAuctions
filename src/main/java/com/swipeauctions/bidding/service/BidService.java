@@ -91,14 +91,37 @@ public class BidService {
         BigDecimal myPreviousBest = bidRepository.findFirstByAuction_IdAndBidder_IdOrderByAmountDesc(auctionId, bidder.getId())
                 .map(Bid::getAmount)
                 .orElse(null);
-        BigDecimal minAllowed = myPreviousBest != null ? myPreviousBest.add(minIncrement) : auction.getBasePrice();
-        if (amount.compareTo(minAllowed) < 0) {
-            throw new BadRequestException("Bid must be at least " + minAllowed + " — more than your last bid on this item.");
+        if (amount.signum() <= 0) {
+            throw new BadRequestException("Bid amount must be positive");
+        }
+        // A bidder's first bid on an item has no floor beyond being positive and within credit limit
+        // (checked below) — it doesn't even need to meet the base price; whether the item actually
+        // sells at close time is a separate question, decided against the auction's FINAL highest
+        // bid (see AuctionService.closeAuction's own basePrice comparison), not any individual bid
+        // along the way. Only a SUCCESSIVE bid on this item must clear the bidder's own previous one.
+        if (myPreviousBest != null) {
+            BigDecimal minAllowed = myPreviousBest.add(minIncrement);
+            if (amount.compareTo(minAllowed) < 0) {
+                throw new BadRequestException("Bid must be at least " + minAllowed + " — more than your last bid on this item.");
+            }
         }
 
+        // Credit limit is a cap on TOTAL exposure across every auction the bidder is currently
+        // active on, not a per-bid check in isolation — otherwise a bidder could commit their full
+        // limit to any number of auctions at once. committedCredit() sums the bidder's own current
+        // bid on each of their other still-open auctions; subtracting this auction's own previous
+        // contribution (myPreviousBest) means raising your own bid here only costs the increment,
+        // not the full new amount again. A losing auction simply stops counting once it closes (no
+        // separate "release" step), and a win is charged for real via the settlement flow below,
+        // against the wallet balance itself — this check never moves any actual money.
         BigDecimal creditLimit = walletService.getCreditLimit(bidder);
-        if (amount.compareTo(creditLimit) > 0) {
-            throw new BadRequestException("Bid exceeds your credit limit of " + creditLimit + ". Top up your wallet to increase it.");
+        BigDecimal committedElsewhere = walletService.committedCredit(bidder.getId())
+                .subtract(myPreviousBest != null ? myPreviousBest : BigDecimal.ZERO);
+        BigDecimal availableCredit = creditLimit.subtract(committedElsewhere);
+        if (amount.compareTo(availableCredit) > 0) {
+            throw new BadRequestException("Bid exceeds your available credit limit of " + availableCredit
+                    + " (credit limit " + creditLimit + " minus " + committedElsewhere
+                    + " already committed to your other open bids). Top up your wallet to increase it.");
         }
 
         // Capture who currently leads (the person about to be outbid) before we overwrite the winner.

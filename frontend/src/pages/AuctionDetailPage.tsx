@@ -213,8 +213,11 @@ export default function AuctionDetailPage() {
 
   const current = auction.currentHighestBid ?? auction.basePrice
   // What THIS bidder must clear next — their own previous bid on this item, not necessarily the
-  // current leader's (see BidService.placeBid for why those are different questions now).
+  // current leader's (see BidService.placeBid for why those are different questions now). A first
+  // bid has no real floor server-side (any positive amount within credit limit is accepted) — the
+  // base price here is only a suggested starting point for the stepper/placeholder, not enforced.
   const minNext = auction.yourBid != null ? auction.yourBid + MIN_INCREMENT : auction.basePrice
+  const isFirstBid = auction.yourBid == null
   const gallery = auction.images.length > 0 ? auction.images.map(resolveMediaUrl) : [cardImage(auction)]
   const specs = Object.entries(auction.attributes)
   const locked = auction.requiredTier !== 'NONE' && !tierMeets(subscriptionTier, auction.requiredTier)
@@ -317,11 +320,11 @@ export default function AuctionDetailPage() {
               <p className="muted">No more bids available — you've used all 20 bids on this item.</p>
             ) : (
               <form onSubmit={doBid}>
-                <label>Your bid (min {money(minNext)})</label>
+                <label>{isFirstBid ? `Your bid (suggested ${money(minNext)})` : `Your bid (min ${money(minNext)})`}</label>
                 <div className="bid-stepper">
                   <button type="button" className="step-btn" onClick={() => bumpAmount(minNext, -MIN_INCREMENT)} aria-label="Decrease bid">−</button>
                   <input ref={amountRef} type="number" value={amount} onChange={(e) => setAmount(e.target.value)}
-                         min={minNext} placeholder={`${minNext}`} />
+                         min={isFirstBid ? MIN_INCREMENT : minNext} placeholder={`${minNext}`} />
                   <button type="button" className="step-btn" onClick={() => bumpAmount(minNext, MIN_INCREMENT)} aria-label="Increase bid">+</button>
                 </div>
                 <div style={{ marginTop: 12 }}><button className="btn block" disabled={busy}>{busy ? 'Placing…' : 'Place bid'}</button></div>

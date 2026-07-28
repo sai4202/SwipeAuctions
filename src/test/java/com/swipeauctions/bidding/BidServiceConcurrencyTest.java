@@ -40,6 +40,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The one test that needs real Postgres row-locking semantics (pessimistic lock on the auction
@@ -69,8 +70,11 @@ class BidServiceConcurrencyTest {
     private User bidder1;
     private User bidder2;
     private User bidderNoCredit;
+    private User bidderTight;
     private Listing listing;
+    private Listing listing2;
     private Auction auction;
+    private Auction auction2;
     private final List<Wallet> wallets = new ArrayList<>();
 
     @BeforeEach
@@ -87,23 +91,33 @@ class BidServiceConcurrencyTest {
         bidder1 = createUser("concurrency-bidder1-" + suffix + "@swipeauctions.test", "97" + mobileBase + "02", Role.USER);
         bidder2 = createUser("concurrency-bidder2-" + suffix + "@swipeauctions.test", "97" + mobileBase + "03", Role.USER);
         bidderNoCredit = createUser("concurrency-nohold-" + suffix + "@swipeauctions.test", "97" + mobileBase + "04", Role.USER);
+        bidderTight = createUser("concurrency-tight-" + suffix + "@swipeauctions.test", "97" + mobileBase + "05", Role.USER);
 
         wallets.add(walletService.topUp(bidder1, new BigDecimal("100000.00")));
         wallets.add(walletService.topUp(bidder2, new BigDecimal("100000.00")));
         // Deliberately never topped up — zero credit limit is what the gating test below relies on.
+        // Exactly one credit-limit unit (₹5,000 -> ₹2.5 crore) — precise enough to test the shared
+        // cross-auction cap without astronomically large numbers.
+        wallets.add(walletService.topUp(bidderTight, new BigDecimal("5000.00")));
 
         listing = catalogService.createListing(seller, category.getId(), "Concurrency test item " + suffix,
                 "Created by BidServiceConcurrencyTest", null, ItemCondition.USED, "Test City", "TS", null,
                 new BigDecimal("1000.00"), null);
+        listing2 = catalogService.createListing(seller, category.getId(), "Concurrency test item 2 " + suffix,
+                "Second item — used only by the cross-auction credit-limit test.", null, ItemCondition.USED,
+                "Test City", "TS", null, new BigDecimal("1000.00"), null);
 
         LocalDateTime now = LocalDateTime.now();
         auction = auctionService.createAuction(seller, listing.getId(), new BigDecimal("1000.00"),
+                now.minusMinutes(1), now.plusMinutes(30), null);
+        auction2 = auctionService.createAuction(seller, listing2.getId(), new BigDecimal("1000.00"),
                 now.minusMinutes(1), now.plusMinutes(30), null);
     }
 
     @AfterEach
     void tearDown() {
         bidRepository.deleteAll(bidRepository.findByAuction_IdOrderByAmountDesc(auction.getId()));
+        bidRepository.deleteAll(bidRepository.findByAuction_IdOrderByAmountDesc(auction2.getId()));
         for (Wallet w : wallets) {
             walletTransactionRepository.deleteAll(walletTransactionRepository.findByWallet_IdOrderByCreatedAtDesc(w.getId()));
         }
@@ -111,8 +125,11 @@ class BidServiceConcurrencyTest {
         // Refetch: the concurrent bidding test bumps the auction's @Version many times, so the
         // in-memory reference captured at setUp is stale and would fail an optimistic-lock check on delete.
         auctionRepository.findById(auction.getId()).ifPresent(auctionRepository::delete);
+        auctionRepository.findById(auction2.getId()).ifPresent(auctionRepository::delete);
         listingRepository.delete(listing);
+        listingRepository.delete(listing2);
         userRepository.delete(bidderNoCredit);
+        userRepository.delete(bidderTight);
         userRepository.delete(bidder2);
         userRepository.delete(bidder1);
         userRepository.delete(seller);
@@ -215,6 +232,46 @@ class BidServiceConcurrencyTest {
         assertThat(pool.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
 
         assertThat(bidRepository.countByAuction_Id(auction.getId())).isZero();
+    }
+
+    /**
+     * The credit limit is a cap on TOTAL exposure across every auction a bidder is active on, not a
+     * per-bid check taken in isolation. bidderTight has exactly ₹2.5 crore of credit limit (from a
+     * ₹5,000 deposit). Bidding ₹2 crore on one auction leaves only ₹0.5 crore free — a second,
+     * unrelated auction can't independently re-claim the full ₹2.5 crore. Closing the first auction
+     * frees its share back up automatically (no separate "release" call needed), matching the
+     * fact that a real settlement charge, when it happens, is a wallet debit handled elsewhere
+     * (captureRemainder), not a mutation of this shared bidding-exposure check.
+     */
+    @Test
+    void creditLimitIsASharedCapAcrossAllOfABiddersOpenAuctions() {
+        BigDecimal twoCrore = new BigDecimal("20000000.00");
+        BigDecimal oneCrore = new BigDecimal("10000000.00");
+        BigDecimal halfCrore = new BigDecimal("5000000.00");
+
+        // Full 2.5cr limit; committing 2cr to auction 1 leaves only 0.5cr free overall.
+        bidService.placeBid(auction.getId(), bidderTight, twoCrore);
+
+        // 1cr more on a DIFFERENT auction would push total exposure to 3cr, past the 2.5cr limit.
+        assertThatThrownBy(() -> bidService.placeBid(auction2.getId(), bidderTight, oneCrore))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("credit limit");
+
+        // Exactly the remaining 0.5cr fits and succeeds — the limit is now fully committed (2.5cr total).
+        bidService.placeBid(auction2.getId(), bidderTight, halfCrore);
+
+        // Nothing is left: even a minimal raise on auction 1 (well within its own min-increment) is
+        // rejected now, since there's no shared headroom anywhere.
+        assertThatThrownBy(() -> bidService.placeBid(auction.getId(), bidderTight, twoCrore.add(BigDecimal.TEN)))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("credit limit");
+
+        // Close auction 2 (bidderTight is its only/highest bidder) — its 0.5cr share must stop
+        // counting immediately, freeing that headroom back up with no explicit release step.
+        auctionService.closeAuctionById(auction2.getId());
+
+        // The same raise on auction 1 that was just rejected now fits, using only the freed 0.5cr.
+        bidService.placeBid(auction.getId(), bidderTight, twoCrore.add(BigDecimal.TEN));
     }
 
     /** Submits a bid on the shared pool; returns true if accepted, false if rejected (any BadRequestException). */
