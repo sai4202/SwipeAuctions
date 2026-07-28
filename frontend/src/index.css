@@ -1007,6 +1007,18 @@ label { display: block; font-size: 12.5px; color: var(--muted); margin: 14px 0 6
 .stat-tile .k { font-size: 11px; text-transform: uppercase; color: var(--muted); letter-spacing: .06em; }
 .stat-tile .v { font-size: 22px; font-weight: 800; margin-top: 4px; }
 
+/* A fixed-count row of stat-tiles (always exactly 3: Wallet page's Available/Held/Credit Limit) —
+   unlike .stat-tiles' auto-fit, this never lets one lone tile awkwardly wrap onto its own row, and
+   caps the value font size so a long "₹X,XXX Cr" figure never splits its unit onto a second line. */
+.wallet-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 16px 0 4px; }
+.wallet-stats .stat-tile { padding: 14px 10px; text-align: center; }
+.wallet-stats .stat-tile .v { font-size: 17px; white-space: nowrap; }
+@media (max-width: 480px) {
+  .wallet-stats { gap: 6px; }
+  .wallet-stats .stat-tile { padding: 10px 4px; }
+  .wallet-stats .stat-tile .v { font-size: 14px; }
+}
+
 /* ---------- Sell / create-listing form ---------- */
 .form-row { display: flex; gap: 14px; }
 .form-row > div { min-width: 0; flex: 1; }

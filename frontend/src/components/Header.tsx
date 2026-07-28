@@ -130,7 +130,7 @@ export default function Header() {
             <Link to="/kyc" className="link-login" style={{ color: 'var(--orange, #d97706)', whiteSpace: 'nowrap' }}>Complete KYC</Link>
           )}
           {isAuthenticated && credit != null && (
-            <Link to="/wallet" className="credit"><span className="gdot" />Available Credit <b>{moneyCompact(credit)}</b></Link>
+            <Link to="/wallet" className="credit"><span className="gdot" />Credit Limit <b>{moneyCompact(credit)}</b></Link>
           )}
           {isAuthenticated && !isAdmin && (
             <div className="account-menu" ref={profileRef}>

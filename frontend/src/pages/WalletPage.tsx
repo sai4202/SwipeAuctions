@@ -83,17 +83,25 @@ export default function WalletPage() {
       <div className="section-head">
         <h1 className="page">Wallet</h1>
       </div>
-      <div className="card" style={{ maxWidth: 460 }}>
+      <div className="card" style={{ maxWidth: 560 }}>
         <span className="eyebrow">Your Wallet</span>
-        <div className="stat" style={{ marginTop: 16 }}>
-          <div><div className="k">Available</div><div className="v">{money(wallet?.availableBalance)}</div></div>
-          <div><div className="k">Held</div><div className="v">{money(wallet?.heldBalance)}</div></div>
-          <div><div className="k">Credit Limit</div><div className="v">{moneyCompact(wallet?.creditLimit)}</div></div>
-          <div><div className="k">Available Credit</div><div className="v">{moneyCompact(wallet?.availableCreditLimit)}</div></div>
+        <div className="wallet-stats" style={{ marginTop: 16 }}>
+          <div className="stat-tile">
+            <div className="k">Available</div>
+            <div className="v">{money(wallet?.availableBalance)}</div>
+          </div>
+          <div className="stat-tile">
+            <div className="k">Held</div>
+            <div className="v">{money(wallet?.heldBalance)}</div>
+          </div>
+          <div className="stat-tile">
+            <div className="k">Credit Limit</div>
+            <div className="v">{moneyCompact(wallet?.availableCreditLimit)}</div>
+          </div>
         </div>
         {wallet && wallet.creditLimit !== wallet.availableCreditLimit && (
-          <p className="muted" style={{ marginTop: -8, marginBottom: 16, fontSize: 13 }}>
-            {moneyCompact(wallet.creditLimit - wallet.availableCreditLimit)} is currently committed to your other open bids.
+          <p className="muted" style={{ marginTop: 10, marginBottom: 16, fontSize: 13 }}>
+            {moneyCompact(wallet.creditLimit)} total, {moneyCompact(wallet.creditLimit - wallet.availableCreditLimit)} currently committed to your other open bids.
           </p>
         )}
         {error && <div className="error" style={{ marginTop: 12 }}>{error}</div>}
