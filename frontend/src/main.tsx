@@ -5,6 +5,7 @@ import './index.css'
 import App from './App.tsx'
 import { AuthProvider } from './auth.tsx'
 import { WalletProvider } from './WalletContext.tsx'
+import { StompProvider } from './StompContext.tsx'
 import { NotificationProvider } from './NotificationContext.tsx'
 import { FloatingTabsProvider } from './FloatingTabsContext.tsx'
 import { ThemeProvider } from './ThemeContext.tsx'
@@ -15,11 +16,13 @@ createRoot(document.getElementById('root')!).render(
       <ThemeProvider>
         <AuthProvider>
           <WalletProvider>
-            <NotificationProvider>
-              <FloatingTabsProvider>
-                <App />
-              </FloatingTabsProvider>
-            </NotificationProvider>
+            <StompProvider>
+              <NotificationProvider>
+                <FloatingTabsProvider>
+                  <App />
+                </FloatingTabsProvider>
+              </NotificationProvider>
+            </StompProvider>
           </WalletProvider>
         </AuthProvider>
       </ThemeProvider>

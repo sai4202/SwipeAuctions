@@ -82,6 +82,20 @@ public class WalletService {
         return getCreditLimit(user).subtract(committedCredit(user.getId()));
     }
 
+    /**
+     * Row-locks the bidder's wallet for the rest of the caller's transaction, serializing
+     * concurrent bid placements by the same bidder even across different auctions. Without this,
+     * two simultaneous bids on two different open auctions each read {@link #committedCredit}
+     * before the other's bid becomes visible, so both can pass the credit-limit check independently
+     * and together push the bidder's total exposure past their cap. Blocking the second caller here
+     * until the first commits means its committedCredit() read afterward always sees the first bid.
+     */
+    @Transactional
+    public void lockForBidding(User bidder) {
+        getOrCreateWallet(bidder);
+        lockWallet(bidder.getId());
+    }
+
     @Transactional
     public Wallet getOrCreateWallet(User user) {
         return walletRepository.findByUser_Id(user.getId())

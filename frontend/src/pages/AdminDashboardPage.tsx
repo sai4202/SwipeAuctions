@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../auth'
 import {
@@ -16,6 +16,7 @@ import {
 } from '../api'
 import { money, moneyCompact, formatDateTimeShort, openUserDetails } from '../util'
 import { StatTilesSkeleton } from '../components/Skeleton'
+import { DETAIL_FIELDS, DETAIL_TABS, type DetailFieldDef } from '../detailFields'
 
 type Tab = 'overview' | 'users' | 'auctions' | 'disputes' | 'categories' | 'kyc' | 'settings'
 
@@ -1001,6 +1002,36 @@ function AddStockModal({ onClose, onCreated }: { onClose: () => void; onCreated:
   )
 }
 
+/** One admin-form input for a single detailFields.ts entry, rendering the control that matches
+ *  its `type` (Yes/No fields get a 3-state select — blank means "not entered", not "No"). */
+function DetailFieldInput({ field, value, onChange }: { field: DetailFieldDef; value: string; onChange: (v: string) => void }) {
+  const wrap = (control: ReactNode) => (
+    <div className="fgroup" style={{ flex: 1, minWidth: field.type === 'textarea' ? '100%' : 180 }}>
+      <small>{field.icon} {field.label}</small>
+      {control}
+    </div>
+  )
+  if (field.type === 'yesno') {
+    return wrap(
+      <select value={value} onChange={(e) => onChange(e.target.value)}>
+        <option value="">—</option>
+        <option value="Yes">Yes</option>
+        <option value="No">No</option>
+      </select>,
+    )
+  }
+  if (field.type === 'textarea') {
+    return wrap(
+      <textarea style={{ width: '100%', minHeight: 60, fontFamily: 'inherit' }} value={value} onChange={(e) => onChange(e.target.value)} />,
+    )
+  }
+  return wrap(
+    <input type={field.type === 'date' ? 'date' : field.type === 'number' ? 'number' : 'text'}
+           min={field.type === 'number' ? 0 : undefined}
+           value={value} onChange={(e) => onChange(e.target.value)} />,
+  )
+}
+
 function AddStockSingleForm({ categories, onCategoriesChanged, onCreated }: {
   categories: AdminCategory[]
   onCategoriesChanged: (cats: AdminCategory[]) => void
@@ -1024,11 +1055,15 @@ function AddStockSingleForm({ categories, onCategoriesChanged, onCreated }: {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  // Structured item-detail fields (Yard Name, Registration Number, Chassis No, ...) shown as tabs
+  // on the detail page — see detailFields.ts, the single source of truth shared with DetailTabs.tsx.
+  const [detailValues, setDetailValues] = useState<Record<string, string>>({})
+  const setDetailValue = (key: string, value: string) => setDetailValues((v) => ({ ...v, [key]: value }))
 
   const reset = () => {
     setTitle(''); setDescription(''); setBrand(''); setCity(''); setState(''); setZip('')
     setReservePrice(''); setStartTime(''); setEndTime(''); setSwipeStock(false); setRequiredTier('NONE'); setFiles([])
-    setCategoryId(''); setNewCategoryName('')
+    setCategoryId(''); setNewCategoryName(''); setDetailValues({})
   }
 
   const submit = async (e: FormEvent) => {
@@ -1037,6 +1072,12 @@ function AddStockSingleForm({ categories, onCategoriesChanged, onCreated }: {
     try {
       const usingNewCategory = categoryId === NEW_CATEGORY_VALUE
       if (usingNewCategory && !newCategoryName.trim()) throw new Error('Enter a name for the new category')
+
+      // Only send fields the admin actually filled in — an empty string would otherwise store a
+      // blank ListingAttribute row, which DetailTabs would then have to filter out again anyway.
+      const attributes = Object.fromEntries(
+        Object.entries(detailValues).filter(([, v]) => v.trim() !== ''),
+      )
 
       const listing = await createStockListing({
         title,
@@ -1049,6 +1090,7 @@ function AddStockSingleForm({ categories, onCategoriesChanged, onCreated }: {
         state: state || undefined,
         zip: zip || undefined,
         reservePrice: Number(reservePrice),
+        attributes: Object.keys(attributes).length > 0 ? attributes : undefined,
         swipeStock,
         requiredTier,
       })
@@ -1153,6 +1195,20 @@ function AddStockSingleForm({ categories, onCategoriesChanged, onCreated }: {
         <small>Images (first one becomes the cover)</small>
         <input type="file" accept="image/*" multiple onChange={(e) => setFiles(Array.from(e.target.files ?? []))} />
       </div>
+
+      {/* Structured item-detail fields — shown as tabs (General Details / Registration / Insurance /
+          Other Details / Remarks) on the item's detail page. Every field here is optional; only
+          filled-in ones are saved, and only tabs with at least one filled-in field show up there. */}
+      {DETAIL_TABS.map((tab) => (
+        <div key={tab} className="detail-field-group">
+          <div className="cat-filters-head">{tab}</div>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            {DETAIL_FIELDS.filter((f) => f.tab === tab).map((f) => (
+              <DetailFieldInput key={f.key} field={f} value={detailValues[f.key] ?? ''} onChange={(v) => setDetailValue(f.key, v)} />
+            ))}
+          </div>
+        </div>
+      ))}
 
       <div className="fgroup" style={{ maxWidth: 220 }}>
         <small>Required subscription tier</small>

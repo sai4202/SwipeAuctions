@@ -273,7 +273,11 @@ export default function EventsBrowse({ categorySlug }: { categorySlug?: string }
                         <div className="muted" style={{ fontSize: 12 }}>◍ {[a.city, a.state].filter(Boolean).join(', ') || '—'}</div>
                         {Object.entries(a.attributes).length > 0 && (
                           <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>
-                            {Object.entries(a.attributes).map(([k, v]) => `${k}: ${v}`).join(' · ')}
+                            {/* At-a-glance only — a fully filled-in item (Yard Name, CTE Contact, Chassis
+                                No, ...) can carry 20+ attributes now; the full breakdown lives on the
+                                detail page's tabs (View Details), not crammed into this table row. */}
+                            {Object.entries(a.attributes).slice(0, 3).map(([k, v]) => `${k}: ${v}`).join(' · ')}
+                            {Object.entries(a.attributes).length > 3 && ` · +${Object.entries(a.attributes).length - 3} more`}
                           </div>
                         )}
                       </td>

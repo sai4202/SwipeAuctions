@@ -1,57 +1,62 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Client } from '@stomp/stompjs'
-import SockJS from 'sockjs-client'
-import { getAuction, placeBid, errorMessage, API_BASE, type Auction } from '../api'
+import { getAuctions, placeBid, errorMessage, type Auction } from '../api'
 import { useAuth } from '../auth'
 import { useWallet } from '../WalletContext'
+import { useStomp } from '../StompContext'
+import { useCachedFetch, updateCache } from '../useCachedFetch'
 import { getMultiBidIds, removeMultiBid, formatCountdown, msUntil, money, cardImage, effectiveStatus, MULTI_KEY } from '../util'
 import TermsModal from '../components/TermsModal'
 
-interface Tile { auction: Auction; amount: string; msg: string; err: string; flash: boolean }
+/** Per-tile UI-only state (the bid form + its own result) — kept separate from auction data, which
+ *  now lives in the shared 'auctions' cache instead of a per-tile fetch (see below). */
+interface TileUi { amount: string; msg: string; err: string; flash: boolean }
+const EMPTY_UI: TileUi = { amount: '', msg: '', err: '', flash: false }
 
 export default function MultiBiddingPage() {
   const { isAuthenticated } = useAuth()
   const { refreshWallet } = useWallet()
+  const { subscribe } = useStomp()
   const [ids, setIds] = useState<string[]>(getMultiBidIds())
-  const [tiles, setTiles] = useState<Record<string, Tile>>({})
+  // Same 'auctions' cache key BrowsePage/EventsBrowse use — one shared fetch instead of one
+  // GET /api/auctions/{id} per wishlist tile (each of those paid ~7 queries server-side; a dozen
+  // wishlisted items used to mean a dozen full round trips just to render this page). Landing here
+  // right after Browse is now instant since the list is already cached.
+  const { data: allAuctions = [] } = useCachedFetch<Auction[]>('auctions', getAuctions, {})
+  const auctionsById = useMemo(() => {
+    const m: Record<string, Auction> = {}
+    allAuctions.forEach((a) => { m[a.id] = a })
+    return m
+  }, [allAuctions])
+  const [ui, setUi] = useState<Record<string, TileUi>>({})
   const [, setTick] = useState(0)
   const [termsForId, setTermsForId] = useState<string | null>(null)
 
-  // Load / prune auctions whenever the id list changes.
+  // Drop UI state for anything removed from the wishlist.
   useEffect(() => {
-    ids.forEach((id) => {
-      getAuction(id)
-        .then((a) => setTiles((t) => (t[id]
-          ? { ...t, [id]: { ...t[id], auction: a } }
-          : { ...t, [id]: { auction: a, amount: '', msg: '', err: '', flash: false } })))
-        .catch(() => {})
-    })
-    setTiles((t) => {
-      const copy = { ...t }
+    setUi((u) => {
+      const copy = { ...u }
       Object.keys(copy).forEach((k) => { if (!ids.includes(k)) delete copy[k] })
       return copy
     })
   }, [ids])
 
-  // One STOMP connection; subscribe to every tracked auction.
+  // Subscribe to every tracked auction on the one shared connection (StompContext) and patch the
+  // shared 'auctions' cache directly (updateCache, see useCachedFetch.ts) — any other mounted page
+  // reading that same cache (Browse, Events) picks the live update up too, instead of this page
+  // keeping its own private copy and its own socket.
   useEffect(() => {
-    if (ids.length === 0) return
-    const client = new Client({
-      webSocketFactory: () => new SockJS(`${API_BASE}/ws`),
-      reconnectDelay: 4000,
-      onConnect: () => {
-        ids.forEach((id) =>
-          client.subscribe(`/topic/auctions/${id}`, (frame) => {
-            const b = JSON.parse(frame.body) as { currentHighestBid: number; currentEndTime: string; bidCount: number }
-            setTiles((t) => (t[id] ? { ...t, [id]: { ...t[id], auction: { ...t[id].auction, currentHighestBid: b.currentHighestBid, currentEndTime: b.currentEndTime, bidCount: b.bidCount }, flash: true } } : t))
-            setTimeout(() => setTiles((t) => (t[id] ? { ...t, [id]: { ...t[id], flash: false } } : t)), 800)
-          }),
-        )
-      },
-    })
-    client.activate()
-    return () => { void client.deactivate() }
+    const unsubscribes = ids.map((id) =>
+      subscribe(`/topic/auctions/${id}`, (body) => {
+        const b = JSON.parse(body) as { currentHighestBid: number; currentEndTime: string; bidCount: number }
+        updateCache<Auction[]>('auctions', (list) =>
+          list.map((a) => (a.id === id ? { ...a, currentHighestBid: b.currentHighestBid, currentEndTime: b.currentEndTime, bidCount: b.bidCount } : a)))
+        setUi((u) => ({ ...u, [id]: { ...(u[id] ?? EMPTY_UI), flash: true } }))
+        setTimeout(() => setUi((u) => (u[id] ? { ...u, [id]: { ...u[id], flash: false } } : u)), 800)
+      }),
+    )
+    return () => unsubscribes.forEach((fn) => fn())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ids])
 
   useEffect(() => { const t = setInterval(() => setTick((x) => x + 1), 1000); return () => clearInterval(t) }, [])
@@ -67,29 +72,44 @@ export default function MultiBiddingPage() {
   }, [])
 
   const remove = (id: string) => setIds(removeMultiBid(id))
-  const upd = (id: string, patch: Partial<Tile>) => setTiles((t) => (t[id] ? { ...t, [id]: { ...t[id], ...patch } } : t))
+  const updUi = (id: string, patch: Partial<TileUi>) => setUi((u) => ({ ...u, [id]: { ...(u[id] ?? EMPTY_UI), ...patch } }))
 
   const proceedBid = async (id: string) => {
-    const tile = tiles[id]; if (!tile) return
-    const amt = Number(tile.amount)
-    if (!window.confirm(`Place a bid of ${money(amt)} on "${tile.auction.title}"?`)) return
-    upd(id, { err: '', msg: '' })
+    const auction = auctionsById[id]; if (!auction) return
+    const tileUi = ui[id] ?? EMPTY_UI
+    const amt = Number(tileUi.amount)
+    if (!window.confirm(`Place a bid of ${money(amt)} on "${auction.title}"?`)) return
+    updUi(id, { err: '', msg: '' })
     try {
-      await placeBid(id, amt); upd(id, { amount: '', msg: 'Bid placed' })
-      const a = await getAuction(id); upd(id, { auction: a })
+      // currentHighestBid/isWinner come from the server's real post-bid state, not inferred from
+      // the amount just sent — same reasoning as AuctionCard.tsx's optimistic patch. bidCount is
+      // deliberately left untouched here (unlike AuctionCard's own override): this page's own STOMP
+      // subscription below (subscribe(`/topic/auctions/${id}`, ...)) patches the same 'auctions'
+      // cache entry with the server's authoritative bidCount for every bid on a tracked auction,
+      // including this one — usually only moments after this response lands. Incrementing it here
+      // too would double-count whenever that broadcast wins the race and arrives first (it patches
+      // bidCount to the true post-bid value, then this handler would add another +1 on top of it).
+      const res = await placeBid(id, amt)
+      updUi(id, { amount: '', msg: 'Bid placed' })
+      updateCache<Auction[]>('auctions', (list) =>
+        list.map((a) => (a.id === id
+          ? { ...a, currentHighestBid: res.currentHighestBid, yourBid: amt, currentEndTime: res.currentEndTime, isWinner: res.leading }
+          : a)))
       refreshWallet()
     }
-    catch (e) { upd(id, { err: errorMessage(e) }) }
+    catch (e) { updUi(id, { err: errorMessage(e) }) }
   }
   // Terms & Conditions are gated on the bidder's first bid on THIS auction (auction.yourBid ==
   // null) — every increment bid after that goes straight to the normal confirm dialog.
   const doBid = (id: string) => {
-    const tile = tiles[id]; if (!tile) return
-    if (tile.auction.yourBid == null) { setTermsForId(id); return }
+    const auction = auctionsById[id]; if (!auction) return
+    if (auction.yourBid == null) { setTermsForId(id); return }
     void proceedBid(id)
   }
 
-  const list = ids.map((id) => tiles[id]).filter(Boolean) as Tile[]
+  const list = ids
+    .map((id) => (auctionsById[id] ? { auction: auctionsById[id], ui: ui[id] ?? EMPTY_UI } : null))
+    .filter((x): x is { auction: Auction; ui: TileUi } => x != null)
 
   if (!isAuthenticated) {
     return <div className="container"><div className="card" style={{ maxWidth: 460 }}>Please <Link to="/login">sign in</Link> to view your wishlist.</div></div>
@@ -110,8 +130,7 @@ export default function MultiBiddingPage() {
         <p className="muted">Your wishlist is empty.</p>
       ) : (
         <div className="multi-grid">
-          {list.map((tile) => {
-            const a = tile.auction
+          {list.map(({ auction: a, ui: tile }) => {
             const current = a.currentHighestBid ?? a.basePrice
             // What THIS bidder must clear next — their own previous bid on this item, not
             // necessarily the current leader's (see BidService.placeBid for why those differ).
@@ -146,7 +165,7 @@ export default function MultiBiddingPage() {
                   <span className="muted">No bids left</span>
                 ) : (
                   <div className="bidrow">
-                    <input type="number" placeholder={a.yourBid != null ? `min ${minNext}` : `suggested ${minNext}`} value={tile.amount} onChange={(e) => upd(a.id, { amount: e.target.value })} />
+                    <input type="number" placeholder={a.yourBid != null ? `min ${minNext}` : `suggested ${minNext}`} value={tile.amount} onChange={(e) => updUi(a.id, { amount: e.target.value })} />
                     <button className="btn sm" onClick={() => doBid(a.id)}>Bid</button>
                   </div>
                 )}
@@ -163,9 +182,9 @@ export default function MultiBiddingPage() {
         </div>
       )}
 
-      {termsForId && tiles[termsForId] && (
+      {termsForId && auctionsById[termsForId] && (
         <TermsModal
-          title={tiles[termsForId].auction.title}
+          title={auctionsById[termsForId].title}
           onAccept={() => { const id = termsForId; setTermsForId(null); void proceedBid(id) }}
           onCancel={() => setTermsForId(null)}
         />

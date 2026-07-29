@@ -274,14 +274,76 @@ class BidServiceConcurrencyTest {
         bidService.placeBid(auction.getId(), bidderTight, twoCrore.add(BigDecimal.TEN));
     }
 
+    /**
+     * The scenario {@link WalletService#lockForBidding} exists for: the same bidder firing bids at
+     * two DIFFERENT auctions at the same instant. Neither bid's own auction-row lock protects
+     * against the other, since they're different rows — only the wallet-row lock forces the second
+     * call's committedCredit() read to actually see the first one's result. bidderTight has exactly
+     * 2.5cr of credit limit; 2cr on auction 1 plus 1cr on auction 2 sums to 3cr, past the limit, so
+     * without serialization both concurrent checks could independently read "0 committed so far" and
+     * both pass. With it, exactly one must be accepted and the other rejected — never both.
+     */
+    @Test
+    void creditLimitRaceAcrossTwoDifferentAuctions_isSerializedNotJointlyExceeded() throws InterruptedException {
+        BigDecimal twoCrore = new BigDecimal("20000000.00");
+        BigDecimal oneCrore = new BigDecimal("10000000.00");
+        int rounds = 5;
+
+        for (int round = 1; round <= rounds; round++) {
+            ExecutorService pool = Executors.newFixedThreadPool(2);
+            CountDownLatch ready = new CountDownLatch(2);
+            CountDownLatch go = new CountDownLatch(1);
+
+            Future<Boolean> onAuction1 = submitBid(pool, ready, go, bidderTight, auction, twoCrore);
+            Future<Boolean> onAuction2 = submitBid(pool, ready, go, bidderTight, auction2, oneCrore);
+
+            ready.await(10, TimeUnit.SECONDS);
+            go.countDown();
+
+            boolean accepted1, accepted2;
+            try {
+                accepted1 = onAuction1.get(30, TimeUnit.SECONDS);
+                accepted2 = onAuction2.get(30, TimeUnit.SECONDS);
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+            pool.shutdown();
+            assertThat(pool.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
+
+            // The invariant a broken/missing wallet lock would break: both bids summing past the
+            // 2.5cr limit must never both be accepted, no matter how the threads interleaved.
+            assertThat(accepted1 && accepted2)
+                    .as("round %d: both a 2cr and a 1cr bid (summing past the 2.5cr limit) were accepted concurrently", round)
+                    .isFalse();
+
+            // Clean up whichever bid(s) landed so the next round starts from zero committed credit again.
+            bidRepository.deleteAll(bidRepository.findByAuction_IdOrderByAmountDesc(auction.getId()));
+            bidRepository.deleteAll(bidRepository.findByAuction_IdOrderByAmountDesc(auction2.getId()));
+            auction = auctionRepository.findById(auction.getId()).orElseThrow();
+            auction2 = auctionRepository.findById(auction2.getId()).orElseThrow();
+            auction.setCurrentHighestBid(null);
+            auction.setCurrentWinner(null);
+            auction2.setCurrentHighestBid(null);
+            auction2.setCurrentWinner(null);
+            auctionRepository.save(auction);
+            auctionRepository.save(auction2);
+        }
+    }
+
     /** Submits a bid on the shared pool; returns true if accepted, false if rejected (any BadRequestException). */
     private Future<Boolean> submitBid(ExecutorService pool, CountDownLatch ready, CountDownLatch go,
                                        User bidder, BigDecimal amount) {
+        return submitBid(pool, ready, go, bidder, auction, amount);
+    }
+
+    /** Same as above, but against an explicit auction rather than always the first fixture. */
+    private Future<Boolean> submitBid(ExecutorService pool, CountDownLatch ready, CountDownLatch go,
+                                       User bidder, Auction targetAuction, BigDecimal amount) {
         return pool.submit(() -> {
             ready.countDown();
             go.await();
             try {
-                bidService.placeBid(auction.getId(), bidder, amount);
+                bidService.placeBid(targetAuction.getId(), bidder, amount);
                 return true;
             } catch (BadRequestException e) {
                 return false;

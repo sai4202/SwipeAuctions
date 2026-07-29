@@ -114,6 +114,12 @@ public class BidService {
         // not the full new amount again. A losing auction simply stops counting once it closes (no
         // separate "release" step), and a win is charged for real via the settlement flow below,
         // against the wallet balance itself — this check never moves any actual money.
+        //
+        // Only the auction row above is locked so far, which isn't enough on its own: this bidder
+        // could have a second placeBid() in flight right now against a *different* auction, and
+        // that one only locks its own auction row too, so the two committedCredit() reads below
+        // could otherwise race and both pass. Locking the wallet row serializes the two calls.
+        walletService.lockForBidding(bidder);
         BigDecimal creditLimit = walletService.getCreditLimit(bidder);
         BigDecimal committedElsewhere = walletService.committedCredit(bidder.getId())
                 .subtract(myPreviousBest != null ? myPreviousBest : BigDecimal.ZERO);

@@ -1,17 +1,17 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useParams, useSearchParams, Link } from 'react-router-dom'
-import { Client } from '@stomp/stompjs'
-import SockJS from 'sockjs-client'
 import {
   getAuction, placeBid, raiseDispute, completeAuctionPayment, getRegistrationFee, payRegistrationFee, errorMessage,
-  API_BASE, type Auction,
+  type Auction,
 } from '../api'
 import { useAuth } from '../auth'
 import { useWallet } from '../WalletContext'
+import { useStomp } from '../StompContext'
 import { formatCountdown, msUntil, money, cardImage, downloadValuation, isVideoUrl, tierMeets, effectiveStatus, resolveMediaUrl } from '../util'
 import { useCachedFetch } from '../useCachedFetch'
 import { AuctionDetailSkeleton } from '../components/Skeleton'
 import TermsModal from '../components/TermsModal'
+import DetailTabs from '../components/DetailTabs'
 
 // Matches the backend's default auction.min-increment (BidService) — the smallest amount a bid must
 // clear the current highest by, and the step size for the +/- bid stepper below.
@@ -32,6 +32,7 @@ export default function AuctionDetailPage() {
   const { isAuthenticated, kycCompleted, role, subscriptionTier, markRegistrationFeePaid } = useAuth()
   const isAdmin = role === 'ADMIN'
   const { wallet, refreshWallet } = useWallet()
+  const { subscribe } = useStomp()
   const [error, setError] = useState('')
   // Cached per auction id — coming back to an item you already viewed (e.g. via browser back, or
   // re-opening from the wishlist) shows it instantly while a fresh fetch quietly runs behind it.
@@ -86,21 +87,15 @@ export default function AuctionDetailPage() {
     amountRef.current?.focus()
   }, [auction, searchParams])
 
-  // Live bid updates over STOMP.
+  // Live bid updates over STOMP — rides the one shared connection (StompContext) instead of
+  // opening its own socket.
   useEffect(() => {
     if (!id) return
-    const client = new Client({
-      webSocketFactory: () => new SockJS(`${API_BASE}/ws`),
-      reconnectDelay: 4000,
-      onConnect: () => {
-        client.subscribe(`/topic/auctions/${id}`, (frame) => {
-          const b = JSON.parse(frame.body) as { currentHighestBid: number; currentEndTime: string; bidCount: number }
-          setAuction((prev) => (prev ? { ...prev, currentHighestBid: b.currentHighestBid, currentEndTime: b.currentEndTime, bidCount: b.bidCount } : prev))
-        })
-      },
+    return subscribe(`/topic/auctions/${id}`, (body) => {
+      const b = JSON.parse(body) as { currentHighestBid: number; currentEndTime: string; bidCount: number }
+      setAuction((prev) => (prev ? { ...prev, currentHighestBid: b.currentHighestBid, currentEndTime: b.currentEndTime, bidCount: b.bidCount } : prev))
     })
-    client.activate()
-    return () => { void client.deactivate() }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
 
   useEffect(() => { getRegistrationFee().then(setRegistrationFee).catch(() => {}) }, [])
@@ -219,7 +214,6 @@ export default function AuctionDetailPage() {
   const minNext = auction.yourBid != null ? auction.yourBid + MIN_INCREMENT : auction.basePrice
   const isFirstBid = auction.yourBid == null
   const gallery = auction.images.length > 0 ? auction.images.map(resolveMediaUrl) : [cardImage(auction)]
-  const specs = Object.entries(auction.attributes)
   const locked = auction.requiredTier !== 'NONE' && !tierMeets(subscriptionTier, auction.requiredTier)
   // Status only flips OPEN -> CLOSED/UNSOLD on a scheduler tick, so a raw `status` read can lag
   // behind the real end time — compute what it effectively is right now instead of trusting that.
@@ -260,18 +254,7 @@ export default function AuctionDetailPage() {
               ⬇ Download valuation details
             </button>
 
-            {specs.length > 0 && (
-              <div className="spec-table">
-                <div className="cat-filters-head">Specifications</div>
-                <table>
-                  <tbody>
-                    {specs.map(([k, v]) => (
-                      <tr key={k}><td>{k}</td><td>{v}</td></tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+            <DetailTabs attributes={auction.attributes} city={auction.city} state={auction.state} />
           </div>
         )}
 
