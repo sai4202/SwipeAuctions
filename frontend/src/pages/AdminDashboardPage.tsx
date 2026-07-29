@@ -16,7 +16,7 @@ import {
 } from '../api'
 import { money, moneyCompact, formatDateTimeShort, openUserDetails } from '../util'
 import { StatTilesSkeleton } from '../components/Skeleton'
-import { DETAIL_FIELDS, DETAIL_TABS, type DetailFieldDef } from '../detailFields'
+import { DETAIL_FIELDS, DETAIL_TABS, REQUIRED_FOR_USED_VEHICLES, requiresVehicleDetails, type DetailFieldDef } from '../detailFields'
 
 type Tab = 'overview' | 'users' | 'auctions' | 'disputes' | 'categories' | 'kyc' | 'settings'
 
@@ -1003,17 +1003,21 @@ function AddStockModal({ onClose, onCreated }: { onClose: () => void; onCreated:
 }
 
 /** One admin-form input for a single detailFields.ts entry, rendering the control that matches
- *  its `type` (Yes/No fields get a 3-state select — blank means "not entered", not "No"). */
-function DetailFieldInput({ field, value, onChange }: { field: DetailFieldDef; value: string; onChange: (v: string) => void }) {
+ *  its `type` (Yes/No fields get a 3-state select — blank means "not entered", not "No"). `required`
+ *  is a UI hint only (asterisk + native required attribute) — the backend
+ *  (AdminStockController.requireVehicleDetails) is what actually enforces it. */
+function DetailFieldInput({ field, value, onChange, required }: {
+  field: DetailFieldDef; value: string; onChange: (v: string) => void; required?: boolean
+}) {
   const wrap = (control: ReactNode) => (
     <div className="fgroup" style={{ flex: 1, minWidth: field.type === 'textarea' ? '100%' : 180 }}>
-      <small>{field.icon} {field.label}</small>
+      <small>{field.icon} {field.label}{required && <span style={{ color: 'var(--red)' }}> *</span>}</small>
       {control}
     </div>
   )
   if (field.type === 'yesno') {
     return wrap(
-      <select value={value} onChange={(e) => onChange(e.target.value)}>
+      <select value={value} onChange={(e) => onChange(e.target.value)} required={required}>
         <option value="">—</option>
         <option value="Yes">Yes</option>
         <option value="No">No</option>
@@ -1022,13 +1026,13 @@ function DetailFieldInput({ field, value, onChange }: { field: DetailFieldDef; v
   }
   if (field.type === 'textarea') {
     return wrap(
-      <textarea style={{ width: '100%', minHeight: 60, fontFamily: 'inherit' }} value={value} onChange={(e) => onChange(e.target.value)} />,
+      <textarea style={{ width: '100%', minHeight: 60, fontFamily: 'inherit' }} value={value} onChange={(e) => onChange(e.target.value)} required={required} />,
     )
   }
   return wrap(
     <input type={field.type === 'date' ? 'date' : field.type === 'number' ? 'number' : 'text'}
            min={field.type === 'number' ? 0 : undefined}
-           value={value} onChange={(e) => onChange(e.target.value)} />,
+           value={value} onChange={(e) => onChange(e.target.value)} required={required} />,
   )
 }
 
@@ -1059,6 +1063,13 @@ function AddStockSingleForm({ categories, onCategoriesChanged, onCreated }: {
   // on the detail page — see detailFields.ts, the single source of truth shared with DetailTabs.tsx.
   const [detailValues, setDetailValues] = useState<Record<string, string>>({})
   const setDetailValue = (key: string, value: string) => setDetailValues((v) => ({ ...v, [key]: value }))
+
+  // Every real used/repossessed vehicle has a registration, chassis, and yard — see detailFields.ts.
+  // UI hint only; AdminStockController.requireVehicleDetails is what actually enforces this.
+  const selectedCategoryName = categoryId === NEW_CATEGORY_VALUE
+    ? newCategoryName
+    : (categories.find((c) => c.id === categoryId)?.name ?? '')
+  const vehicleDetailsRequired = requiresVehicleDetails(selectedCategoryName, condition)
 
   const reset = () => {
     setTitle(''); setDescription(''); setBrand(''); setCity(''); setState(''); setZip('')
@@ -1197,14 +1208,22 @@ function AddStockSingleForm({ categories, onCategoriesChanged, onCreated }: {
       </div>
 
       {/* Structured item-detail fields — shown as tabs (General Details / Registration / Insurance /
-          Other Details / Remarks) on the item's detail page. Every field here is optional; only
-          filled-in ones are saved, and only tabs with at least one filled-in field show up there. */}
+          Other Details / Remarks) on the item's detail page. Every field here is optional — except
+          Registration Number / Chassis No / Yard Name / Yard Location, marked with * below, once the
+          category+condition combo makes them mandatory (see requiresVehicleDetails in detailFields.ts). */}
+      {vehicleDetailsRequired && (
+        <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>
+          <span style={{ color: 'var(--red)' }}>*</span> Required for a used {selectedCategoryName} item — every real
+          repossessed/used vehicle has these. Only exempt when Condition is set to NEW.
+        </p>
+      )}
       {DETAIL_TABS.map((tab) => (
         <div key={tab} className="detail-field-group">
           <div className="cat-filters-head">{tab}</div>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             {DETAIL_FIELDS.filter((f) => f.tab === tab).map((f) => (
-              <DetailFieldInput key={f.key} field={f} value={detailValues[f.key] ?? ''} onChange={(v) => setDetailValue(f.key, v)} />
+              <DetailFieldInput key={f.key} field={f} value={detailValues[f.key] ?? ''} onChange={(v) => setDetailValue(f.key, v)}
+                                 required={vehicleDetailsRequired && REQUIRED_FOR_USED_VEHICLES.includes(f.key)} />
             ))}
           </div>
         </div>

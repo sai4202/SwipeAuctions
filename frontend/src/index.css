@@ -211,6 +211,13 @@ button { font-family: inherit; }
 .search-btn { text-transform: none; border-radius: var(--radius-full); padding: 11px 22px; letter-spacing: normal; }
 
 .container { max-width: 1160px; margin: 0 auto; padding: 34px 28px 64px; }
+/* List-view tables (AuctionListTable, EventsBrowse's item table) have 9 columns of mostly-fixed-width
+   data (dates, prices, counts) plus one content-heavy "Details" column — the default centered
+   1160px container left them squeezed enough that Base Price/Current Bid/Bids/Action scrolled off
+   to the right, forcing exactly the left-right scrolling this is meant to avoid. Much wider (not
+   literally 100vw — some side breathing room is still wanted) so the whole row fits at a normal
+   desktop width. */
+.container-wide { max-width: 1600px; }
 
 /* ---------- Hero (landing) ---------- */
 /* CSS-only backdrop — no hotlinked photo. An external image is a network dependency (can be
@@ -888,14 +895,28 @@ button { font-family: inherit; }
 .gallery-main img, .gallery-main video { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; display: block; }
 /* ---------- Detail tabs (General Details / Registration / Insurance / Other Details / Remarks) ---------- */
 .detail-tabs { margin-top: 20px; padding-top: 16px; border-top: 1px dashed var(--border); }
-.detail-tabs-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 18px 14px; margin-top: 16px; }
-.detail-field { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
+/* Underline-style segmented nav (not the pill-style .tabs used for filters elsewhere) — a full-width
+   bottom rule so the tab strip reads as one deliberate bar instead of a few pills floating with dead
+   space around them in a wide card. */
+.detail-tabs-nav { display: flex; gap: 22px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.detail-tab-btn { padding: 10px 2px 12px; border: none; background: transparent; color: var(--muted);
+  font-size: 12.5px; font-weight: 700; letter-spacing: .03em; cursor: pointer;
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+  transition: color var(--transition-fast), border-color var(--transition-fast); }
+.detail-tab-btn:hover { color: var(--text); }
+.detail-tab-btn.active { color: var(--red-2); border-bottom-color: var(--red); }
+/* Each attribute gets real visual weight as its own bordered tile (matching .stat-tile's language)
+   instead of bare icon+text floating in a mostly-empty grid — a tab with a single field still looks
+   deliberate rather than sparse. */
+.detail-tabs-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; margin-top: 18px; }
+.detail-field { display: flex; align-items: flex-start; gap: 12px; min-width: 0;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 14px; }
 .detail-field.wide { grid-column: 1 / -1; }
-.detail-field-icon { flex: none; width: 32px; height: 32px; border-radius: 50%; background: var(--panel-2);
-  display: grid; place-items: center; font-size: 14px; }
-.detail-field-label { font-size: 11.5px; color: var(--muted); }
-.detail-field-value { font-size: 13.5px; font-weight: 700; margin-top: 2px; word-break: break-word; }
-@media (max-width: 480px) { .detail-tabs-grid { grid-template-columns: 1fr 1fr; gap: 16px 10px; } }
+.detail-field-icon { flex: none; width: 34px; height: 34px; border-radius: 50%; background: var(--panel);
+  display: grid; place-items: center; font-size: 15px; }
+.detail-field-label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.detail-field-value { font-size: 14px; font-weight: 700; margin-top: 3px; word-break: break-word; }
+@media (max-width: 480px) { .detail-tabs-grid { grid-template-columns: 1fr; gap: 10px; } .detail-tabs-nav { gap: 14px; } }
 
 /* Admin "Add Stock" form's grouped detail-field sections (General Details / Registration / ...) */
 .detail-field-group { margin-top: 10px; padding-top: 14px; border-top: 1px dashed var(--border); display: flex; flex-direction: column; gap: 10px; }
@@ -906,6 +927,10 @@ button { font-family: inherit; }
    instead of stretching the buy box across the full two-column grid. */
 .pdp-layout-focused { grid-template-columns: 1fr; }
 .pdp-layout-focused .pdp-buybox { max-width: 480px; width: 100%; margin: 0 auto; position: static; }
+/* Detail tabs sit below the two-column grid (not inside the gallery column) so they can span the
+   full page width instead of being squeezed into ~55% of it while the buy box next to them ends
+   early and leaves the right side empty. */
+.pdp-details-full { margin-top: 22px; padding: 20px; }
 .pdp-cta { display: flex; gap: 10px; margin: 16px 0 4px; }
 .pdp-cta .btn { flex: 1; text-align: center; }
 
@@ -1003,6 +1028,18 @@ label { display: block; font-size: 12.5px; color: var(--muted); margin: 14px 0 6
 .admin-table th { color: var(--muted); font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
 .admin-table tbody tr { transition: background-color var(--transition-fast); }
 .admin-table tbody tr:hover { background: var(--panel-2); cursor: default; }
+/* Fixed layout + colgroup widths (set in AuctionListTable.tsx / EventsBrowse.tsx) so the
+   content-heavy "Details" column actually claims the space auto-layout otherwise left empty,
+   instead of leaving a gap before the date/price columns start. */
+.list-view-table { table-layout: fixed; width: 100%; }
+.list-view-table td { overflow-wrap: break-word; }
+
+/* The 4 always-shown vehicle fields (Yard Name/Location, Reg No, Chassis No) on a list-view row —
+   see VehicleDetailStrip.tsx. Deliberately its own small block, not folded into the existing
+   brand/condition/location muted lines above it, so it reads as a distinct "vehicle ID" group. */
+.vehicle-detail-strip { margin-top: 4px; font-size: 11.5px; display: flex; flex-direction: column; gap: 1px; }
+.vehicle-detail-strip b { color: var(--text); font-weight: 700; }
+.vehicle-detail-strip-row { display: flex; gap: 14px; flex-wrap: wrap; }
 .admin-filters { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
 .admin-filters input, .admin-filters select { width: auto; }
 
@@ -1093,6 +1130,10 @@ label { display: block; font-size: 12.5px; color: var(--muted); margin: 14px 0 6
 .wallet-explainer-icon { flex: none; width: 30px; height: 30px; border-radius: 9px; background: var(--panel-2);
   display: grid; place-items: center; font-size: 14px; }
 .wallet-explainer-list b { color: var(--text); }
+.wallet-explainer-full { margin-top: 20px; }
+.wallet-explainer-list-row { flex-direction: row; }
+.wallet-explainer-list-row li { flex: 1; }
+@media (max-width: 780px) { .wallet-explainer-list-row { flex-direction: column; } }
 
 @media (max-width: 480px) {
   .wallet-trust-row { gap: 8px 16px; }

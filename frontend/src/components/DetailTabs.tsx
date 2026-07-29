@@ -78,9 +78,9 @@ export default function DetailTabs({ attributes, city, state }: Props) {
 
   return (
     <div className="detail-tabs">
-      <div className="tabs">
+      <div className="detail-tabs-nav">
         {availableTabs.map((t) => (
-          <button key={t} type="button" className={'tab' + (t === activeTab ? ' active' : '')} onClick={() => setActive(t)}>
+          <button key={t} type="button" className={'detail-tab-btn' + (t === activeTab ? ' active' : '')} onClick={() => setActive(t)}>
             {t.toUpperCase()}
           </button>
         ))}

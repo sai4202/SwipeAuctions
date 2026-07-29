@@ -253,8 +253,6 @@ export default function AuctionDetailPage() {
             <button type="button" className="linkbtn" style={{ marginTop: 14 }} onClick={() => downloadValuation(auction)}>
               ⬇ Download valuation details
             </button>
-
-            <DetailTabs attributes={auction.attributes} city={auction.city} state={auction.state} />
           </div>
         )}
 
@@ -355,6 +353,15 @@ export default function AuctionDetailPage() {
           )}
         </div>
       </div>
+
+      {/* Full width, not confined to the gallery's (left) column — the buy box next to it is
+          usually much shorter once its content ends, and a wide field set (General/Registration/
+          Insurance/Other/Remarks) deserves the room the right column would otherwise leave empty. */}
+      {showFullDetails && (
+        <div className="card pdp-details-full">
+          <DetailTabs attributes={auction.attributes} city={auction.city} state={auction.state} />
+        </div>
+      )}
 
       {showTerms && (
         <TermsModal

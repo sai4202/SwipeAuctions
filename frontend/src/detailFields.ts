@@ -65,3 +65,21 @@ export const DETAIL_FIELDS: DetailFieldDef[] = [
 
 export const DETAIL_FIELD_BY_KEY: Record<string, DetailFieldDef> =
   Object.fromEntries(DETAIL_FIELDS.map((f) => [f.key, f]))
+
+/**
+ * Category names (case-insensitive) treated as "vehicles" — same fixed-name-set convention as
+ * eventCategories.ts's EVENT_CATEGORY_SLUGS, mirrored on the backend in
+ * AdminStockController.VEHICLE_CATEGORY_NAMES (the two must stay in sync; keep this list identical
+ * there whenever it changes here).
+ */
+const VEHICLE_CATEGORY_NAMES = new Set(['vehicles', 'bank vehicles', 'auto', 'insurance'])
+
+/** Keys of the 4 fields that become mandatory for a used (non-NEW) item in a vehicle category —
+ *  every real repossessed/used vehicle has a registration, chassis, and yard; a brand-new one or a
+ *  non-vehicle item (Electronics, Properties, ...) is exempt. Mirrors
+ *  AdminStockController.requireVehicleDetails on the backend, which is what actually enforces it. */
+export const REQUIRED_FOR_USED_VEHICLES = ['registrationNumber', 'chassisNo', 'yardName', 'yardLocation']
+
+export function requiresVehicleDetails(categoryName: string, condition: string): boolean {
+  return VEHICLE_CATEGORY_NAMES.has(categoryName.trim().toLowerCase()) && condition !== 'NEW'
+}

@@ -209,24 +209,6 @@ export default function WalletPage() {
               </form>
             </div>
           </div>
-
-          <div className="card" data-reveal>
-            <span className="eyebrow">How your credit limit works</span>
-            <ul className="wallet-explainer-list">
-              <li>
-                <span className="wallet-explainer-icon">📊</span>
-                <span><b>Capped exposure.</b> Your credit limit is a shared cap across every auction you're bidding on at once — you can never commit more than your limit in total, no matter how many items you're active on.</span>
-              </li>
-              <li>
-                <span className="wallet-explainer-icon">🔄</span>
-                <span><b>Auto-released.</b> The moment an auction you didn't win closes, whatever you'd committed to it frees back up on its own — no request or wait required.</span>
-              </li>
-              <li>
-                <span className="wallet-explainer-icon">🛡️</span>
-                <span><b>Escrow settlement.</b> Funds only leave your wallet for real if you win — held in escrow until handover is confirmed.</span>
-              </li>
-            </ul>
-          </div>
         </div>
 
         <div className="wallet-side">
@@ -262,6 +244,27 @@ export default function WalletPage() {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Full width, below the grid — the Payouts column above is much shorter than the wallet-main
+          column next to it, so a card confined to that narrow column would leave the whole right
+          side empty. This one spans the page and lays its 3 points out side by side instead. */}
+      <div className="card wallet-explainer-full" data-reveal>
+        <span className="eyebrow">How your credit limit works</span>
+        <ul className="wallet-explainer-list wallet-explainer-list-row">
+          <li>
+            <span className="wallet-explainer-icon">📊</span>
+            <span><b>Capped exposure.</b> Your credit limit is a shared cap across every auction you're bidding on at once — you can never commit more than your limit in total, no matter how many items you're active on.</span>
+          </li>
+          <li>
+            <span className="wallet-explainer-icon">🔄</span>
+            <span><b>Auto-released.</b> The moment an auction you didn't win closes, whatever you'd committed to it frees back up on its own — no request or wait required.</span>
+          </li>
+          <li>
+            <span className="wallet-explainer-icon">🛡️</span>
+            <span><b>Escrow settlement.</b> Funds only leave your wallet for real if you win — held in escrow until handover is confirmed.</span>
+          </li>
+        </ul>
       </div>
     </div>
   )

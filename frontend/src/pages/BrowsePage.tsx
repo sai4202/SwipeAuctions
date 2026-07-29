@@ -246,15 +246,17 @@ export default function BrowsePage() {
   }, [q, categorySlugs, stateSel, citySel, priceMin, priceMax, condition, tier, catFilters, params, catNameBySlug])
 
   if (isEventsView) {
+    // Always table-based (event list, then an event's item list) — same "no left-right scrolling"
+    // treatment as the flat browse's own list view below.
     return (
-      <div className="container">
+      <div className="container container-wide">
         <EventsBrowse categorySlug={categorySlugs[0] === 'events' ? undefined : categorySlugs[0]} />
       </div>
     )
   }
 
   return (
-    <div className="container">
+    <div className={`container${view === 'list' ? ' container-wide' : ''}`}>
       <div className="section-head">
         <div className="section-head-tabs">
           {isSwipeStockView && <span className="eyebrow">Swipe Stock</span>}

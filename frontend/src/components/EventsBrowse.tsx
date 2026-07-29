@@ -8,6 +8,7 @@ import { type BrowseFilter, filterParam, matchesFilter } from '../browseFilters'
 import { useCachedFetch } from '../useCachedFetch'
 import { SkeletonTableRows } from './Skeleton'
 import FilterModal, { CheckboxListBody } from './FilterModal'
+import VehicleDetailStrip from './VehicleDetailStrip'
 
 const STATUS: EventStatus[] = ['LIVE', 'UPCOMING', 'CLOSED']
 const SLABEL: Record<EventStatus, string> = { LIVE: 'Live', UPCOMING: 'Upcoming', CLOSED: 'Closed' }
@@ -46,7 +47,7 @@ function SortableTh({ label, sortKey, active, dir, onClick }: {
 }
 
 function fmt(dt: string): string {
-  return new Date(dt).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+  return new Date(dt).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
 }
 function shortId(id: string): string {
   return id.replace(/-/g, '').slice(0, 8).toUpperCase()
@@ -250,7 +251,13 @@ export default function EventsBrowse({ categorySlug }: { categorySlug?: string }
             <p className="muted" style={{ padding: 16 }}>No {ITEM_TAB_LABEL[itemTab].toLowerCase()} items match your filters.</p>
           ) : (
             <div style={{ overflowX: 'auto', padding: 16 }}>
-              <table className="admin-table">
+              <table className="admin-table list-view-table">
+                <colgroup>
+                  <col style={{ width: 90 }} /><col />
+                  <col style={{ width: 100 }} /><col style={{ width: 100 }} />
+                  <col style={{ width: 100 }} /><col style={{ width: 100 }} />
+                  <col style={{ width: 60 }} /><col style={{ width: 70 }} /><col style={{ width: 150 }} />
+                </colgroup>
                 <thead>
                   <tr>
                     <th>Image</th><th>Details</th><th>Start Time</th><th>End Time</th>
@@ -271,18 +278,10 @@ export default function EventsBrowse({ categorySlug }: { categorySlug?: string }
                         <Link to={`/auctions/${a.id}`}><b>{a.title}</b></Link>
                         <div className="muted" style={{ fontSize: 12 }}>{[a.brand, a.condition.replace('_', ' ')].filter(Boolean).join(' · ')}</div>
                         <div className="muted" style={{ fontSize: 12 }}>◍ {[a.city, a.state].filter(Boolean).join(', ') || '—'}</div>
-                        {Object.entries(a.attributes).length > 0 && (
-                          <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>
-                            {/* At-a-glance only — a fully filled-in item (Yard Name, CTE Contact, Chassis
-                                No, ...) can carry 20+ attributes now; the full breakdown lives on the
-                                detail page's tabs (View Details), not crammed into this table row. */}
-                            {Object.entries(a.attributes).slice(0, 3).map(([k, v]) => `${k}: ${v}`).join(' · ')}
-                            {Object.entries(a.attributes).length > 3 && ` · +${Object.entries(a.attributes).length - 3} more`}
-                          </div>
-                        )}
+                        <VehicleDetailStrip attributes={a.attributes} />
                       </td>
-                      <td>{fmt(a.startTime)}</td>
-                      <td>{fmt(a.currentEndTime)}</td>
+                      <td style={{ whiteSpace: 'nowrap' }}>{fmt(a.startTime)}</td>
+                      <td style={{ whiteSpace: 'nowrap' }}>{fmt(a.currentEndTime)}</td>
                       <td>{money(a.basePrice)}</td>
                       <td>{a.currentHighestBid != null ? money(a.currentHighestBid) : '—'}</td>
                       <td>{a.bidCount}</td>

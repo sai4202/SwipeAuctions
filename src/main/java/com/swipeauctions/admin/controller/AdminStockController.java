@@ -60,10 +60,43 @@ public class AdminStockController {
             DateTimeFormatter.ofPattern("yyyy-MM-dd"),
     };
 
+    /**
+     * The structured item-detail fields shown as tabs (General Details / Registration / Insurance /
+     * Other Details / Remarks) on the item detail page — same 21 fields, same order, as
+     * {@code frontend/src/detailFields.ts}, which is the source of truth for the single-item Add
+     * Stock form. Kept in sync manually (TS and Java can't literally share this list) — a column
+     * header here is exactly the sheet header a bulk-uploader fills in; the second element is the
+     * {@code ListingAttribute} key it's stored under, exactly matching {@code DetailFieldDef.key}.
+     */
+    private static final String[][] DETAIL_COLUMNS = {
+            {"Power Steering", "powerSteering"}, {"Yard Name", "yardName"}, {"Yard Location", "yardLocation"},
+            {"Payment Terms", "paymentTerms"}, {"RC Book Available", "rcBookAvailable"},
+            {"Seller Reference", "sellerReference"}, {"Sun Roof", "sunRoof"},
+            {"CTE Contact Person", "cteContactPerson"}, {"CTE Contact Person Phone", "cteContactPersonPhone"},
+            {"Registration Number", "registrationNumber"}, {"Year of Manufacturing", "yearOfManufacturing"},
+            {"Insurance Provider", "insuranceProvider"}, {"Insurance Valid Upto", "insuranceValidUpto"},
+            {"Hypothecation", "hypothecation"}, {"Has Loan Been Paid Off", "loanPaidOff"},
+            {"Whether Valid Form 35 NOC Available", "form35NocAvailable"}, {"Listing Remarks", "listingRemarks"},
+            {"Faremeter", "faremeter"}, {"Chassis No", "chassisNo"}, {"Engine No", "engineNo"},
+            {"Repo Date", "repoDate"}, {"Parking Rate (per day)", "parkingRatePerDay"},
+            {"Additional Remarks", "additionalRemarks"},
+    };
+
     private final CatalogService catalogService;
     private final AuctionService auctionService;
     private final StorageProvider storageProvider;
     private final PlatformAccountService platformAccountService;
+
+    /**
+     * Category names (case-insensitive) treated as "vehicles" for {@link #requireVehicleDetails} —
+     * same fixed-name-set convention {@code frontend/src/eventCategories.ts} already uses for
+     * "which categories get the events-first browsing flow", not a DB-driven flag. Kept here rather
+     * than on {@link Category} itself since only admin-created stock enforces this (a regular
+     * seller's own listing flow — {@code CatalogController}/{@code CatalogService.createListing} —
+     * was never extended with these fields and has no form to satisfy the requirement).
+     */
+    private static final java.util.Set<String> VEHICLE_CATEGORY_NAMES =
+            java.util.Set.of("vehicles", "bank vehicles", "auto", "insurance");
 
     // ---- Single item ----
 
@@ -71,6 +104,7 @@ public class AdminStockController {
     public StockListingResponse createListing(@Valid @RequestBody CreateStockListingRequest req) {
         User seller = platformAccountService.getOrCreateSwipeStockSeller();
         Category category = resolveCategory(req.categoryId(), req.categoryName());
+        requireVehicleDetails(category, req.condition(), req.attributes());
         Listing listing = catalogService.createListing(seller, category.getId(), req.title(), req.description(),
                 req.brand(), req.condition(), req.city(), req.state(), req.zip(), req.reservePrice(),
                 req.attributes(), Boolean.TRUE.equals(req.swipeStock()),
@@ -100,9 +134,12 @@ public class AdminStockController {
 
     /**
      * One row per item. Header row required (case-insensitive, any column order): Title, Category,
-     * Brand, Condition, City, State, Zip, Base Price, Start Time, End Time, Swipe Stock. Only Title,
-     * Category and Base Price are required — everything else has a sensible default. A row-level
-     * error doesn't abort the batch; every other valid row is still imported.
+     * Brand, Condition, City, State, Zip, Base Price, Start Time, End Time, Swipe Stock, plus any of
+     * the {@link #DETAIL_COLUMNS} (Yard Name, Registration Number, Chassis No, ...) — those populate
+     * the item's detail-page tabs exactly like the single-item Add Stock form does. Only Title,
+     * Category and Base Price are required — everything else has a sensible default, and every
+     * detail column is optional (blank cells are simply omitted, same as leaving a form field empty).
+     * A row-level error doesn't abort the batch; every other valid row is still imported.
      */
     @PostMapping(value = "/bulk", consumes = "multipart/form-data")
     public BulkImportResponse bulkImport(@RequestParam MultipartFile file,
@@ -149,10 +186,17 @@ public class AdminStockController {
                     Boolean rowSwipeStock = cellBoolean(row, cols, "swipe stock");
                     boolean effectiveSwipeStock = rowSwipeStock != null ? rowSwipeStock : swipeStock;
 
+                    Map<String, String> attributes = new LinkedHashMap<>();
+                    for (String[] col : DETAIL_COLUMNS) {
+                        String value = optionalString(row, cols, col[0].toLowerCase());
+                        if (value != null) attributes.put(col[1], value);
+                    }
+
                     Category category = catalogService.resolveOrCreateCategory(categoryName);
+                    requireVehicleDetails(category, condition, attributes);
                     Listing listing = catalogService.createListing(seller, category.getId(), title,
                             title + " — bulk-imported via admin Add Stock.", brand, condition, city, state, zip,
-                            price, Map.of(), effectiveSwipeStock);
+                            price, attributes, effectiveSwipeStock);
                     auctionService.createAuction(seller, listing.getId(), price, start, end, null);
                     created++;
                 } catch (Exception e) {
@@ -166,22 +210,34 @@ public class AdminStockController {
         return new BulkImportResponse(totalRows, created, errors);
     }
 
-    /** A ready-to-fill .xlsx with the exact header row the bulk importer expects, plus one example row. */
+    private static final String[] BASE_HEADERS = {"Title", "Category", "Brand", "Condition", "City", "State", "Zip",
+            "Base Price", "Start Time", "End Time", "Swipe Stock"};
+
+    /**
+     * A ready-to-fill .xlsx with the exact header row the bulk importer expects (base columns plus
+     * every {@link #DETAIL_COLUMNS} entry), plus a few example rows spanning different
+     * categories/field combinations — every detail column is optional, so the examples deliberately
+     * leave some blank per row rather than filling all 23 on every line, showing that's expected.
+     */
     @GetMapping("/template")
     public ResponseEntity<byte[]> template() {
         try (XSSFWorkbook wb = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             Sheet sheet = wb.createSheet("Stock");
-            String[] headers = {"Title", "Category", "Brand", "Condition", "City", "State", "Zip",
-                    "Base Price", "Start Time", "End Time", "Swipe Stock"};
+            List<String> headers = new ArrayList<>(List.of(BASE_HEADERS));
+            for (String[] col : DETAIL_COLUMNS) headers.add(col[0]);
+
             Row headerRow = sheet.createRow(0);
-            for (int i = 0; i < headers.length; i++) headerRow.createCell(i).setCellValue(headers[i]);
+            for (int i = 0; i < headers.size(); i++) headerRow.createCell(i).setCellValue(headers.get(i));
 
-            Row example = sheet.createRow(1);
-            String[] exampleValues = {"iPhone 15 Pro (Sealed)", "Electronics", "Apple", "NEW", "Bengaluru",
-                    "KA", "560001", "90000", "2026-08-01 10:00", "2026-08-05 18:00", "FALSE"};
-            for (int i = 0; i < exampleValues.length; i++) example.createCell(i).setCellValue(exampleValues[i]);
+            for (int i = 0; i < EXAMPLE_ROWS.length; i++) {
+                Row row = sheet.createRow(i + 1);
+                String[] values = EXAMPLE_ROWS[i];
+                for (int col = 0; col < values.length; col++) {
+                    if (!values[col].isEmpty()) row.createCell(col).setCellValue(values[col]);
+                }
+            }
 
-            for (int i = 0; i < headers.length; i++) sheet.autoSizeColumn(i);
+            for (int i = 0; i < headers.size(); i++) sheet.autoSizeColumn(i);
             wb.write(out);
             return ResponseEntity.ok()
                     .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
@@ -192,7 +248,65 @@ public class AdminStockController {
         }
     }
 
+    /**
+     * Sample rows for the template, column-for-column aligned to BASE_HEADERS + DETAIL_COLUMNS.
+     * Deliberately varied: a fully-detailed bank-repo vehicle, a lighter insurance-salvage item, and
+     * a plain electronics item using none of the detail columns at all — showing the range from "fill
+     * in everything" to "ignore the detail columns entirely." Both vehicle-category rows still carry
+     * Registration Number/Chassis No/Yard Name/Yard Location since requireVehicleDetails makes those
+     * 4 mandatory for any non-NEW item in a vehicle category (Vehicles/Bank Vehicles/Auto/Insurance).
+     */
+    private static final String[][] EXAMPLE_ROWS = {
+            // Title, Category, Brand, Condition, City, State, Zip, Base Price, Start, End, Swipe Stock,
+            // Power Steering, Yard Name, Yard Location, Payment Terms, RC Book Available, Seller Reference,
+            // Sun Roof, CTE Contact Person, CTE Contact Person Phone, Registration Number, Year of Manufacturing,
+            // Insurance Provider, Insurance Valid Upto, Hypothecation, Has Loan Been Paid Off,
+            // Whether Valid Form 35 NOC Available, Listing Remarks, Faremeter, Chassis No, Engine No,
+            // Repo Date, Parking Rate (per day), Additional Remarks
+            {"Mahindra Bolero Pickup (Repo)", "Bank Vehicles", "Mahindra", "USED", "Madanapalle", "Andhra Pradesh",
+                    "517325", "130200", "2026-08-01 10:00", "2026-08-05 18:00", "FALSE",
+                    "No", "Shriram Yard Bengaluru", "Shriram Yard Bengaluru, Survey No 52/1A", "Payment to be made within 24 hours from the time of approval",
+                    "No", "L2ATHI10845213", "No", "Tulsi B", "9892803643", "AP02Y8911", "2015",
+                    "", "", "No", "No", "No", "L2A_THI10845213", "No", "MD2B77AX3PWA26654", "PFXWPA18287",
+                    "2026-07-17", "100", "Bids once placed cannot be cancelled. Parking charges to be paid by buyer as per seller terms."},
+            {"Water-Damaged Hyundai Creta (Salvage)", "Insurance", "Hyundai", "FOR_PARTS", "Chennai", "Tamil Nadu",
+                    "600001", "260000", "2026-08-02 09:00", "2026-08-06 18:00", "FALSE",
+                    "", "IDBI Yard Chennai", "IDBI Yard Chennai, Guindy Industrial Estate", "", "", "", "", "", "",
+                    "TN09CD5678", "2021",
+                    "ICICI Lombard", "2027-03-31", "", "", "", "", "", "MA3ETEB1S00123456", "",
+                    "", "", "Flood-damaged; sold as-is for parts/scrap only."},
+            {"Sealed Dell Laptop (Grade A)", "Electronics", "Dell", "NEW", "Hyderabad", "Telangana",
+                    "500001", "45000", "", "", "TRUE",
+                    "", "", "", "", "", "", "", "", "", "", "",
+                    "", "", "", "", "", "", "", "", "",
+                    "", "", ""},
+    };
+
     // ---- helpers ----
+
+    /**
+     * Every real-world used/repossessed vehicle listing has a registration number, a chassis number,
+     * and a yard it's physically sitting in — unlike the rest of {@link #DETAIL_COLUMNS}, these 4
+     * aren't optional extras for that case. A brand-new (unregistered, not-yet-repossessed) vehicle,
+     * or any non-vehicle category (Electronics, Properties, ...), is exempt.
+     */
+    private static void requireVehicleDetails(Category category, ItemCondition condition, Map<String, String> attributes) {
+        boolean isVehicleCategory = VEHICLE_CATEGORY_NAMES.contains(category.getName().trim().toLowerCase());
+        boolean isNew = condition == ItemCondition.NEW;
+        if (!isVehicleCategory || isNew) return;
+
+        List<String> missing = new ArrayList<>();
+        for (String[] pair : new String[][]{{"registrationNumber", "Registration Number"}, {"chassisNo", "Chassis No"},
+                {"yardName", "Yard Name"}, {"yardLocation", "Yard Location"}}) {
+            String value = attributes == null ? null : attributes.get(pair[0]);
+            if (value == null || value.isBlank()) missing.add(pair[1]);
+        }
+        if (!missing.isEmpty()) {
+            throw new BadRequestException(String.join(", ", missing)
+                    + (missing.size() > 1 ? " are required" : " is required")
+                    + " for a used " + category.getName() + " item (only exempt for Condition = NEW)");
+        }
+    }
 
     private Category resolveCategory(UUID categoryId, String categoryName) {
         if (categoryId != null) {

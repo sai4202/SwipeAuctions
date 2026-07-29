@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { type Auction } from '../api'
-import { money, cardImage, downloadValuation, effectiveStatus, formatDateTime } from '../util'
+import { money, cardImage, downloadValuation, effectiveStatus, formatDateTimeShort } from '../util'
+import VehicleDetailStrip from './VehicleDetailStrip'
 
 interface Props {
   auctions: Auction[]
@@ -17,7 +18,13 @@ export default function AuctionListTable({ auctions, multiIds, onToggleTray }: P
   return (
     <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
       <div style={{ overflowX: 'auto', padding: 16 }}>
-        <table className="admin-table">
+        <table className="admin-table list-view-table">
+          <colgroup>
+            <col style={{ width: 90 }} /><col />
+            <col style={{ width: 110 }} /><col style={{ width: 110 }} />
+            <col style={{ width: 100 }} /><col style={{ width: 100 }} />
+            <col style={{ width: 60 }} /><col style={{ width: 70 }} /><col style={{ width: 150 }} />
+          </colgroup>
           <thead>
             <tr>
               <th>Image</th><th>Details</th><th>Start Time</th><th>End Time</th>
@@ -39,9 +46,10 @@ export default function AuctionListTable({ auctions, multiIds, onToggleTray }: P
                     <Link to={`/auctions/${a.id}`}><b>{a.title}</b></Link>
                     <div className="muted" style={{ fontSize: 12 }}>{[a.brand, a.condition.replace('_', ' ')].filter(Boolean).join(' · ')}</div>
                     <div className="muted" style={{ fontSize: 12 }}>◍ {[a.city, a.state].filter(Boolean).join(', ') || '—'}</div>
+                    <VehicleDetailStrip attributes={a.attributes} />
                   </td>
-                  <td>{formatDateTime(a.startTime)}</td>
-                  <td>{formatDateTime(a.currentEndTime)}</td>
+                  <td style={{ whiteSpace: 'nowrap' }}>{formatDateTimeShort(a.startTime)}</td>
+                  <td style={{ whiteSpace: 'nowrap' }}>{formatDateTimeShort(a.currentEndTime)}</td>
                   <td>{money(a.basePrice)}</td>
                   <td>{a.currentHighestBid != null ? money(a.currentHighestBid) : '—'}</td>
                   <td>{a.bidCount}</td>
