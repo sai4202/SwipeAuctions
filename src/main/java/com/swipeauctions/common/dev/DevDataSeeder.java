@@ -2,15 +2,17 @@ package com.swipeauctions.common.dev;
 
 import com.swipeauctions.admin.entity.Admin;
 import com.swipeauctions.admin.repository.AdminRepository;
+import com.swipeauctions.auction.repository.AuctionRepository;
 import com.swipeauctions.auction.service.AuctionService;
+import com.swipeauctions.bidding.repository.BidRepository;
 import com.swipeauctions.catalog.entity.Category;
 import com.swipeauctions.catalog.entity.CategoryAttributeDef;
 import com.swipeauctions.catalog.enums.AttributeValueType;
+import com.swipeauctions.dispute.repository.DisputeRepository;
 import com.swipeauctions.event.entity.AuctionEvent;
 import com.swipeauctions.event.repository.AuctionEventRepository;
 import com.swipeauctions.session.repository.AdminSessionRepository;
 import com.swipeauctions.catalog.entity.Listing;
-import com.swipeauctions.catalog.entity.ListingAttribute;
 import com.swipeauctions.catalog.entity.ListingImage;
 import com.swipeauctions.catalog.enums.ItemCondition;
 import com.swipeauctions.catalog.repository.CategoryRepository;
@@ -25,6 +27,8 @@ import com.swipeauctions.session.entity.UserSessions;
 import com.swipeauctions.session.repository.UserSessionRepository;
 import com.swipeauctions.user.entity.User;
 import com.swipeauctions.user.repository.UserRepository;
+import com.swipeauctions.wallet.repository.BidEligibilityHoldRepository;
+import com.swipeauctions.wallet.repository.SaleProceedsHoldRepository;
 import com.swipeauctions.wallet.service.WalletService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -35,6 +39,7 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -42,8 +47,12 @@ import java.util.stream.Collectors;
 
 /**
  * Seeds demo data for local testing — only under the "dev" profile
- * ({@code --spring.profiles.active=dev}). Idempotent and additive: creates a pre-verified seller +
- * bidder (login works without OTP), several categories, and a spread of open auctions.
+ * ({@code --spring.profiles.active=dev}). Users/categories/filters are idempotent and additive
+ * across boots. The catalog itself (listings/auctions/events) is a one-time destructive refresh:
+ * the first boot after this dataset changed wipes any prior demo catalog and recreates a full,
+ * consistent spread (10 live + 10 upcoming + 10 closed per category); every boot after that is a
+ * no-op for the catalog (gated on {@link #alreadySeeded()}), so manual in-app testing state
+ * (extra bids, listings, etc.) survives ordinary restarts.
  */
 @Component
 @Profile("dev")
@@ -58,6 +67,105 @@ public class DevDataSeeder implements CommandLineRunner {
     private static final String ADMIN_EMAIL = "admin@swipeauctions.test";
     private static final String DEMO_PASSWORD = "Test@1234";
 
+    /** Above the old dataset's ~38 rows, below the new dataset's ~212+ — used to detect a stale catalog. */
+    private static final int CATALOG_ALREADY_SEEDED_THRESHOLD = 150;
+
+    private static final String[][] CITIES = {
+            {"Bengaluru", "KA"}, {"Mumbai", "MH"}, {"Delhi", "DL"}, {"Chennai", "TN"}, {"Hyderabad", "TG"},
+            {"Pune", "MH"}, {"Kolkata", "WB"}, {"Ahmedabad", "GJ"}, {"Jaipur", "RJ"}, {"Lucknow", "UP"},
+            {"Chandigarh", "CH"}, {"Kochi", "KL"}, {"Indore", "MP"}, {"Nagpur", "MH"}, {"Surat", "GJ"},
+            {"Coimbatore", "TN"}, {"Bhopal", "MP"}, {"Patna", "BR"}, {"Vadodara", "GJ"}, {"Nashik", "MH"},
+            {"Gurugram", "HR"}, {"Noida", "UP"}, {"Thane", "MH"}, {"Visakhapatnam", "AP"}, {"Ludhiana", "PB"},
+            {"Agra", "UP"}, {"Kanpur", "UP"}, {"Rajkot", "GJ"}, {"Varanasi", "UP"}, {"Amritsar", "PB"},
+    };
+
+    private static final String[] MASS_MARKET_VEHICLES = {
+            "Maruti Suzuki Swift", "Maruti Suzuki Baleno", "Maruti Suzuki Dzire", "Maruti Suzuki Ertiga",
+            "Maruti Suzuki Brezza", "Hyundai i20", "Hyundai Creta", "Hyundai Venue", "Hyundai Verna", "Hyundai Aura",
+            "Tata Nexon", "Tata Punch", "Tata Altroz", "Tata Tiago", "Tata Harrier",
+            "Honda City", "Honda Amaze", "Honda WR-V", "Mahindra XUV700", "Mahindra Scorpio",
+            "Kia Seltos", "Kia Sonet", "Toyota Innova Crysta", "Toyota Glanza", "Toyota Urban Cruiser",
+            "Skoda Slavia", "Volkswagen Virtus", "Renault Kwid", "Renault Triber", "Nissan Magnite",
+    };
+
+    private static final String[] LUXURY_VEHICLES = {
+            "Mercedes-Benz C-Class", "Mercedes-Benz E-Class", "Mercedes-Benz GLC", "Mercedes-Benz GLE", "Mercedes-Benz A-Class",
+            "BMW 3 Series", "BMW 5 Series", "BMW X1", "BMW X3", "BMW X5",
+            "Audi A4", "Audi A6", "Audi Q3", "Audi Q5", "Audi Q7",
+            "Volvo XC40", "Volvo XC60", "Volvo XC90", "Land Rover Discovery Sport", "Land Rover Range Rover Evoque",
+            "Jaguar XF", "Jaguar F-Pace", "Porsche Macan", "Porsche Cayenne", "Mini Cooper",
+            "Lexus ES", "Lexus NX", "Jeep Compass", "Jeep Meridian", "Volvo S60",
+    };
+
+    private static final String[] COMMERCIAL_VEHICLES = {
+            "Bajaj RE Auto", "Bajaj Maxima Cargo", "TVS King Duramax", "Piaggio Ape Xtra", "Piaggio Porter 700",
+            "Mahindra Alfa Plus", "Mahindra Bolero Pickup", "Atul Gem", "Force Tempo Traveller", "Tata Ace Gold",
+            "Tata 407 Truck", "Ashok Leyland Dost", "Eicher Pro 2049", "Mahindra Jeeto", "Tata Intra V30",
+            "Bajaj Compact RE", "TVS Apache RTR (Fleet)", "Hero Splendor Plus (Fleet)", "Royal Enfield Hunter 350 (Fleet)", "Honda Activa (Fleet)",
+            "TVS Jupiter (Fleet)", "Bajaj Pulsar (Fleet)", "Yamaha FZ (Fleet)", "Suzuki Access (Fleet)", "Mahindra Supro Cargo",
+            "Tata Winger", "Force Traveller Ambulance", "Eicher Skyline Bus", "Ashok Leyland Bus", "Piaggio Ape City",
+    };
+
+    /** Vehicle Type ({@code VEHICLE_TYPE_KEY} on the frontend) for each {@link #COMMERCIAL_VEHICLES} entry,
+     *  index-for-index — an auto-rickshaw isn't a "2W" and a bus isn't a "3W", so this has to be a real
+     *  per-model mapping rather than a cycled guess. */
+    private static final String[] COMMERCIAL_VEHICLE_TYPES = {
+            "3W", "CV", "3W", "3W", "CV",
+            "3W", "CV", "3W", "TR/FE", "CV",
+            "CV", "CV", "CV", "CV", "CV",
+            "3W", "2W", "2W", "2W", "2W",
+            "2W", "2W", "2W", "2W", "CV",
+            "TR/FE", "TR/FE", "TR/FE", "TR/FE", "3W",
+    };
+
+    /**
+     * Bank Vehicles / Insurance: a bank or insurer's repossessed/salvage fleet is realistically mixed
+     * (cars, bikes, a few commercial pickups) — never one uniform vehicle type. Bucket-grouped in
+     * threes of 10 (live/upcoming/closed), each bucket 6 cars (4W) + 2 bikes (2W) + 2 commercial (CV),
+     * so every bucket also has real Vehicle Type variety to split into separate, type-pure events —
+     * see {@link #seedEventGroupedCategory}'s "don't mix vehicle types in one event/listing" grouping.
+     */
+    private static final String[] MIXED_FLEET_MODELS = {
+            "Maruti Suzuki Swift", "Maruti Suzuki Baleno", "Maruti Suzuki Dzire", "Hyundai i20", "Hyundai Creta", "Hyundai Venue",
+            "Royal Enfield Classic 350", "Bajaj Pulsar 150", "Tata Ace Gold", "Mahindra Bolero Pickup",
+            "Tata Nexon", "Tata Punch", "Tata Altroz", "Honda City", "Honda Amaze", "Mahindra XUV700",
+            "Hero Splendor Plus", "TVS Apache RTR", "Ashok Leyland Dost", "Eicher Pro 2049",
+            "Kia Seltos", "Kia Sonet", "Toyota Innova Crysta", "Toyota Glanza", "Skoda Slavia", "Volkswagen Virtus",
+            "Honda Activa 6G", "Yamaha FZ-S", "Force Tempo Traveller", "Piaggio Porter 700",
+    };
+    private static final String[] MIXED_FLEET_TYPES = {
+            "4W", "4W", "4W", "4W", "4W", "4W", "2W", "2W", "CV", "CV",
+            "4W", "4W", "4W", "4W", "4W", "4W", "2W", "2W", "CV", "CV",
+            "4W", "4W", "4W", "4W", "4W", "4W", "2W", "2W", "CV", "CV",
+    };
+
+    /** Premium fleet is passenger cars only in this seed set — every item is "4W". */
+    private static final String[] PREMIUM_TYPES = uniform30("4W");
+
+    private static String[] uniform30(String value) {
+        String[] a = new String[30];
+        java.util.Arrays.fill(a, value);
+        return a;
+    }
+
+    private static final String[] ELECTRONICS_ITEMS = {
+            "Apple iPhone 15 Pro", "Apple iPhone 14", "Samsung Galaxy S24 Ultra", "Samsung Galaxy Z Fold5", "OnePlus 12",
+            "Apple MacBook Pro 14\"", "Apple MacBook Air M2", "Dell XPS 15", "HP Spectre x360", "Lenovo ThinkPad X1",
+            "Apple iPad Pro 12.9\"", "Samsung Galaxy Tab S9", "Sony PS5 Slim", "Microsoft Xbox Series X", "Nintendo Switch OLED",
+            "Sony WH-1000XM5 Headphones", "Apple Watch Ultra 2", "Samsung Galaxy Watch 6", "Canon EOS R6", "Nikon Z6 II",
+            "Sony Bravia 65\" OLED TV", "Samsung 55\" QLED TV", "LG 4K Projector", "Bose SoundLink Speaker", "JBL Party Box",
+            "Dyson V15 Vacuum", "GoPro Hero 12", "DJI Mavic 3 Drone", "Apple AirPods Max", "Samsung Galaxy Buds2 Pro",
+    };
+
+    private static final String[] PROPERTY_ITEMS = {
+            "1BHK Flat", "1BHK Flat", "2BHK Apartment", "2BHK Apartment", "3BHK Apartment",
+            "3BHK Villa", "4BHK Villa", "4BHK Luxury Penthouse", "Studio Apartment", "2BHK Row House",
+            "Commercial Shop", "Commercial Office Space", "Commercial Plot", "Residential Plot", "Industrial Shed",
+            "Farmhouse", "2BHK Duplex", "3BHK Duplex", "Warehouse", "Retail Showroom",
+            "1BHK Studio", "2BHK Independent House", "3BHK Independent House", "Agricultural Land", "Commercial Complex Unit",
+            "Bungalow", "Penthouse Suite", "Service Apartment", "Godown Space", "Corner Plot",
+    };
+
     private final UserRepository userRepository;
     private final AdminRepository adminRepository;
     private final AdminSessionRepository adminSessionRepository;
@@ -71,6 +179,11 @@ public class DevDataSeeder implements CommandLineRunner {
     private final ListingImageRepository listingImageRepository;
     private final UserSessionRepository userSessionRepository;
     private final AuctionEventRepository auctionEventRepository;
+    private final AuctionRepository auctionRepository;
+    private final BidRepository bidRepository;
+    private final BidEligibilityHoldRepository bidEligibilityHoldRepository;
+    private final SaleProceedsHoldRepository saleProceedsHoldRepository;
+    private final DisputeRepository disputeRepository;
     private final PlatformAccountService platformAccountService;
 
     @Override
@@ -88,53 +201,65 @@ public class DevDataSeeder implements CommandLineRunner {
         clearSessions(seller, bidder, bidder2, dealer);
 
         Category electronics = getOrCreateCategory("Electronics", "electronics");
-        // Renamed from "Bank Assets" — getOrCreateCategory is idempotent, and Flyway V10 already
-        // renamed any pre-existing "bank-assets" row's name+slug, so this resolves to the same category.
         Category bankVehicles = getOrCreateCategory("Bank Vehicles", "bank-vehicles");
         Category insurance = getOrCreateCategory("Insurance", "insurance");
-        // Two more event-grouped categories (Flyway V11 also creates these for non-dev DBs) —
-        // matches the CarTrade Exchange-style Events pill bar: Banks/OEM, Insurance, Premium, Auto.
         Category premium = getOrCreateCategory("Premium", "premium");
         Category auto = getOrCreateCategory("Auto", "auto");
-
-        // Expanded seed runs once — keyed on the "vehicles" category being absent.
-        if (categoryRepository.findBySlug("vehicles").isEmpty()) {
-            walletService.topUp(bidder, new BigDecimal("5000000.00"));
-
-            Category vehicles = getOrCreateCategory("Vehicles", "vehicles");
-            Category properties = getOrCreateCategory("Properties", "properties");
-
-            LocalDateTime now = LocalDateTime.now();
-            seedAuction(seller, electronics, "iPhone 15 Pro (Sealed)", "Apple", ItemCondition.NEW,
-                    "Bengaluru", "KA", "90000", now.minusMinutes(1), now.plusHours(6));
-            seedAuction(seller, vehicles, "2021 Toyota Fortuner (Repo)", "Toyota", ItemCondition.USED,
-                    "Mumbai", "MH", "1500000", now.minusMinutes(1), now.plusDays(2));
-            seedAuction(seller, vehicles, "Royal Enfield Classic 350", "Royal Enfield", ItemCondition.USED,
-                    "Delhi", "DL", "120000", now.minusMinutes(1), now.plusMinutes(20));
-            seedAuction(seller, properties, "2BHK Apartment — Pune (Bank Auction)", null, ItemCondition.USED,
-                    "Pune", "MH", "4500000", now.minusMinutes(1), now.plusDays(3));
-            seedAuction(seller, bankVehicles, "Commercial Plot — Hyderabad", null, ItemCondition.USED,
-                    "Hyderabad", "TG", "8000000", now.minusMinutes(1), now.plusDays(4));
-
-            log.info("[dev-seed] expanded demo data created (categories + {} auctions)", 5);
-        }
-
-        // Idempotent every-startup passes: add a demo laptop + backfill category-specific attributes,
-        // so both fresh and existing dev databases exercise the category filters.
-        LocalDateTime now = LocalDateTime.now();
-        ensureAuction(seller, electronics, "Dell XPS 15 (2023, Laptop)", "Dell", ItemCondition.REFURBISHED,
-                "Chennai", "TN", "95000", now.minusMinutes(1), now.plusHours(8));
-        seedDemoAttributes();
         Category vehicles = getOrCreateCategory("Vehicles", "vehicles");
         Category properties = getOrCreateCategory("Properties", "properties");
+
         seedCategoryFilters(electronics, vehicles, properties, bankVehicles, insurance, premium, auto);
-        seedEventCategoryDemoData(seller, bankVehicles, insurance, premium, auto);
-        seedSwipeStockDemoData();
-        seedTieredLiveDemoData(seller, electronics, vehicles, properties, premium);
-        seedMoreLiveDemoData(seller, vehicles, electronics, properties, bankVehicles, insurance);
-        seedCoverImages();
+
+        if (!alreadySeeded()) {
+            wipeDemoCatalog();
+            walletService.topUp(bidder, new BigDecimal("5000000.00"));
+
+            seedVehicles(seller, vehicles);
+            seedProperties(seller, properties);
+            seedElectronics(seller, electronics);
+            seedEventGroupedCategory(seller, bankVehicles, MIXED_FLEET_MODELS, MIXED_FLEET_TYPES, "Bank Vehicles Auction",
+                    "Repossessed", ItemCondition.USED, 250_000, 18_500, false, false);
+            seedEventGroupedCategory(seller, insurance, MIXED_FLEET_MODELS, MIXED_FLEET_TYPES, "Insurance Salvage Auction",
+                    "Damaged", ItemCondition.FOR_PARTS, 90_000, 9_500, true, false);
+            seedEventGroupedCategory(seller, premium, LUXURY_VEHICLES, PREMIUM_TYPES, "Premium Fleet Auction",
+                    "Fleet Return", ItemCondition.USED, 2_800_000, 215_000, false, true);
+            seedEventGroupedCategory(seller, auto, COMMERCIAL_VEHICLES, COMMERCIAL_VEHICLE_TYPES, "Auto & Commercial Auction",
+                    "Fleet Surplus", ItemCondition.USED, 120_000, 8_700, false, false);
+            seedSwipeStockDemoData(electronics, vehicles);
+            Map<java.util.UUID, String> categorySlugById = Map.of(
+                    electronics.getId(), electronics.getSlug(), bankVehicles.getId(), bankVehicles.getSlug(),
+                    insurance.getId(), insurance.getSlug(), premium.getId(), premium.getSlug(),
+                    auto.getId(), auto.getSlug(), vehicles.getId(), vehicles.getSlug(),
+                    properties.getId(), properties.getSlug());
+            seedGenericCoverImages(categorySlugById);
+
+            log.info("[dev-seed] full catalog refresh: {} listings across 7 categories (10 live / 10 upcoming / 10 closed each)",
+                    listingRepository.count());
+        }
 
         log.info("[dev-seed] login: {} / {} (also {}, {})", BIDDER_EMAIL, DEMO_PASSWORD, BIDDER2_EMAIL, SELLER_EMAIL);
+    }
+
+    private boolean alreadySeeded() {
+        return listingRepository.count() >= CATALOG_ALREADY_SEEDED_THRESHOLD;
+    }
+
+    /**
+     * Deletes the whole demo catalog (listings, auctions, events, and every table that FKs onto
+     * an auction/listing) in dependency order, ahead of a full reseed. Wallets, users, categories
+     * and category filter defs are untouched.
+     */
+    private void wipeDemoCatalog() {
+        bidRepository.deleteAllInBatch();
+        bidEligibilityHoldRepository.deleteAllInBatch();
+        saleProceedsHoldRepository.deleteAllInBatch();
+        disputeRepository.deleteAllInBatch();
+        listingImageRepository.deleteAllInBatch();
+        listingAttributeRepository.deleteAllInBatch();
+        auctionRepository.deleteAllInBatch();
+        listingRepository.deleteAllInBatch();
+        auctionEventRepository.deleteAllInBatch();
+        log.info("[dev-seed] wiped existing demo catalog ahead of full refresh");
     }
 
     /** Deactivate any active sessions for the given demo users (dev-only login-limit reset). */
@@ -152,307 +277,211 @@ public class DevDataSeeder implements CommandLineRunner {
         if (cleared > 0) log.info("[dev-seed] cleared {} stale demo session(s)", cleared);
     }
 
-    private void seedAuction(User seller, Category category, String title, String brand, ItemCondition condition,
-                             String city, String state, String price, LocalDateTime start, LocalDateTime end) {
-        seedAuction(seller, category, title, brand, condition, city, state, price, start, end, false);
+    /**
+     * Index 0-9 -> live (started recently, ends across the next ~1-2 days, staggered).
+     * Index 10-19 -> upcoming (starts in the future).
+     * Index 20-29 -> closed (both start and end already in the past).
+     */
+    private LocalDateTime[] bucketWindow(int i, LocalDateTime now) {
+        int bucket = i / 10;
+        int within = i % 10;
+        if (bucket == 0) {
+            return new LocalDateTime[]{now.minusMinutes(5 + within), now.plusHours(3 + within * 4L)};
+        } else if (bucket == 1) {
+            LocalDateTime start = now.plusHours(4 + within * 6L);
+            return new LocalDateTime[]{start, start.plusDays(2 + within % 3)};
+        } else {
+            LocalDateTime end = now.minusHours(3 + within * 9L);
+            return new LocalDateTime[]{end.minusDays(2 + within % 4), end};
+        }
     }
 
-    private void seedAuction(User seller, Category category, String title, String brand, ItemCondition condition,
-                             String city, String state, String price, LocalDateTime start, LocalDateTime end,
-                             boolean swipeStock) {
-        Listing listing = catalogService.createListing(seller, category.getId(), title,
-                title + " — seeded demo listing.", brand, condition, city, state, null, new BigDecimal(price),
-                null, swipeStock);
-        auctionService.createAuction(seller, listing.getId(), new BigDecimal(price), start, end, null);
+    /** Year/fuel/transmission/odometer plus the 4 vehicle-detail fields VehicleDetailStrip reads. */
+    private Map<String, String> vehicleAttrs(int idx, Category category, String city, String state) {
+        String[] fuels = {"Petrol", "Diesel", "CNG", "Electric"};
+        String[] transmissions = {"Manual", "Automatic"};
+        int year = 2015 + (idx % 9);
+        int km = 8000 + ((idx * 3721) % 92000);
+        String stateCode = (state != null && state.length() >= 2) ? state.toUpperCase() : "DL";
+        char l1 = (char) ('A' + idx % 26);
+        char l2 = (char) ('A' + (idx * 5 + 3) % 26);
+        String reg = stateCode + String.format("%02d", 1 + idx % 90) + l1 + l2 + String.format("%04d", 1000 + (idx * 137) % 9000);
+        String chassis = "MA3ER" + String.format("%08d", 10_000_000 + (idx * 90_917) % 9_000_000);
+
+        Map<String, String> attrs = new LinkedHashMap<>();
+        attrs.put("Year", String.valueOf(year));
+        attrs.put("Fuel", fuels[idx % fuels.length]);
+        attrs.put("Transmission", transmissions[idx % transmissions.length]);
+        attrs.put("KM driven", String.valueOf(km));
+        attrs.put("registrationNumber", reg);
+        attrs.put("chassisNo", chassis);
+        attrs.put("yardName", category.getName() + " Yard " + (1 + idx % 5));
+        attrs.put("yardLocation", city + ", " + state);
+        return attrs;
     }
 
-    /** Create an auction by title only if no listing with that title exists yet (idempotent). */
-    private void ensureAuction(User seller, Category category, String title, String brand, ItemCondition condition,
-                               String city, String state, String price, LocalDateTime start, LocalDateTime end) {
-        ensureAuction(seller, category, title, brand, condition, city, state, price, start, end, false);
+    private Map<String, String> electronicsAttrs(int idx) {
+        String[] rams = {"8 GB", "12 GB", "16 GB", "32 GB"};
+        String[] storages = {"128 GB", "256 GB", "512 GB", "1 TB"};
+        String[] screens = {"6.1\"", "6.7\"", "13.6\"", "15.6\"", "65\""};
+        Map<String, String> attrs = new LinkedHashMap<>();
+        attrs.put("RAM", rams[idx % rams.length]);
+        attrs.put("Storage", storages[idx % storages.length]);
+        attrs.put("Screen size", screens[idx % screens.length]);
+        return attrs;
     }
 
-    private void ensureAuction(User seller, Category category, String title, String brand, ItemCondition condition,
-                               String city, String state, String price, LocalDateTime start, LocalDateTime end,
-                               boolean swipeStock) {
-        boolean exists = listingRepository.findAll().stream().anyMatch(l -> l.getTitle().equals(title));
-        if (!exists) {
-            seedAuction(seller, category, title, brand, condition, city, state, price, start, end, swipeStock);
-        } else if (swipeStock) {
-            // Backfill: a listing seeded before the swipeStock flag existed won't have it set.
-            listingRepository.findAll().stream().filter(l -> l.getTitle().equals(title)).findFirst()
-                    .filter(l -> !l.isSwipeStock())
-                    .ifPresent(l -> { l.setSwipeStock(true); listingRepository.save(l); });
+    private Map<String, String> propertyAttrs(int idx) {
+        String[] bedrooms = {"Studio", "1 BHK", "2 BHK", "3 BHK", "4 BHK"};
+        String[] furnishing = {"Unfurnished", "Semi-furnished", "Furnished"};
+        int area = 450 + (idx * 137) % 3600;
+        Map<String, String> attrs = new LinkedHashMap<>();
+        attrs.put("Bedrooms", bedrooms[idx % bedrooms.length]);
+        attrs.put("Furnishing", furnishing[idx % furnishing.length]);
+        attrs.put("Area (sqft)", String.valueOf(area));
+        return attrs;
+    }
+
+    /** Plain (non-event) category: 30 items, no auction event, no subscription gate. */
+    private void seedVehicles(User seller, Category category) {
+        LocalDateTime now = LocalDateTime.now();
+        for (int i = 0; i < 30; i++) {
+            String model = MASS_MARKET_VEHICLES[i];
+            String[] loc = CITIES[i % CITIES.length];
+            int year = 2015 + (i % 9);
+            String title = year + " " + model + " (Owner Sale) — " + loc[0] + " Lot " + (1 + i);
+            long price = 320_000 + (i * 23_500L);
+            LocalDateTime[] w = bucketWindow(i, now);
+            seedItem(seller, category, null, title, model.split(" ")[0], ItemCondition.USED,
+                    loc[0], loc[1], price, w[0], w[1], SubscriptionTier.NONE, false,
+                    vehicleAttrs(i, category, loc[0], loc[1]));
+        }
+    }
+
+    private void seedProperties(User seller, Category category) {
+        LocalDateTime now = LocalDateTime.now();
+        for (int i = 0; i < 30; i++) {
+            String type = PROPERTY_ITEMS[i];
+            String[] loc = CITIES[(i + 7) % CITIES.length];
+            String title = type + " — " + loc[0] + " (Bank Auction) Lot " + (1 + i);
+            long price = 1_800_000 + (i * 410_000L);
+            LocalDateTime[] w = bucketWindow(i, now);
+            seedItem(seller, category, null, title, null, ItemCondition.USED,
+                    loc[0], loc[1], price, w[0], w[1], SubscriptionTier.NONE, false, propertyAttrs(i));
+        }
+    }
+
+    private void seedElectronics(User seller, Category category) {
+        LocalDateTime now = LocalDateTime.now();
+        for (int i = 0; i < 30; i++) {
+            String model = ELECTRONICS_ITEMS[i];
+            String[] loc = CITIES[(i + 3) % CITIES.length];
+            ItemCondition condition = i % 5 == 0 ? ItemCondition.REFURBISHED : ItemCondition.NEW;
+            String title = model + " (" + (condition == ItemCondition.NEW ? "Sealed" : "Refurbished") + ") — Lot " + (1 + i);
+            long price = 25_000 + (i * 9_800L);
+            LocalDateTime[] w = bucketWindow(i, now);
+            seedItem(seller, category, null, title, model.split(" ")[0], condition,
+                    loc[0], loc[1], price, w[0], w[1], SubscriptionTier.NONE, false, electronicsAttrs(i));
+        }
+    }
+
+    private static final String[] BUCKET_ZONE_LABEL = {"Live", "Upcoming", "Closed"};
+
+    /**
+     * The 4 seller-events categories (Bank Vehicles / Insurance / Premium / Auto): 30 items each,
+     * matching the CarTrade Exchange-style Events UI. A real bank/insurer auction never mixes vehicle
+     * types under one listing (a branch with 4W and 2W repossessions runs two separate lots, not one)
+     * — so instead of one event per Live/Upcoming/Closed bucket, items are grouped by
+     * (bucket, Vehicle Type) and each distinct combination gets its own type-pure
+     * {@link AuctionEvent}. {@code types[i]} (parallel to {@code models[i]}) drives both the "Vehicle
+     * Type" attribute and this grouping. {@code insurance} adds salvage-specific attrs;
+     * {@code assignTiers} cycles items across all 4 subscription tiers (used for Premium, so the
+     * paywall UI still has real locked cards across every status bucket).
+     */
+    private void seedEventGroupedCategory(User seller, Category category, String[] models, String[] types,
+                                          String eventNamePrefix, String titlePrefix, ItemCondition condition,
+                                          long basePrice, long priceStep, boolean insurance, boolean assignTiers) {
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime[][] eventWindow = {
+                {now.minusHours(3), now.plusDays(5)},
+                {now.plusDays(2), now.plusDays(9)},
+                {now.minusDays(14), now.minusHours(2)},
+        };
+        Map<String, AuctionEvent> eventsByKey = new LinkedHashMap<>();
+
+        for (int i = 0; i < 30; i++) {
+            String model = models[i];
+            String vehicleType = types[i];
+            int bucket = i / 10;
+            String[] loc = CITIES[(i + 11) % CITIES.length];
+            String eventKey = bucket + "|" + vehicleType;
+            AuctionEvent event = eventsByKey.computeIfAbsent(eventKey, k -> auctionEventRepository.save(
+                    AuctionEvent.builder().seller(seller).category(category)
+                            .name(eventNamePrefix + " — " + BUCKET_ZONE_LABEL[bucket] + " Zone (" + vehicleType + ")")
+                            .location("Pan India")
+                            .startTime(eventWindow[bucket][0]).closingTime(eventWindow[bucket][1]).build()));
+
+            String title = titlePrefix + " " + model + " — " + eventNamePrefix + " Lot " + (1 + i);
+            long price = basePrice + (i * priceStep);
+            LocalDateTime[] w = bucketWindow(i, now);
+
+            Map<String, String> attrs = vehicleAttrs(i, category, loc[0], loc[1]);
+            attrs.put("Vehicle Type", vehicleType);
+            if (insurance) {
+                attrs.put("Policy Type", i % 2 == 0 ? "Motor" : "Property");
+                attrs.put("IDV", String.valueOf(150_000 + i * 21_000L));
+                attrs.put("Claim No", "CLM-2026-" + (88_000 + i));
+            }
+            SubscriptionTier tier = assignTiers
+                    ? SubscriptionTier.values()[i % SubscriptionTier.values().length]
+                    : SubscriptionTier.NONE;
+
+            seedItem(seller, category, event, title, model.split(" ")[0], condition,
+                    loc[0], loc[1], price, w[0], w[1], tier, false, attrs);
         }
     }
 
     /**
-     * Seeds a couple of auction events per event-grouped category (Bank Vehicles, Insurance,
-     * Premium, Auto), each with a few items — so the home page's "Bank Vehicles" / "Insurance"
-     * chips (and the Premium/Auto pills inside the Events browse UI) have real events-then-items
-     * data to click through in every dev environment, not just whatever a prior manual
-     * curl/browser test session happened to leave behind. Idempotent by event/listing title.
-     *
-     * Every item also carries a "Vehicle Type" attribute (4W/CV/2W/TR/FE/3W/CE) so the Events
-     * browse UI's Vehicle Type checkbox filter has real data to filter, mirroring CarTrade
-     * Exchange's Events-Live dashboard.
+     * 30 demo listings (10 live / 10 upcoming / 10 closed, same split as every other category) owned
+     * by the Swipe Stock platform account with the {@code swipeStock} flag set. /swipe-stock reuses
+     * BrowsePage filtered purely by that flag — same OPEN/SCHEDULED/CLOSED tabs as every other browse
+     * view — so it needs the same per-status coverage. Alternates two categories to also prove the
+     * page filters by the flag, not by category.
      */
-    private void seedEventCategoryDemoData(User seller, Category bankVehicles, Category insurance,
-                                           Category premium, Category auto) {
-        LocalDateTime now = LocalDateTime.now();
-
-        AuctionEvent bvLive = ensureEvent(seller, bankVehicles, "SBI Bank Vehicles — South Zone",
-                "Chennai", now.minusHours(2), now.plusDays(3));
-        ensureEventAuction(seller, bvLive, bankVehicles, "Repossessed Maruti Suzuki Swift VXI", "Maruti Suzuki",
-                ItemCondition.USED, "Chennai", "TN", "350000", now.minusMinutes(1), now.plusDays(2),
-                Map.of("Year", "2019", "Fuel", "Petrol", "Reg No", "TN07AB1234", "KM driven", "62000", "Vehicle Type", "4W"));
-        ensureEventAuction(seller, bvLive, bankVehicles, "Repossessed Mahindra Bolero Pickup", "Mahindra",
-                ItemCondition.USED, "Chennai", "TN", "420000", now.minusMinutes(1), now.plusDays(2),
-                Map.of("Year", "2020", "Fuel", "Diesel", "Reg No", "TN09CD5678", "KM driven", "48000", "Vehicle Type", "CV"));
-
-        AuctionEvent bvUpcoming = ensureEvent(seller, bankVehicles, "HDFC Bank Vehicles — West Zone",
-                "Mumbai", now.plusDays(1), now.plusDays(6));
-        ensureEventAuction(seller, bvUpcoming, bankVehicles, "Repossessed Hyundai Creta SX", "Hyundai",
-                ItemCondition.USED, "Mumbai", "MH", "900000", now.plusDays(1), now.plusDays(5),
-                Map.of("Year", "2021", "Fuel", "Diesel", "Reg No", "MH02EF9012", "KM driven", "31000", "Vehicle Type", "4W"));
-
-        AuctionEvent insLive = ensureEvent(seller, insurance, "ICICI Lombard Salvage — East Zone",
-                "Kolkata", now.minusHours(1), now.plusDays(3));
-        ensureEventAuction(seller, insLive, insurance, "Accident-Damaged Honda City", "Honda",
-                ItemCondition.FOR_PARTS, "Kolkata", "WB", "180000", now.minusMinutes(1), now.plusDays(2),
-                Map.of("Policy Type", "Motor", "IDV", "650000", "Claim No", "ICL-2026-88213", "Vehicle Type", "4W"));
-        ensureEventAuction(seller, insLive, insurance, "Fire-Damaged Retail Stock Lot", null,
-                ItemCondition.FOR_PARTS, "Kolkata", "WB", "95000", now.minusMinutes(1), now.plusDays(2),
-                Map.of("Policy Type", "Property", "Sum Insured", "1200000", "Claim No", "ICL-2026-88214", "Vehicle Type", "CE"));
-
-        AuctionEvent insUpcoming = ensureEvent(seller, insurance, "Bajaj Allianz Salvage — North Zone",
-                "Delhi", now.plusDays(1), now.plusDays(6));
-        ensureEventAuction(seller, insUpcoming, insurance, "Flood-Damaged Royal Enfield Meteor", "Royal Enfield",
-                ItemCondition.FOR_PARTS, "Delhi", "DL", "75000", now.plusDays(1), now.plusDays(5),
-                Map.of("Policy Type", "Motor", "IDV", "220000", "Claim No", "BAGIC-2026-44120", "Vehicle Type", "2W"));
-
-        AuctionEvent premLive = ensureEvent(seller, premium, "Premium Fleet Auction — Bengaluru",
-                "Bengaluru", now.minusHours(1), now.plusDays(3));
-        ensureEventAuction(seller, premLive, premium, "2022 Mercedes-Benz C-Class (Fleet Return)", "Mercedes-Benz",
-                ItemCondition.USED, "Bengaluru", "KA", "3200000", now.minusMinutes(1), now.plusDays(2),
-                Map.of("Year", "2022", "Fuel", "Petrol", "KM driven", "18000", "Vehicle Type", "4W"));
-
-        AuctionEvent premUpcoming = ensureEvent(seller, premium, "Premium Fleet Auction — Gurugram",
-                "Gurugram", now.plusDays(1), now.plusDays(6));
-        ensureEventAuction(seller, premUpcoming, premium, "2023 BMW 3 Series (Lease Return)", "BMW",
-                ItemCondition.USED, "Gurugram", "HR", "3800000", now.plusDays(1), now.plusDays(5),
-                Map.of("Year", "2023", "Fuel", "Diesel", "KM driven", "9000", "Vehicle Type", "4W"));
-
-        AuctionEvent autoLive = ensureEvent(seller, auto, "OEM Auto Auction — Pune",
-                "Pune", now.minusHours(1), now.plusDays(3));
-        ensureEventAuction(seller, autoLive, auto, "Bajaj RE Auto (Fleet Surplus)", "Bajaj",
-                ItemCondition.USED, "Pune", "MH", "210000", now.minusMinutes(1), now.plusDays(2),
-                Map.of("Year", "2020", "Fuel", "CNG", "KM driven", "55000", "Vehicle Type", "3W"));
-        ensureEventAuction(seller, autoLive, auto, "TVS King Duramax (Fleet Surplus)", "TVS",
-                ItemCondition.USED, "Pune", "MH", "195000", now.minusMinutes(1), now.plusDays(2),
-                Map.of("Year", "2021", "Fuel", "Diesel", "KM driven", "42000", "Vehicle Type", "TR/FE"));
-    }
-
-    /**
-     * More live auctions gated behind the GOLD/DIAMOND subscription tiers, so the paywall UI
-     * (locked card, tier badge, "Upgrade your plan" CTA) has real live data to exercise across
-     * devices, not just whatever a single earlier test listing happened to be. Idempotent by title.
-     */
-    private void seedTieredLiveDemoData(User seller, Category electronics, Category vehicles,
-                                        Category properties, Category premium) {
-        LocalDateTime now = LocalDateTime.now();
-
-        // ---- GOLD-gated ----
-        ensureAuctionWithTier(seller, electronics, "Apple MacBook Pro 16\" M3 Max (Sealed)", "Apple", ItemCondition.NEW,
-                "Mumbai", "MH", "320000", now.minusMinutes(1), now.plusHours(6), SubscriptionTier.GOLD);
-        addAttributes("Apple MacBook Pro 16\" M3 Max (Sealed)", Map.of("RAM", "36 GB", "Storage", "1 TB", "Screen size", "16.2\""));
-
-        ensureAuctionWithTier(seller, vehicles, "2022 Jeep Compass (Repo)", "Jeep", ItemCondition.USED,
-                "Pune", "MH", "1800000", now.minusMinutes(1), now.plusDays(1), SubscriptionTier.GOLD);
-        addAttributes("2022 Jeep Compass (Repo)", Map.of(
-                "Year", "2022", "Fuel", "Diesel", "Transmission", "Automatic", "KM driven", "24000"));
-
-        ensureAuctionWithTier(seller, premium, "2023 Volvo XC60 (Fleet Return)", "Volvo", ItemCondition.USED,
-                "Bengaluru", "KA", "4200000", now.minusMinutes(1), now.plusDays(2), SubscriptionTier.GOLD);
-        addAttributes("2023 Volvo XC60 (Fleet Return)", Map.of("Year", "2023", "Fuel", "Petrol", "KM driven", "6000"));
-
-        // ---- DIAMOND-gated ----
-        ensureAuctionWithTier(seller, properties, "4BHK Luxury Penthouse — Mumbai (Bank Auction)", null, ItemCondition.USED,
-                "Mumbai", "MH", "25000000", now.minusMinutes(1), now.plusDays(3), SubscriptionTier.DIAMOND);
-        addAttributes("4BHK Luxury Penthouse — Mumbai (Bank Auction)", Map.of(
-                "Bedrooms", "4 BHK", "Furnishing", "Furnished", "Area (sqft)", "3800"));
-
-        ensureAuctionWithTier(seller, vehicles, "2023 Range Rover Sport (Repo)", "Land Rover", ItemCondition.USED,
-                "Delhi", "DL", "9500000", now.minusMinutes(1), now.plusDays(1), SubscriptionTier.DIAMOND);
-        addAttributes("2023 Range Rover Sport (Repo)", Map.of(
-                "Year", "2023", "Fuel", "Diesel", "Transmission", "Automatic", "KM driven", "4000"));
-
-        ensureAuctionWithTier(seller, premium, "2023 Porsche Cayenne (Fleet Return)", "Porsche", ItemCondition.USED,
-                "Gurugram", "HR", "12000000", now.minusMinutes(1), now.plusDays(2), SubscriptionTier.DIAMOND);
-        addAttributes("2023 Porsche Cayenne (Fleet Return)", Map.of("Year", "2023", "Fuel", "Petrol", "KM driven", "3000"));
-
-        // ---- SILVER-gated / no tier (NONE) — everyday cars, not locked behind the top tiers ----
-        ensureAuctionWithTier(seller, vehicles, "2021 Hyundai Verna (Repo)", "Hyundai", ItemCondition.USED,
-                "Chennai", "TN", "780000", now.minusMinutes(1), now.plusDays(1), SubscriptionTier.SILVER);
-        addAttributes("2021 Hyundai Verna (Repo)", Map.of(
-                "Year", "2021", "Fuel", "Petrol", "Transmission", "Automatic", "KM driven", "29000"));
-
-        ensureAuctionWithTier(seller, vehicles, "2019 Ford EcoSport (Repo)", "Ford", ItemCondition.USED,
-                "Pune", "MH", "520000", now.minusMinutes(1), now.plusHours(14), SubscriptionTier.SILVER);
-        addAttributes("2019 Ford EcoSport (Repo)", Map.of(
-                "Year", "2019", "Fuel", "Diesel", "Transmission", "Manual", "KM driven", "51000"));
-
-        ensureAuctionWithTier(seller, vehicles, "2022 Maruti Suzuki Swift (Repo)", "Maruti Suzuki", ItemCondition.USED,
-                "Bengaluru", "KA", "620000", now.minusMinutes(1), now.plusDays(2), SubscriptionTier.NONE);
-        addAttributes("2022 Maruti Suzuki Swift (Repo)", Map.of(
-                "Year", "2022", "Fuel", "Petrol", "Transmission", "Manual", "KM driven", "15000"));
-    }
-
-    /**
-     * A larger spread of untiered, no-subscription-required live auctions across every existing
-     * category, purely so there's plenty of real live inventory to click through manually on the
-     * public /auctions page (rather than the handful of earlier demo items, most of which have long
-     * since closed since their end times were fixed relative to whatever "now" was when this seeder
-     * first ran). Idempotent by title, end times computed relative to the CURRENT boot's "now" so
-     * they stay live for a good while after this runs.
-     */
-    private void seedMoreLiveDemoData(User seller, Category vehicles, Category electronics,
-                                      Category properties, Category bankVehicles, Category insurance) {
-        LocalDateTime now = LocalDateTime.now();
-
-        ensureAuction(seller, vehicles, "2020 Kia Seltos (Repo)", "Kia", ItemCondition.USED,
-                "Chennai", "TN", "950000", now.minusMinutes(1), now.plusDays(2));
-        addAttributes("2020 Kia Seltos (Repo)", Map.of(
-                "Year", "2020", "Fuel", "Petrol", "Transmission", "Automatic", "KM driven", "38000"));
-
-        ensureAuction(seller, vehicles, "2021 Tata Nexon (Repo)", "Tata", ItemCondition.USED,
-                "Ahmedabad", "GJ", "680000", now.minusMinutes(1), now.plusHours(10));
-        addAttributes("2021 Tata Nexon (Repo)", Map.of(
-                "Year", "2021", "Fuel", "Diesel", "Transmission", "Manual", "KM driven", "27000"));
-
-        ensureAuction(seller, vehicles, "2022 Skoda Slavia (Repo)", "Skoda", ItemCondition.USED,
-                "Pune", "MH", "1150000", now.minusMinutes(1), now.plusDays(3));
-        addAttributes("2022 Skoda Slavia (Repo)", Map.of(
-                "Year", "2022", "Fuel", "Petrol", "Transmission", "Automatic", "KM driven", "12000"));
-
-        ensureAuction(seller, vehicles, "2018 Honda City (Repo)", "Honda", ItemCondition.USED,
-                "Lucknow", "UP", "580000", now.minusMinutes(1), now.plusHours(20));
-        addAttributes("2018 Honda City (Repo)", Map.of(
-                "Year", "2018", "Fuel", "Petrol", "Transmission", "Manual", "KM driven", "64000"));
-
-        ensureAuction(seller, electronics, "Samsung Galaxy S24 Ultra (Sealed)", "Samsung", ItemCondition.NEW,
-                "Hyderabad", "TG", "125000", now.minusMinutes(1), now.plusHours(12));
-        addAttributes("Samsung Galaxy S24 Ultra (Sealed)", Map.of(
-                "RAM", "12 GB", "Storage", "512 GB", "Screen size", "6.8\""));
-
-        ensureAuction(seller, electronics, "Sony PS5 Slim (Sealed)", "Sony", ItemCondition.NEW,
-                "Bengaluru", "KA", "48000", now.minusMinutes(1), now.plusDays(1));
-
-        ensureAuction(seller, electronics, "Apple iPad Pro 12.9\" (Sealed)", "Apple", ItemCondition.NEW,
-                "Mumbai", "MH", "110000", now.minusMinutes(1), now.plusDays(2));
-        addAttributes("Apple iPad Pro 12.9\" (Sealed)", Map.of(
-                "RAM", "8 GB", "Storage", "256 GB", "Screen size", "12.9\""));
-
-        ensureAuction(seller, properties, "3BHK Villa — Bengaluru (Bank Auction)", null, ItemCondition.USED,
-                "Bengaluru", "KA", "9500000", now.minusMinutes(1), now.plusDays(4));
-        addAttributes("3BHK Villa — Bengaluru (Bank Auction)", Map.of(
-                "Bedrooms", "3 BHK", "Furnishing", "Unfurnished", "Area (sqft)", "2400"));
-
-        ensureAuction(seller, properties, "1BHK Flat — Thane (Bank Auction)", null, ItemCondition.USED,
-                "Thane", "MH", "3200000", now.minusMinutes(1), now.plusDays(2));
-        addAttributes("1BHK Flat — Thane (Bank Auction)", Map.of(
-                "Bedrooms", "1 BHK", "Furnishing", "Semi-furnished", "Area (sqft)", "620"));
-
-        ensureAuction(seller, bankVehicles, "Repossessed Tata Ace Gold", "Tata", ItemCondition.USED,
-                "Kanpur", "UP", "310000", now.minusMinutes(1), now.plusDays(2));
-        addAttributes("Repossessed Tata Ace Gold", Map.of(
-                "Year", "2020", "Fuel", "Diesel", "KM driven", "58000"));
-
-        ensureAuction(seller, insurance, "Water-Damaged Kia Sonet", "Kia", ItemCondition.FOR_PARTS,
-                "Chennai", "TN", "260000", now.minusMinutes(1), now.plusDays(1));
-        addAttributes("Water-Damaged Kia Sonet", Map.of(
-                "Policy Type", "Motor", "IDV", "780000", "Claim No", "TATAAIG-2026-77310"));
-
-        log.info("[dev-seed] extra live demo auctions ensured across categories");
-    }
-
-    /** Like {@link #ensureAuction}, but for a listing gated behind a subscription tier. */
-    private void ensureAuctionWithTier(User seller, Category category, String title, String brand,
-                                       ItemCondition condition, String city, String state, String price,
-                                       LocalDateTime start, LocalDateTime end, SubscriptionTier requiredTier) {
-        if (listingRepository.findAll().stream().anyMatch(l -> l.getTitle().equals(title))) return;
-        Listing listing = catalogService.createListing(seller, category.getId(), title,
-                title + " — seeded demo listing.", brand, condition, city, state, null, new BigDecimal(price),
-                null, false, requiredTier);
-        auctionService.createAuction(seller, listing.getId(), new BigDecimal(price), start, end, null);
-    }
-
-    /**
-     * A couple of demo listings owned by the Swipe Stock platform account, with the {@code swipeStock}
-     * flag set, so the /swipe-stock page — which filters the browse grid to that flag, same UI as
-     * everywhere else — has real data to show. Deliberately spans two different categories
-     * (Electronics, Vehicles) rather than the "Swipe Stock" category, to prove the page filters by
-     * the flag, not by category (any category's items can be flagged as Swipe Stock).
-     */
-    private void seedSwipeStockDemoData() {
+    private void seedSwipeStockDemoData(Category electronics, Category vehicles) {
         User swipeStockSeller = platformAccountService.getOrCreateSwipeStockSeller();
         platformAccountService.getOrCreateSwipeStockCategory();
         LocalDateTime now = LocalDateTime.now();
 
-        Category electronics = categoryRepository.findBySlug("electronics").orElseThrow();
-        ensureAuction(swipeStockSeller, electronics, "Swipe Stock — Refurbished MacBook Air M2", "Apple",
-                ItemCondition.REFURBISHED, "Bengaluru", "KA", "78000", now.minusMinutes(1), now.plusDays(3), true);
-        addAttributes("Swipe Stock — Refurbished MacBook Air M2", Map.of(
-                "RAM", "8 GB", "Storage", "256 GB", "Screen size", "13.6\""));
-
-        Category vehicles = categoryRepository.findBySlug("vehicles").orElseThrow();
-        ensureAuction(swipeStockSeller, vehicles, "Swipe Stock — Certified Pre-Owned Royal Enfield Hunter 350",
-                "Royal Enfield", ItemCondition.REFURBISHED, "Pune", "MH", "165000", now.minusMinutes(1), now.plusDays(3), true);
-        addAttributes("Swipe Stock — Certified Pre-Owned Royal Enfield Hunter 350", Map.of(
-                "Year", "2023", "Fuel", "Petrol", "KM driven", "3200"));
-    }
-
-    /** Look up an auction event by name, creating it only if missing (idempotent across dev boots). */
-    private AuctionEvent ensureEvent(User seller, Category category, String name, String location,
-                                     LocalDateTime start, LocalDateTime closing) {
-        return auctionEventRepository.findAll().stream()
-                .filter(e -> e.getName().equals(name))
-                .findFirst()
-                .orElseGet(() -> auctionEventRepository.save(AuctionEvent.builder()
-                        .seller(seller).category(category).name(name).location(location)
-                        .startTime(start).closingTime(closing).build()));
-    }
-
-    /**
-     * Create a listing + auction attached to an event, by title, only if it doesn't exist yet.
-     * Attributes are backfilled every startup regardless (addAttributes only adds missing keys) so
-     * a newly added attribute — e.g. "Vehicle Type" — reaches listings seeded in an earlier session.
-     */
-    private void ensureEventAuction(User seller, AuctionEvent event, Category category, String title, String brand,
-                                    ItemCondition condition, String city, String state, String price,
-                                    LocalDateTime start, LocalDateTime end, Map<String, String> attrs) {
-        if (listingRepository.findAll().stream().noneMatch(l -> l.getTitle().equals(title))) {
-            Listing listing = catalogService.createListing(seller, category.getId(), title,
-                    title + " — seeded demo listing.", brand, condition, city, state, null, new BigDecimal(price), null);
-            auctionService.createAuction(seller, listing.getId(), new BigDecimal(price), start, end, event.getId());
+        for (int i = 0; i < 30; i++) {
+            String[] loc = CITIES[(i + 17) % CITIES.length];
+            LocalDateTime[] w = bucketWindow(i, now);
+            if (i % 2 == 0) {
+                String model = ELECTRONICS_ITEMS[i % ELECTRONICS_ITEMS.length];
+                String title = "Swipe Stock — " + model + " (Certified Refurbished) Lot " + (1 + i);
+                long price = 20_000 + (i * 6_500L);
+                seedItem(swipeStockSeller, electronics, null, title, model.split(" ")[0], ItemCondition.REFURBISHED,
+                        loc[0], loc[1], price, w[0], w[1], SubscriptionTier.NONE, true, electronicsAttrs(i));
+            } else {
+                String model = MASS_MARKET_VEHICLES[i % MASS_MARKET_VEHICLES.length];
+                String title = "Swipe Stock — Certified Pre-Owned " + model + " Lot " + (1 + i);
+                long price = 280_000 + (i * 15_000L);
+                seedItem(swipeStockSeller, vehicles, null, title, model.split(" ")[0], ItemCondition.REFURBISHED,
+                        loc[0], loc[1], price, w[0], w[1], SubscriptionTier.NONE, true,
+                        vehicleAttrs(i, vehicles, loc[0], loc[1]));
+            }
         }
-        addAttributes(title, attrs);
     }
 
-    /** Web-informed category specs for the demo listings; only missing keys are added (idempotent). */
-    private void seedDemoAttributes() {
-        addAttributes("iPhone 15 Pro (Sealed)", Map.of(
-                "RAM", "8 GB", "Storage", "256 GB", "Screen size", "6.1\""));
-        addAttributes("Dell XPS 15 (2023, Laptop)", Map.of(
-                "RAM", "16 GB", "Storage", "512 GB SSD", "Screen size", "15.6\"", "Processor", "Intel Core i7"));
-        addAttributes("2021 Toyota Fortuner (Repo)", Map.of(
-                "Year", "2021", "Fuel", "Diesel", "Transmission", "Automatic", "KM driven", "45000"));
-        addAttributes("Royal Enfield Classic 350", Map.of(
-                "Year", "2020", "Fuel", "Petrol", "Transmission", "Manual", "KM driven", "12000"));
-        addAttributes("2BHK Apartment — Pune (Bank Auction)", Map.of(
-                "Bedrooms", "2 BHK", "Furnishing", "Semi-furnished", "Area (sqft)", "1150"));
-        addAttributes("Commercial Plot — Hyderabad", Map.of(
-                "Zoning", "Commercial", "Area (sqft)", "4000"));
+    private void seedItem(User seller, Category category, AuctionEvent event, String title, String brand,
+                          ItemCondition condition, String city, String state, long price,
+                          LocalDateTime start, LocalDateTime end, SubscriptionTier tier, boolean swipeStock,
+                          Map<String, String> attrs) {
+        Listing listing = catalogService.createListing(seller, category.getId(), title,
+                title + " — seeded demo listing.", brand, condition, city, state, null,
+                BigDecimal.valueOf(price), attrs, swipeStock, tier);
+        auctionService.createAuction(seller, listing.getId(), BigDecimal.valueOf(price), start, end,
+                event != null ? event.getId() : null);
     }
 
     /**
@@ -497,74 +526,29 @@ public class DevDataSeeder implements CommandLineRunner {
     }
 
     /**
-     * Attach web-sourced photos to each demo listing — most get one cover photo, but a couple
-     * (Toyota Fortuner, Royal Enfield) get several angles so the item detail page's multi-image
-     * gallery (thumbnail rail + swappable main image) has real data to show, not just a single
-     * photo. Idempotent by URL, so re-running after adding more angles backfills only what's
-     * missing rather than skipping listings that already have one image.
+     * Attaches a small keyword-matched photo gallery (loremflickr.com, deterministic per title) to
+     * every listing that doesn't have a cover image yet — i.e. every freshly seeded item. Generic by
+     * design: keywords are derived from the listing's own brand + category, so it needs no per-title
+     * lookup table and works for any listing, seeded or manually created.
      */
-    private void seedCoverImages() {
-        Map<String, List<String>> covers = new java.util.LinkedHashMap<>();
-        covers.put("iPhone 15 Pro (Sealed)", List.of(
-                "https://upload.wikimedia.org/wikipedia/commons/thumb/1/19/Apple_iPhone_15_Pro.jpg/960px-Apple_iPhone_15_Pro.jpg"));
-        covers.put("Dell XPS 15 (2023, Laptop)", List.of(
-                "https://upload.wikimedia.org/wikipedia/commons/thumb/2/21/DELL_XPS_13_and_15_%2837080596413%29.jpg/960px-DELL_XPS_13_and_15_%2837080596413%29.jpg"));
-        covers.put("MacBook Pro 14\" (2023)", List.of(
-                "https://upload.wikimedia.org/wikipedia/commons/thumb/9/91/MacBook_Pro_16_%28M1_Pro%2C_2021%29_-_Wikipedia.jpg/960px-MacBook_Pro_16_%28M1_Pro%2C_2021%29_-_Wikipedia.jpg"));
-        covers.put("2021 Toyota Fortuner (Repo)", List.of(
-                "https://upload.wikimedia.org/wikipedia/commons/thumb/6/66/2015_Toyota_Fortuner_%28New_Zealand%29.jpg/960px-2015_Toyota_Fortuner_%28New_Zealand%29.jpg",
-                "https://upload.wikimedia.org/wikipedia/commons/thumb/8/83/Toyota_Fortuner-rear.JPG/960px-Toyota_Fortuner-rear.JPG",
-                "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8c/2008-2010_Toyota_Fortuner%2C_first_generation%2C_rear_view.jpg/960px-2008-2010_Toyota_Fortuner%2C_first_generation%2C_rear_view.jpg"));
-        covers.put("Royal Enfield Classic 350", List.of(
-                "https://upload.wikimedia.org/wikipedia/commons/thumb/0/0f/Royal_Enfield_Classic_350_%282017_Model_Year%29.jpg/960px-Royal_Enfield_Classic_350_%282017_Model_Year%29.jpg",
-                "https://upload.wikimedia.org/wikipedia/commons/thumb/2/26/Royal_Enfield_Classic_350_2010_Model.jpg/960px-Royal_Enfield_Classic_350_2010_Model.jpg"));
-        covers.put("2BHK Apartment — Pune (Bank Auction)", List.of(
-                "https://upload.wikimedia.org/wikipedia/commons/thumb/4/49/Modern_living_room_with_stylish_furniture_and_a_view_of_the_outdoors_in_a_cozy_apartment_setting.jpg/960px-Modern_living_room_with_stylish_furniture_and_a_view_of_the_outdoors_in_a_cozy_apartment_setting.jpg"));
-        covers.put("Commercial Plot — Hyderabad", List.of(
-                "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2c/Vacant_plot%2C_Purley_Way_-_geograph.org.uk_-_2497437.jpg/960px-Vacant_plot%2C_Purley_Way_-_geograph.org.uk_-_2497437.jpg"));
-        // Swipe Stock demo listings intentionally get no explicit cover here — they fall back to the
-        // deterministic keyword-photo (frontend cardImage()), same as any other uncovered listing.
-
-        // seedTieredLiveDemoData's items — no single "the" photo per title like the curated ones
-        // above, so each gets a small keyword-matched gallery from loremflickr.com instead (the same
-        // source the frontend's cardImage() fallback already uses for any uncovered listing).
-        covers.put("Apple MacBook Pro 16\" M3 Max (Sealed)", demoGallery("Apple MacBook Pro 16\" M3 Max (Sealed)", "macbook,laptop,apple", 3));
-        covers.put("2022 Jeep Compass (Repo)", demoGallery("2022 Jeep Compass (Repo)", "jeep,compass,suv,car", 3));
-        covers.put("2023 Volvo XC60 (Fleet Return)", demoGallery("2023 Volvo XC60 (Fleet Return)", "volvo,xc60,suv,car", 3));
-        covers.put("4BHK Luxury Penthouse — Mumbai (Bank Auction)", demoGallery("4BHK Luxury Penthouse — Mumbai (Bank Auction)", "penthouse,luxury,apartment", 3));
-        covers.put("2023 Range Rover Sport (Repo)", demoGallery("2023 Range Rover Sport (Repo)", "range-rover,suv,car", 3));
-        covers.put("2023 Porsche Cayenne (Fleet Return)", demoGallery("2023 Porsche Cayenne (Fleet Return)", "porsche,cayenne,suv,car", 3));
-        covers.put("2021 Hyundai Verna (Repo)", demoGallery("2021 Hyundai Verna (Repo)", "hyundai,verna,sedan,car", 3));
-        covers.put("2019 Ford EcoSport (Repo)", demoGallery("2019 Ford EcoSport (Repo)", "ford,ecosport,suv,car", 3));
-        covers.put("2022 Maruti Suzuki Swift (Repo)", demoGallery("2022 Maruti Suzuki Swift (Repo)", "maruti,swift,hatchback,car", 3));
-
-        // seedMoreLiveDemoData's items — same keyword-matched loremflickr fallback approach.
-        covers.put("2020 Kia Seltos (Repo)", demoGallery("2020 Kia Seltos (Repo)", "kia,seltos,suv,car", 3));
-        covers.put("2021 Tata Nexon (Repo)", demoGallery("2021 Tata Nexon (Repo)", "tata,nexon,suv,car", 3));
-        covers.put("2022 Skoda Slavia (Repo)", demoGallery("2022 Skoda Slavia (Repo)", "skoda,slavia,sedan,car", 3));
-        covers.put("2018 Honda City (Repo)", demoGallery("2018 Honda City (Repo)", "honda,city,sedan,car", 3));
-        covers.put("Samsung Galaxy S24 Ultra (Sealed)", demoGallery("Samsung Galaxy S24 Ultra (Sealed)", "samsung,galaxy,smartphone", 3));
-        covers.put("Sony PS5 Slim (Sealed)", demoGallery("Sony PS5 Slim (Sealed)", "playstation,ps5,console", 3));
-        covers.put("Apple iPad Pro 12.9\" (Sealed)", demoGallery("Apple iPad Pro 12.9\" (Sealed)", "ipad,tablet,apple", 3));
-        covers.put("3BHK Villa — Bengaluru (Bank Auction)", demoGallery("3BHK Villa — Bengaluru (Bank Auction)", "villa,house,property", 3));
-        covers.put("1BHK Flat — Thane (Bank Auction)", demoGallery("1BHK Flat — Thane (Bank Auction)", "apartment,flat,interior", 3));
-        covers.put("Repossessed Tata Ace Gold", demoGallery("Repossessed Tata Ace Gold", "tata-ace,truck,pickup", 3));
-        covers.put("Water-Damaged Kia Sonet", demoGallery("Water-Damaged Kia Sonet", "kia,sonet,suv,car", 3));
-
+    private void seedGenericCoverImages(Map<java.util.UUID, String> categorySlugById) {
         int added = 0;
         for (Listing l : listingRepository.findAll()) {
-            List<String> urls = covers.get(l.getTitle());
-            if (urls == null) continue;
-            List<ListingImage> existing = listingImageRepository.findByListing_IdOrderBySortOrderAsc(l.getId());
-            Set<String> existingUrls = existing.stream().map(ListingImage::getUrl).collect(Collectors.toSet());
-            boolean hasCover = existing.stream().anyMatch(ListingImage::isCover);
-            int nextOrder = existing.size();
+            if (!listingImageRepository.findByListing_IdOrderBySortOrderAsc(l.getId()).isEmpty()) continue;
+            String brandKeyword = l.getBrand() != null
+                    ? l.getBrand().toLowerCase().replace(" ", "-").replace("\"", "") + ","
+                    : "";
+            // getCategory() is a lazy proxy and there's no open Hibernate session at boot time outside
+            // a @Transactional call — go through the ID (always available on the proxy) instead of the
+            // slug (which would trigger a LazyInitializationException).
+            String slug = categorySlugById.getOrDefault(l.getCategory().getId(), "auction");
+            String keywords = brandKeyword + slug;
+            List<String> urls = demoGallery(l.getTitle(), keywords, 3);
+            int order = 0;
             for (String url : urls) {
-                if (existingUrls.contains(url)) continue;
                 listingImageRepository.save(ListingImage.builder()
-                        .listing(l).url(url).sortOrder(nextOrder).cover(!hasCover).build());
-                hasCover = true;
-                nextOrder++;
+                        .listing(l).url(url).sortOrder(order).cover(order == 0).build());
+                order++;
                 added++;
             }
         }
@@ -572,9 +556,9 @@ public class DevDataSeeder implements CommandLineRunner {
     }
 
     /**
-     * {@code count} distinct, keyword-relevant stock photos for a demo listing that doesn't have a
-     * real upload/one curated URL — pinned to deterministic loremflickr.com "lock" seeds (derived
-     * from the title) so the result is stable across restarts instead of changing every run.
+     * {@code count} distinct, keyword-relevant stock photos for a demo listing — pinned to
+     * deterministic loremflickr.com "lock" seeds (derived from the title) so the result is stable
+     * across restarts instead of changing every run.
      */
     private List<String> demoGallery(String title, String keywords, int count) {
         // Encode each term so a space (e.g. "range rover") can't produce a malformed, silently-
@@ -588,22 +572,6 @@ public class DevDataSeeder implements CommandLineRunner {
             urls.add("https://loremflickr.com/800/600/" + encodedKeywords + "?lock=" + lock);
         }
         return urls;
-    }
-
-    private void addAttributes(String title, Map<String, String> attrs) {
-        listingRepository.findAll().stream()
-                .filter(l -> l.getTitle().equals(title))
-                .findFirst()
-                .ifPresent(l -> {
-                    Set<String> present = listingAttributeRepository.findByListing_Id(l.getId()).stream()
-                            .map(ListingAttribute::getKey).collect(Collectors.toSet());
-                    attrs.forEach((k, v) -> {
-                        if (!present.contains(k)) {
-                            listingAttributeRepository.save(
-                                    ListingAttribute.builder().listing(l).key(k).value(v).build());
-                        }
-                    });
-                });
     }
 
     private Category getOrCreateCategory(String name, String slug) {

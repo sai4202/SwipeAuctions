@@ -73,7 +73,6 @@ export default function EventsBrowse({ categorySlug }: { categorySlug?: string }
   })
   const loading = auctionsLoading || eventsLoading
   const [multiIds, setMultiIds] = useState<string[]>(getMultiBidIds())
-  const [vtModalOpen, setVtModalOpen] = useState(false)
   const [eventSort, setEventSort] = useState<EventSortKey | null>(null)
   const [eventSortDir, setEventSortDir] = useState<'asc' | 'desc'>('asc')
   const toggleEventSort = (k: EventSortKey) => {
@@ -83,7 +82,6 @@ export default function EventsBrowse({ categorySlug }: { categorySlug?: string }
 
   const eventId = params.get('event') || ''
   const q = params.get('q') || ''
-  const loc = params.get('loc') || ''
   const vt = useMemo(() => (params.get('vt') || '').split(',').filter(Boolean), [params])
   const estatus = (params.get('estatus') as EventStatus) || 'LIVE'
   const itemTab = (params.get('itab') as (typeof ITEM_TABS)[number]) || 'OPEN'
@@ -135,12 +133,15 @@ export default function EventsBrowse({ categorySlug }: { categorySlug?: string }
         const types = vehicleTypesOf(e.id)
         if (!vt.some((v) => types.includes(v))) return false
       }
-      if (loc && !(e.location ?? '').toLowerCase().includes(loc.toLowerCase())) return false
-      if (needle && !(e.name.toLowerCase().includes(needle) || (e.location ?? '').toLowerCase().includes(needle))) return false
+      if (needle) {
+        const hay = [e.name, e.location ?? '', shortId(e.id), EVENT_CATEGORIES[e.categorySlug]?.label ?? '']
+          .join(' ').toLowerCase()
+        if (!hay.includes(needle)) return false
+      }
       return true
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [events, categorySlug, estatus, vt, loc, q, auctionsByEvent])
+  }, [events, categorySlug, estatus, vt, q, auctionsByEvent])
 
   const sortedEvents = useMemo(() => {
     if (!eventSort) return filteredEvents
@@ -192,6 +193,13 @@ export default function EventsBrowse({ categorySlug }: { categorySlug?: string }
         <div className="section-head">
           <h1 className="page">{selectedEvent?.name ?? 'Auction Event'}</h1>
           <button className="btn ghost sm" onClick={() => setParam('event', '')}>← All events</button>
+          {/* Live/Upcoming/Closed sits right in the banner, not buried below the stat card and
+              filters, so it's visible without scrolling. */}
+          <div className="tabs status-tabs" style={{ flexBasis: '100%', margin: '8px 0 0' }}>
+            {ITEM_TABS.map((s) => (
+              <button key={s} className={`tab ${itemTab === s ? 'active' : ''}`} onClick={() => setParam('itab', s)}>{ITEM_TAB_LABEL[s]}</button>
+            ))}
+          </div>
         </div>
 
         {selectedEvent && (
@@ -205,10 +213,10 @@ export default function EventsBrowse({ categorySlug }: { categorySlug?: string }
           </div>
         )}
 
-        {/* Filters live at the top of the page, not a sidebar. */}
+        {/* Filters — one line, not stacked rows, so the item table isn't pushed further down. */}
         <div className="card event-filter-bar">
           <div className="event-filter-row">
-            <input value={q} onChange={(e) => setParam('q', e.target.value)} placeholder="Search item…" style={{ flex: '1 1 220px' }} />
+            <input className="search-glow" value={q} onChange={(e) => setParam('q', e.target.value)} placeholder="Search item…" style={{ flex: '1 1 220px' }} />
             {itemCatFilters.map((f) => {
               const pkey = filterParam(f.key)
               const val = params.get(pkey) || ''
@@ -223,27 +231,6 @@ export default function EventsBrowse({ categorySlug }: { categorySlug?: string }
               )
             })}
           </div>
-          <div className="event-filter-row event-filter-row-bottom">
-            <button type="button" className={`filter-pill ${vt.length ? 'active' : ''}`} onClick={() => setVtModalOpen(true)}>
-              Vehicle Type{vt.length ? ` (${vt.length})` : ''} <span className="caret">▾</span>
-            </button>
-          </div>
-        </div>
-
-        {vtModalOpen && (
-          <FilterModal<string[]>
-            title="Vehicle Type" applied={vt} emptyValue={[]}
-            onApply={(v) => setParam('vt', v.join(','))} onClose={() => setVtModalOpen(false)}
-            renderBody={(staged, setStaged) => (
-              <CheckboxListBody options={VEHICLE_TYPE_OPTIONS} selected={staged} onChange={setStaged} searchPlaceholder="Search Vehicle Types" />
-            )}
-          />
-        )}
-
-        <div className="tabs status-tabs">
-          {ITEM_TABS.map((s) => (
-            <button key={s} className={`tab ${itemTab === s ? 'active' : ''}`} onClick={() => setParam('itab', s)}>{ITEM_TAB_LABEL[s]}</button>
-          ))}
         </div>
 
         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
@@ -321,39 +308,39 @@ export default function EventsBrowse({ categorySlug }: { categorySlug?: string }
   }
 
   // ---- Events-list view ----
-  const categoryLabel = categorySlug ? EVENT_CATEGORIES[categorySlug]?.label ?? 'Auction' : 'Auction'
   return (
     <div>
+      {/* Main Live/Upcoming/Closed filter — sits where the page heading used to be, same gradient
+          banner treatment as the flat browse page's status-tabs section. A plain text input (unlike
+          Vehicle Type's dropdown) is safe here despite the banner's overflow:hidden, since it has no
+          popover to clip. */}
       <div className="section-head">
-        <h1 className="page">{SLABEL[estatus]} {categoryLabel} Events</h1>
+        <div className="section-head-tabs">
+          <div className="tabs status-tabs">
+            {STATUS.map((s) => (
+              <button key={s} className={`tab ${estatus === s ? 'active' : ''}`} onClick={() => setParam('estatus', s)}>{SLABEL[s]}</button>
+            ))}
+          </div>
+        </div>
+        <div className="events-search">
+          <span className="mag">🔍</span>
+          <input
+            value={q} onChange={(e) => setParam('q', e.target.value)}
+            placeholder="Search by name, location, ID…" aria-label="Search auction events"
+          />
+        </div>
       </div>
 
-      <div className="global-search">
-        <input value={q} onChange={(e) => setParam('q', e.target.value)} placeholder="Search auction events by name, location…" aria-label="Search auction events" />
-      </div>
-
-      {/* Top filter bar. */}
-      <div className="filter-pill-row">
-        <input value={loc} onChange={(e) => setParam('loc', e.target.value)} placeholder="Location (city, state)"
-          style={{ width: 200, padding: '9px 14px', borderRadius: 'var(--radius-full)' }} />
-        <button type="button" className={`filter-pill ${vt.length ? 'active' : ''}`} onClick={() => setVtModalOpen(true)}>
-          Vehicle Type{vt.length ? ` (${vt.length})` : ''} <span className="caret">▾</span>
-        </button>
-        <span className="muted" style={{ marginLeft: 'auto', fontSize: 12.5 }}>{filteredEvents.length} found</span>
-      </div>
-
-      {vtModalOpen && (
+      {/* Category pill bar. */}
+      <div className="tabs status-tabs" style={{ alignItems: 'center' }}>
         <FilterModal<string[]>
-          title="Vehicle Type" applied={vt} emptyValue={[]}
-          onApply={(v) => setParam('vt', v.join(','))} onClose={() => setVtModalOpen(false)}
+          label="Vehicle Type" count={vt.length}
+          applied={vt} emptyValue={[]}
+          onApply={(v) => setParam('vt', v.join(','))}
           renderBody={(staged, setStaged) => (
             <CheckboxListBody options={VEHICLE_TYPE_OPTIONS} selected={staged} onChange={setStaged} searchPlaceholder="Search Vehicle Types" />
           )}
         />
-      )}
-
-      {/* Category pill bar. */}
-      <div className="tabs status-tabs">
         <button className={`tab ${!categorySlug ? 'active' : ''}`} onClick={() => setPill(undefined)}>
           All Events ({pillCounts.events ?? 0})
         </button>
@@ -362,12 +349,7 @@ export default function EventsBrowse({ categorySlug }: { categorySlug?: string }
             {EVENT_CATEGORIES[slug].pillLabel} ({pillCounts[slug] ?? 0})
           </button>
         ))}
-      </div>
-
-      <div className="tabs status-tabs">
-        {STATUS.map((s) => (
-          <button key={s} className={`tab ${estatus === s ? 'active' : ''}`} onClick={() => setParam('estatus', s)}>{SLABEL[s]}</button>
-        ))}
+        <span className="muted" style={{ marginLeft: 'auto', fontSize: 12.5 }}>{filteredEvents.length} found</span>
       </div>
 
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>

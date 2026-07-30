@@ -17,8 +17,14 @@ import {
 import { money, moneyCompact, formatDateTimeShort, openUserDetails } from '../util'
 import { StatTilesSkeleton } from '../components/Skeleton'
 import { DETAIL_FIELDS, DETAIL_TABS, REQUIRED_FOR_USED_VEHICLES, requiresVehicleDetails, type DetailFieldDef } from '../detailFields'
+import { VEHICLE_TYPE_OPTIONS } from '../catalogFilters'
+import { EVENT_CATEGORIES } from '../eventCategories'
 
 type Tab = 'overview' | 'users' | 'auctions' | 'disputes' | 'categories' | 'kyc' | 'settings'
+
+/** Categories that use the Vehicle Type filter (see catalogFilters.ts) — same set as the events
+ *  browsing UI (EVENT_CATEGORIES), by lowercased category name for a simple string comparison here. */
+const VEHICLE_TYPE_CATEGORY_NAMES = new Set(Object.values(EVENT_CATEGORIES).map((c) => c.label.toLowerCase()))
 
 /** Counts up from 0 to `value` on mount/change, honoring prefers-reduced-motion. */
 function AnimatedNumber({ value, format }: { value: number; format: (n: number) => string }) {
@@ -167,7 +173,7 @@ function Users({ focusUserId, onFocusHandled }: { focusUserId: string | null; on
   return (
     <div className="card">
       <div className="admin-filters">
-        <input placeholder="Search email or mobile…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <input className="search-glow" placeholder="Search email or mobile…" value={search} onChange={(e) => setSearch(e.target.value)} />
         <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}>
           <option value="">All roles</option>
           <option value="USER">Customer</option>
@@ -1063,6 +1069,10 @@ function AddStockSingleForm({ categories, onCategoriesChanged, onCreated }: {
   // on the detail page — see detailFields.ts, the single source of truth shared with DetailTabs.tsx.
   const [detailValues, setDetailValues] = useState<Record<string, string>>({})
   const setDetailValue = (key: string, value: string) => setDetailValues((v) => ({ ...v, [key]: value }))
+  // Vehicle Type (4W/CV/2W/TR-FE/3W/CE) — the events browse UI's Vehicle Type filter reads this exact
+  // attribute key. Kept separate from detailValues since it's category-conditional and a fixed
+  // dropdown, not one of the generic detail-tab fields.
+  const [vehicleType, setVehicleType] = useState('')
 
   // Every real used/repossessed vehicle has a registration, chassis, and yard — see detailFields.ts.
   // UI hint only; AdminStockController.requireVehicleDetails is what actually enforces this.
@@ -1070,11 +1080,12 @@ function AddStockSingleForm({ categories, onCategoriesChanged, onCreated }: {
     ? newCategoryName
     : (categories.find((c) => c.id === categoryId)?.name ?? '')
   const vehicleDetailsRequired = requiresVehicleDetails(selectedCategoryName, condition)
+  const showVehicleType = VEHICLE_TYPE_CATEGORY_NAMES.has(selectedCategoryName.trim().toLowerCase())
 
   const reset = () => {
     setTitle(''); setDescription(''); setBrand(''); setCity(''); setState(''); setZip('')
     setReservePrice(''); setStartTime(''); setEndTime(''); setSwipeStock(false); setRequiredTier('NONE'); setFiles([])
-    setCategoryId(''); setNewCategoryName(''); setDetailValues({})
+    setCategoryId(''); setNewCategoryName(''); setDetailValues({}); setVehicleType('')
   }
 
   const submit = async (e: FormEvent) => {
@@ -1089,6 +1100,7 @@ function AddStockSingleForm({ categories, onCategoriesChanged, onCreated }: {
       const attributes = Object.fromEntries(
         Object.entries(detailValues).filter(([, v]) => v.trim() !== ''),
       )
+      if (showVehicleType && vehicleType) attributes['Vehicle Type'] = vehicleType
 
       const listing = await createStockListing({
         title,
@@ -1170,7 +1182,22 @@ function AddStockSingleForm({ categories, onCategoriesChanged, onCreated }: {
             {CONDITIONS.map((c) => <option key={c} value={c}>{c.replace('_', ' ')}</option>)}
           </select>
         </div>
+        {showVehicleType && (
+          <div className="fgroup" style={{ flex: 1, minWidth: 140 }}>
+            <small>Vehicle Type</small>
+            <select value={vehicleType} onChange={(e) => setVehicleType(e.target.value)}>
+              <option value="">Select…</option>
+              {VEHICLE_TYPE_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+        )}
       </div>
+      {showVehicleType && (
+        <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>
+          One vehicle type per item. A branch or salvage lot with both 4-wheelers and 2-wheelers needs
+          two separate items/auctions — don't mix types under a single listing.
+        </p>
+      )}
 
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
         <div className="fgroup" style={{ flex: 1, minWidth: 120 }}>

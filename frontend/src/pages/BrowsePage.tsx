@@ -22,8 +22,6 @@ const CONDITIONS = ['', 'NEW', 'USED', 'REFURBISHED', 'FOR_PARTS']
 const TIERS = ['', 'SILVER', 'GOLD', 'DIAMOND']
 const TIER_LABEL: Record<string, string> = { SILVER: 'Silver & below', GOLD: 'Gold & below', DIAMOND: 'Diamond & below' }
 
-type ActiveModal = 'category' | 'state' | 'city' | 'bid' | 'more' | null
-
 interface MoreFiltersValue { condition: string; attrs: Record<string, string> }
 
 interface Chip {
@@ -50,7 +48,6 @@ export default function BrowsePage() {
   })
   const { data: cats = [] } = useCachedFetch<Category[]>('categories', getCategories, { maxAgeMs: 5 * 60_000 })
   const [multiIds, setMultiIds] = useState<string[]>(getMultiBidIds())
-  const [activeModal, setActiveModal] = useState<ActiveModal>(null)
 
   const toggleMulti = (id: string) => {
     setMultiIds(multiIds.includes(id) ? removeMultiBid(id) : addMultiBid(id))
@@ -275,22 +272,51 @@ export default function BrowsePage() {
         <FilterPill label="Keyword" active={Boolean(q)}>
           <div className="fgroup">
             <small>Keyword</small>
-            <input value={q} onChange={(e) => setParam('q', e.target.value)} placeholder="Title, brand, city…" autoFocus />
+            <input className="search-glow" value={q} onChange={(e) => setParam('q', e.target.value)} placeholder="Title, brand, city…" autoFocus />
           </div>
         </FilterPill>
 
-        <button type="button" className={`filter-pill ${categorySlugs.length ? 'active' : ''}`} onClick={() => setActiveModal('category')}>
-          Category{categorySlugs.length ? ` (${categorySlugs.length})` : ''} <span className="caret">▾</span>
-        </button>
-        <button type="button" className={`filter-pill ${stateSel.length ? 'active' : ''}`} onClick={() => setActiveModal('state')}>
-          State{stateSel.length ? ` (${stateSel.length})` : ''} <span className="caret">▾</span>
-        </button>
-        <button type="button" className={`filter-pill ${citySel.length ? 'active' : ''}`} onClick={() => setActiveModal('city')}>
-          City{citySel.length ? ` (${citySel.length})` : ''} <span className="caret">▾</span>
-        </button>
-        <button type="button" className={`filter-pill ${priceMin || priceMax ? 'active' : ''}`} onClick={() => setActiveModal('bid')}>
-          Bid Range <span className="caret">▾</span>
-        </button>
+        <FilterModal<string[]>
+          label="Category" count={categorySlugs.length}
+          applied={categorySlugs} emptyValue={[]}
+          onApply={(v) => setMultiParam('category', v)}
+          renderBody={(staged, setStaged) => (
+            <CheckboxListBody
+              options={categoryOptions}
+              selected={staged.map((slug) => catNameBySlug[slug] ?? slug)}
+              onChange={(names) => setStaged(names.map((n) => nameToSlug[n]).filter(Boolean))}
+              searchPlaceholder="Search Categories"
+            />
+          )}
+        />
+        <FilterModal<string[]>
+          label="State" count={stateSel.length}
+          applied={stateSel} emptyValue={[]}
+          onApply={(v) => setMultiParam('state', v)}
+          renderBody={(staged, setStaged) => (
+            <CheckboxListBody options={stateOptions} selected={staged} onChange={setStaged} searchPlaceholder="Search States" />
+          )}
+        />
+        <FilterModal<string[]>
+          label="City" count={citySel.length}
+          applied={citySel} emptyValue={[]}
+          onApply={(v) => setMultiParam('city', v)}
+          renderBody={(staged, setStaged) => (
+            <CheckboxListBody options={cityOptions} selected={staged} onChange={setStaged} searchPlaceholder="Search Cities" />
+          )}
+        />
+        <FilterModal<{ min: string; max: string }>
+          label="Bid Range" active={Boolean(priceMin || priceMax)}
+          applied={{ min: priceMin, max: priceMax }} emptyValue={{ min: '', max: '' }}
+          onApply={(v) => { setParam('min', v.min); setParam('max', v.max) }}
+          renderBody={(staged, setStaged) => (
+            <div className="price-range">
+              <input type="number" value={staged.min} onChange={(e) => setStaged({ ...staged, min: e.target.value })} placeholder="Min" />
+              <span>–</span>
+              <input type="number" value={staged.max} onChange={(e) => setStaged({ ...staged, max: e.target.value })} placeholder="Max" />
+            </div>
+          )}
+        />
 
         <FilterPill label="Tier" active={Boolean(tier)}>
           <div className="fgroup">
@@ -301,9 +327,51 @@ export default function BrowsePage() {
           </div>
         </FilterPill>
 
-        <button type="button" className={`filter-pill ${Boolean(condition) || hasCatParams ? 'active' : ''}`} onClick={() => setActiveModal('more')}>
-          More Filters <span className="caret">▾</span>
-        </button>
+        <FilterModal<MoreFiltersValue>
+          label="More Filters" active={Boolean(condition) || hasCatParams}
+          applied={appliedMoreFilters} emptyValue={{ condition: '', attrs: {} }}
+          onApply={applyMoreFilters}
+          renderBody={(staged, setStaged) => (
+            <>
+              <div className="fgroup">
+                <small>Condition</small>
+                <select value={staged.condition} onChange={(e) => setStaged({ ...staged, condition: e.target.value })}>
+                  {CONDITIONS.map((c) => <option key={c} value={c}>{c ? c.replace('_', ' ') : 'Any'}</option>)}
+                </select>
+              </div>
+              {catFilters.length > 0 && (
+                <div className="cat-filters">
+                  <div className="cat-filters-head">{selectedCatName} filters</div>
+                  {catFilters.map((f) => {
+                    const val = staged.attrs[f.key] || ''
+                    return (
+                      <div className="fgroup" key={f.key}>
+                        <small>{f.label}</small>
+                        {f.type === 'NUMBER' ? (
+                          <input
+                            type="number" value={val} placeholder="Any"
+                            onChange={(e) => setStaged({ ...staged, attrs: { ...staged.attrs, [f.key]: e.target.value } })}
+                          />
+                        ) : (
+                          <select
+                            value={val}
+                            onChange={(e) => setStaged({ ...staged, attrs: { ...staged.attrs, [f.key]: e.target.value } })}
+                          >
+                            <option value="">Any</option>
+                            {f.options.map((o) => <option key={o} value={o}>{o}</option>)}
+                          </select>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+              {categorySlugs.length !== 1 && (
+                <p className="muted" style={{ fontSize: 12 }}>Select exactly one category to see its specific filters.</p>
+              )}
+            </>
+          )}
+        />
       </div>
 
       {hasFilters && (
@@ -377,98 +445,6 @@ export default function BrowsePage() {
           </div>
         )}
       </div>
-
-      {activeModal === 'category' && (
-        <FilterModal<string[]>
-          title="Category" applied={categorySlugs} emptyValue={[]}
-          onApply={(v) => setMultiParam('category', v)} onClose={() => setActiveModal(null)}
-          renderBody={(staged, setStaged) => (
-            <CheckboxListBody
-              options={categoryOptions}
-              selected={staged.map((slug) => catNameBySlug[slug] ?? slug)}
-              onChange={(names) => setStaged(names.map((n) => nameToSlug[n]).filter(Boolean))}
-              searchPlaceholder="Search Categories"
-            />
-          )}
-        />
-      )}
-      {activeModal === 'state' && (
-        <FilterModal<string[]>
-          title="State" applied={stateSel} emptyValue={[]}
-          onApply={(v) => setMultiParam('state', v)} onClose={() => setActiveModal(null)}
-          renderBody={(staged, setStaged) => (
-            <CheckboxListBody options={stateOptions} selected={staged} onChange={setStaged} searchPlaceholder="Search States" />
-          )}
-        />
-      )}
-      {activeModal === 'city' && (
-        <FilterModal<string[]>
-          title="City" applied={citySel} emptyValue={[]}
-          onApply={(v) => setMultiParam('city', v)} onClose={() => setActiveModal(null)}
-          renderBody={(staged, setStaged) => (
-            <CheckboxListBody options={cityOptions} selected={staged} onChange={setStaged} searchPlaceholder="Search Cities" />
-          )}
-        />
-      )}
-      {activeModal === 'bid' && (
-        <FilterModal<{ min: string; max: string }>
-          title="Bid Range" applied={{ min: priceMin, max: priceMax }} emptyValue={{ min: '', max: '' }}
-          onApply={(v) => { setParam('min', v.min); setParam('max', v.max) }} onClose={() => setActiveModal(null)}
-          renderBody={(staged, setStaged) => (
-            <div className="price-range">
-              <input type="number" value={staged.min} onChange={(e) => setStaged({ ...staged, min: e.target.value })} placeholder="Min" />
-              <span>–</span>
-              <input type="number" value={staged.max} onChange={(e) => setStaged({ ...staged, max: e.target.value })} placeholder="Max" />
-            </div>
-          )}
-        />
-      )}
-      {activeModal === 'more' && (
-        <FilterModal<MoreFiltersValue>
-          title="More Filters" applied={appliedMoreFilters} emptyValue={{ condition: '', attrs: {} }}
-          onApply={applyMoreFilters} onClose={() => setActiveModal(null)}
-          renderBody={(staged, setStaged) => (
-            <>
-              <div className="fgroup">
-                <small>Condition</small>
-                <select value={staged.condition} onChange={(e) => setStaged({ ...staged, condition: e.target.value })}>
-                  {CONDITIONS.map((c) => <option key={c} value={c}>{c ? c.replace('_', ' ') : 'Any'}</option>)}
-                </select>
-              </div>
-              {catFilters.length > 0 && (
-                <div className="cat-filters">
-                  <div className="cat-filters-head">{selectedCatName} filters</div>
-                  {catFilters.map((f) => {
-                    const val = staged.attrs[f.key] || ''
-                    return (
-                      <div className="fgroup" key={f.key}>
-                        <small>{f.label}</small>
-                        {f.type === 'NUMBER' ? (
-                          <input
-                            type="number" value={val} placeholder="Any"
-                            onChange={(e) => setStaged({ ...staged, attrs: { ...staged.attrs, [f.key]: e.target.value } })}
-                          />
-                        ) : (
-                          <select
-                            value={val}
-                            onChange={(e) => setStaged({ ...staged, attrs: { ...staged.attrs, [f.key]: e.target.value } })}
-                          >
-                            <option value="">Any</option>
-                            {f.options.map((o) => <option key={o} value={o}>{o}</option>)}
-                          </select>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-              {categorySlugs.length !== 1 && (
-                <p className="muted" style={{ fontSize: 12 }}>Select exactly one category to see its specific filters.</p>
-              )}
-            </>
-          )}
-        />
-      )}
     </div>
   )
 }

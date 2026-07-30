@@ -31,7 +31,7 @@ export default function MyWinsPage() {
         <h1 className="page">My Wins</h1>
       </div>
       <div className="admin-filters" style={{ marginBottom: 10 }}>
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search won items…" style={{ width: 220 }} />
+        <input className="search-glow" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search won items…" style={{ width: 220 }} />
       </div>
       {error && <div className="error">{error}</div>}
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>

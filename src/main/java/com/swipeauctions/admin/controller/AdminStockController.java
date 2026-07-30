@@ -98,6 +98,18 @@ public class AdminStockController {
     private static final java.util.Set<String> VEHICLE_CATEGORY_NAMES =
             java.util.Set.of("vehicles", "bank vehicles", "auto", "insurance");
 
+    /**
+     * The events browse UI's Vehicle Type filter reads this exact attribute key (see
+     * {@code frontend/src/catalogFilters.ts}'s VEHICLE_TYPE_KEY) — shown for the same category set as
+     * {@code frontend/src/eventCategories.ts}'s EVENT_CATEGORIES (Bank Vehicles/Insurance/Premium/Auto)
+     * on the admin form, but accepted here for any category rather than re-deriving that set backend-
+     * side too. A real bank/insurer/fleet auction never mixes vehicle types under one listing — see
+     * {@link com.swipeauctions.common.dev.DevDataSeeder} for the same rule applied to demo data.
+     */
+    private static final String VEHICLE_TYPE_ATTR_KEY = "Vehicle Type";
+    private static final java.util.Set<String> VEHICLE_TYPE_VALUES =
+            java.util.Set.of("4W", "CV", "2W", "TR/FE", "3W", "CE");
+
     // ---- Single item ----
 
     @PostMapping("/listings")
@@ -105,6 +117,7 @@ public class AdminStockController {
         User seller = platformAccountService.getOrCreateSwipeStockSeller();
         Category category = resolveCategory(req.categoryId(), req.categoryName());
         requireVehicleDetails(category, req.condition(), req.attributes());
+        validateVehicleType(req.attributes());
         Listing listing = catalogService.createListing(seller, category.getId(), req.title(), req.description(),
                 req.brand(), req.condition(), req.city(), req.state(), req.zip(), req.reservePrice(),
                 req.attributes(), Boolean.TRUE.equals(req.swipeStock()),
@@ -134,12 +147,13 @@ public class AdminStockController {
 
     /**
      * One row per item. Header row required (case-insensitive, any column order): Title, Category,
-     * Brand, Condition, City, State, Zip, Base Price, Start Time, End Time, Swipe Stock, plus any of
-     * the {@link #DETAIL_COLUMNS} (Yard Name, Registration Number, Chassis No, ...) — those populate
-     * the item's detail-page tabs exactly like the single-item Add Stock form does. Only Title,
-     * Category and Base Price are required — everything else has a sensible default, and every
-     * detail column is optional (blank cells are simply omitted, same as leaving a form field empty).
-     * A row-level error doesn't abort the batch; every other valid row is still imported.
+     * Brand, Condition, City, State, Zip, Base Price, Start Time, End Time, Swipe Stock, Vehicle Type,
+     * plus any of the {@link #DETAIL_COLUMNS} (Yard Name, Registration Number, Chassis No, ...) —
+     * those populate the item's detail-page tabs exactly like the single-item Add Stock form does.
+     * Only Title, Category and Base Price are required — everything else has a sensible default, and
+     * every other column is optional (blank cells are simply omitted, same as leaving a form field
+     * empty). A row is one vehicle type, never a mix — see {@link #VEHICLE_TYPE_ATTR_KEY}. A row-level
+     * error doesn't abort the batch; every other valid row is still imported.
      */
     @PostMapping(value = "/bulk", consumes = "multipart/form-data")
     public BulkImportResponse bulkImport(@RequestParam MultipartFile file,
@@ -191,9 +205,12 @@ public class AdminStockController {
                         String value = optionalString(row, cols, col[0].toLowerCase());
                         if (value != null) attributes.put(col[1], value);
                     }
+                    String vehicleType = optionalString(row, cols, "vehicle type");
+                    if (vehicleType != null) attributes.put(VEHICLE_TYPE_ATTR_KEY, vehicleType);
 
                     Category category = catalogService.resolveOrCreateCategory(categoryName);
                     requireVehicleDetails(category, condition, attributes);
+                    validateVehicleType(attributes);
                     Listing listing = catalogService.createListing(seller, category.getId(), title,
                             title + " — bulk-imported via admin Add Stock.", brand, condition, city, state, zip,
                             price, attributes, effectiveSwipeStock);
@@ -211,7 +228,7 @@ public class AdminStockController {
     }
 
     private static final String[] BASE_HEADERS = {"Title", "Category", "Brand", "Condition", "City", "State", "Zip",
-            "Base Price", "Start Time", "End Time", "Swipe Stock"};
+            "Base Price", "Start Time", "End Time", "Swipe Stock", "Vehicle Type"};
 
     /**
      * A ready-to-fill .xlsx with the exact header row the bulk importer expects (base columns plus
@@ -254,29 +271,31 @@ public class AdminStockController {
      * a plain electronics item using none of the detail columns at all — showing the range from "fill
      * in everything" to "ignore the detail columns entirely." Both vehicle-category rows still carry
      * Registration Number/Chassis No/Yard Name/Yard Location since requireVehicleDetails makes those
-     * 4 mandatory for any non-NEW item in a vehicle category (Vehicles/Bank Vehicles/Auto/Insurance).
+     * 4 mandatory for any non-NEW item in a vehicle category (Vehicles/Bank Vehicles/Auto/Insurance),
+     * and a Vehicle Type — a single row is always one vehicle type, never a mix (see
+     * {@link #VEHICLE_TYPE_ATTR_KEY}); Electronics leaves it blank since it isn't a vehicle category.
      */
     private static final String[][] EXAMPLE_ROWS = {
-            // Title, Category, Brand, Condition, City, State, Zip, Base Price, Start, End, Swipe Stock,
+            // Title, Category, Brand, Condition, City, State, Zip, Base Price, Start, End, Swipe Stock, Vehicle Type,
             // Power Steering, Yard Name, Yard Location, Payment Terms, RC Book Available, Seller Reference,
             // Sun Roof, CTE Contact Person, CTE Contact Person Phone, Registration Number, Year of Manufacturing,
             // Insurance Provider, Insurance Valid Upto, Hypothecation, Has Loan Been Paid Off,
             // Whether Valid Form 35 NOC Available, Listing Remarks, Faremeter, Chassis No, Engine No,
             // Repo Date, Parking Rate (per day), Additional Remarks
             {"Mahindra Bolero Pickup (Repo)", "Bank Vehicles", "Mahindra", "USED", "Madanapalle", "Andhra Pradesh",
-                    "517325", "130200", "2026-08-01 10:00", "2026-08-05 18:00", "FALSE",
+                    "517325", "130200", "2026-08-01 10:00", "2026-08-05 18:00", "FALSE", "CV",
                     "No", "Shriram Yard Bengaluru", "Shriram Yard Bengaluru, Survey No 52/1A", "Payment to be made within 24 hours from the time of approval",
                     "No", "L2ATHI10845213", "No", "Tulsi B", "9892803643", "AP02Y8911", "2015",
                     "", "", "No", "No", "No", "L2A_THI10845213", "No", "MD2B77AX3PWA26654", "PFXWPA18287",
                     "2026-07-17", "100", "Bids once placed cannot be cancelled. Parking charges to be paid by buyer as per seller terms."},
             {"Water-Damaged Hyundai Creta (Salvage)", "Insurance", "Hyundai", "FOR_PARTS", "Chennai", "Tamil Nadu",
-                    "600001", "260000", "2026-08-02 09:00", "2026-08-06 18:00", "FALSE",
+                    "600001", "260000", "2026-08-02 09:00", "2026-08-06 18:00", "FALSE", "4W",
                     "", "IDBI Yard Chennai", "IDBI Yard Chennai, Guindy Industrial Estate", "", "", "", "", "", "",
                     "TN09CD5678", "2021",
                     "ICICI Lombard", "2027-03-31", "", "", "", "", "", "MA3ETEB1S00123456", "",
                     "", "", "Flood-damaged; sold as-is for parts/scrap only."},
             {"Sealed Dell Laptop (Grade A)", "Electronics", "Dell", "NEW", "Hyderabad", "Telangana",
-                    "500001", "45000", "", "", "TRUE",
+                    "500001", "45000", "", "", "TRUE", "",
                     "", "", "", "", "", "", "", "", "", "", "",
                     "", "", "", "", "", "", "", "", "",
                     "", "", ""},
@@ -305,6 +324,14 @@ public class AdminStockController {
             throw new BadRequestException(String.join(", ", missing)
                     + (missing.size() > 1 ? " are required" : " is required")
                     + " for a used " + category.getName() + " item (only exempt for Condition = NEW)");
+        }
+    }
+
+    /** If a Vehicle Type was given, it must be one of the fixed values the events browse filter uses. */
+    private static void validateVehicleType(Map<String, String> attributes) {
+        String value = attributes == null ? null : attributes.get(VEHICLE_TYPE_ATTR_KEY);
+        if (value != null && !VEHICLE_TYPE_VALUES.contains(value)) {
+            throw new BadRequestException("Vehicle Type must be one of " + VEHICLE_TYPE_VALUES + ", got \"" + value + "\"");
         }
     }
 

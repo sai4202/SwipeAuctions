@@ -823,6 +823,53 @@ button { font-family: inherit; }
   animation: pop-in .16s var(--ease); }
 .filter-pill-panel.wide { min-width: 280px; max-height: 70vh; overflow-y: auto; }
 
+/* Events page: search bar sitting on the gradient section-head banner (right side, opposite the
+   Live/Upcoming/Closed tabs). A plain input reads as barely-there against that background, so it
+   gets its own pill chrome, same glow treatment as every other search bar below. */
+.events-search { position: relative; display: flex; align-items: center; gap: 8px; min-width: 0;
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-full);
+  padding: 9px 16px; max-width: 280px; flex: 1 1 220px; }
+.events-search .mag { color: var(--red); flex: none; font-size: 13px; }
+.events-search input { border: none; background: none; padding: 0; width: 100%; }
+
+/* Sitewide search-bar highlight: a slow pulsing glow so every "search this" input (header, homepage
+   hero, browse Keyword filter, events pages, admin search, My Wins) reads as a search bar at a
+   glance instead of blending into whatever background it sits on. Applied either to a search bar's
+   own bordered wrapper (already has border/background chrome) or, for a bare input with no wrapper,
+   via the .search-glow utility class. Pauses on focus so it doesn't fight the user while typing. */
+.header-search, .mobile-search input, .searchbar, .modal-search, .global-search input,
+.events-search, .search-glow {
+  animation: search-glow-pulse 2.6s ease-in-out infinite;
+}
+.header-search:focus-within, .mobile-search input:focus, .searchbar:focus-within,
+.modal-search:focus-within, .global-search input:focus, .events-search:focus-within,
+.search-glow:focus {
+  animation: none; border-color: var(--red); box-shadow: 0 0 0 3px rgba(239,61,46,.18);
+}
+@keyframes search-glow-pulse {
+  0%, 100% { border-color: var(--border); box-shadow: 0 0 0 0 rgba(239,61,46,.28); }
+  50% { border-color: rgba(239,61,46,.6); box-shadow: 0 0 0 5px rgba(239,61,46,0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .header-search, .mobile-search input, .searchbar, .modal-search, .global-search input,
+  .events-search, .search-glow { animation: none; }
+}
+
+/* Anchored checkbox/range filter dropdown (Category/State/City/Bid Range/More Filters/Vehicle
+   Type) — opens under its own trigger pill instead of a full-page modal, so it never blocks the
+   rest of the page. Same anchoring as .filter-pill-panel, just used by FilterModal.tsx. */
+.filter-dropdown { position: absolute; top: calc(100% + 8px); left: 0; z-index: 30; width: 280px;
+  max-height: 70vh; overflow-y: auto;
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md); display: flex; flex-direction: column; gap: 12px; padding: 14px;
+  animation: pop-in .16s var(--ease); }
+.filter-dropdown-foot { display: flex; align-items: center; justify-content: space-between;
+  padding-top: 10px; border-top: 1px solid var(--border); }
+/* For a trigger pinned to the right edge of its row (e.g. Events page's Vehicle Type) — opens
+   leftward off the trigger's right edge instead, so it can't run off the edge of the page. */
+.filter-dropdown-right { left: auto; right: 0; }
+@media (max-width: 780px) { .filter-dropdown { left: auto; right: 0; } }
+
 /* Active-filter chip row. */
 .chip-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 18px; }
 .chip-reset-all { background: none; border: 1px solid var(--border); border-radius: var(--radius-full); padding: 9px 14px;
@@ -856,16 +903,18 @@ button { font-family: inherit; }
   background: var(--panel-2); border: 1px solid var(--border); border-radius: 999px; padding: 8px 14px; }
 .modal-search .mag { color: var(--dim); flex: none; font-size: 13px; }
 .modal-search input { border: none; background: none; padding: 0; }
-.modal-checklist { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px;
-  max-height: 320px; overflow-y: auto; padding-right: 6px;
+.modal-checklist { display: flex; flex-direction: column; gap: 2px;
+  /* ~5 rows tall (row ~38px incl. padding), then scrolls — never the whole page. */
+  max-height: 190px; overflow-y: auto; padding-right: 6px;
   scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 .modal-checklist::-webkit-scrollbar { width: 8px; }
 .modal-checklist::-webkit-scrollbar-thumb { background: var(--border); border-radius: 8px; }
-.modal-check-row { display: flex; align-items: center; gap: 8px; font-size: 13.5px; cursor: pointer; }
+.modal-check-row { display: flex; align-items: center; gap: 8px; font-size: 13.5px; cursor: pointer;
+  padding: 6px 6px; border-radius: var(--radius-sm); transition: background-color var(--transition-fast); }
+.modal-check-row:hover { background: var(--panel-2); }
 .modal-check-row input { width: auto; }
 .modal-foot { display: flex; align-items: center; justify-content: space-between;
   padding: 16px 20px; border-top: 1px solid var(--border); }
-@media (max-width: 640px) { .modal-checklist { grid-template-columns: 1fr; } }
 
 .terms-list { margin: 0; padding-left: 20px; max-height: 260px; overflow-y: auto;
   display: flex; flex-direction: column; gap: 10px; font-size: 13.5px; line-height: 1.5;
@@ -1053,7 +1102,6 @@ label { display: block; font-size: 12.5px; color: var(--muted); margin: 14px 0 6
 .event-filter-bar { display: flex; flex-direction: column; gap: 14px; padding: 16px; margin-bottom: 14px; }
 .event-filter-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .event-filter-row input, .event-filter-row select { width: auto; }
-.event-filter-row-bottom { padding-top: 14px; border-top: 1px dashed var(--border); }
 .stat-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; margin: 16px 0 22px; }
 .stat-tile { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
 .stat-tile .k { font-size: 11px; text-transform: uppercase; color: var(--muted); letter-spacing: .06em; }
