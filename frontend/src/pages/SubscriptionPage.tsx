@@ -2,11 +2,12 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../auth'
 import {
-  getSubscriptionPrices, subscribeToPlan, errorMessage,
-  type SubscriptionPrice, type SubscriptionTier, type BillingCycle,
+  getSubscriptionPrices, createSubscriptionOrder, verifySubscription, errorMessage,
+  type SubscriptionPrice, type SubscriptionTier, type BillingCycle, type OrderIntent,
 } from '../api'
 import { money } from '../util'
 import TierCards from '../components/TierCards'
+import RazorpayCheckout from '../components/RazorpayCheckout'
 
 const TIERS: SubscriptionTier[] = ['SILVER', 'GOLD', 'DIAMOND']
 const CYCLES: { key: BillingCycle; label: string }[] = [
@@ -22,6 +23,7 @@ export default function SubscriptionPage() {
   const [error, setError] = useState('')
   const [busyKey, setBusyKey] = useState<string | null>(null)
   const [ok, setOk] = useState('')
+  const [checkoutOrder, setCheckoutOrder] = useState<OrderIntent | null>(null)
 
   useEffect(() => {
     getSubscriptionPrices().then(setPrices).catch((e) => setError(errorMessage(e)))
@@ -33,16 +35,20 @@ export default function SubscriptionPage() {
   const subscribe = async (tier: SubscriptionTier, cycle: BillingCycle) => {
     const key = `${tier}-${cycle}`
     setBusyKey(key); setError(''); setOk('')
+    try { setCheckoutOrder(await createSubscriptionOrder(tier, cycle)) }
+    catch (e) { setError(errorMessage(e)) } finally { setBusyKey(null) }
+  }
+
+  const onCheckoutSuccess = async (paymentId: string, signature: string) => {
+    if (!checkoutOrder) return
     try {
-      const result = await subscribeToPlan(tier, cycle)
+      const result = await verifySubscription(checkoutOrder.orderId, paymentId, signature)
       setSubscription(result.tier, result.expiresAt)
       setOk(`You're now on the ${result.tier} plan.`)
-    } catch (e) {
-      setError(errorMessage(e))
-    } finally {
-      setBusyKey(null)
-    }
+    } catch (e) { setError(errorMessage(e)) } finally { setCheckoutOrder(null) }
   }
+
+  const onCheckoutCancel = () => setCheckoutOrder(null)
 
   return (
     <div className="container">
@@ -71,6 +77,16 @@ export default function SubscriptionPage() {
 
       {error && <div className="error" style={{ marginBottom: 16 }}>{error}</div>}
       {ok && <div className="ok" style={{ marginBottom: 16 }}>{ok}</div>}
+
+      {checkoutOrder && (
+        <div className="card" style={{ maxWidth: 460, marginBottom: 20 }}>
+          <RazorpayCheckout
+            orderId={checkoutOrder.orderId} amountPaise={checkoutOrder.amountPaise}
+            currency={checkoutOrder.currency} keyId={checkoutOrder.keyId}
+            description="Subscription" onSuccess={onCheckoutSuccess} onCancel={onCheckoutCancel}
+          />
+        </div>
+      )}
 
       <TierCards
         currentTier={isAuthenticated ? (subscriptionTier as SubscriptionTier) : undefined}

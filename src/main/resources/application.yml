@@ -81,16 +81,15 @@ auth:
 dispute:
   proceeds-hold-hours: ${DISPUTE_PROCEEDS_HOLD_HOURS:48}
 
-# Stripe (Phase 2 — real money). All blank by default: the app boots and the rest of the platform
-# works fine without them; only wallet top-up/withdraw and seller Connect onboarding need real keys.
-# Test-mode keys are free (no business verification) — https://dashboard.stripe.com/test/apikeys.
-stripe:
-  secret-key: ${STRIPE_SECRET_KEY:}
-  publishable-key: ${STRIPE_PUBLISHABLE_KEY:}
-  webhook-secret: ${STRIPE_WEBHOOK_SECRET:}
-  connect:
-    return-url: ${STRIPE_CONNECT_RETURN_URL:http://localhost:5173/wallet?connect=return}
-    refresh-url: ${STRIPE_CONNECT_REFRESH_URL:http://localhost:5173/wallet?connect=refresh}
+# Razorpay — real money. All blank by default: the app boots and the rest of the platform works
+# fine without them; wallet top-up, registration fee, and subscription payment need key-id/secret;
+# seller withdrawals additionally need account-number (RazorpayX), gated independently since a
+# merchant can have standard Payments access without Payouts access.
+razorpay:
+  key-id: ${RAZORPAY_KEY_ID:}
+  key-secret: ${RAZORPAY_KEY_SECRET:}
+  webhook-secret: ${RAZORPAY_WEBHOOK_SECRET:}
+  account-number: ${RAZORPAY_ACCOUNT_NUMBER:}
 
 springdoc:
   swagger-ui:

@@ -319,17 +319,18 @@ export interface BulkImportResult {
   created: number
   errors: BulkImportRowError[]
 }
-export interface TopUpIntent {
-  clientSecret: string
-  publishableKey: string
+export interface OrderIntent {
+  orderId: string
+  amountPaise: number
+  currency: string
+  keyId: string
 }
 export interface WithdrawResult {
   status: string
   availableBalance: number
 }
-export interface SellerStripeStatus {
+export interface SellerPayoutStatus {
   connected: boolean
-  chargesEnabled: boolean
   payoutsEnabled: boolean
 }
 export interface WalletTransaction {
@@ -391,10 +392,15 @@ export async function resendOtp(email: string): Promise<string> {
   const res = await api.post<ApiEnvelope<string>>('/api/auth/resend-otp', { email })
   return res.data.message
 }
-// Final step of registration: dev-instant "payment" of the one-time platform registration fee.
+// Final step of registration: real Razorpay payment of the one-time platform registration fee.
 // Requires a JWT — RegisterPage signs the user in right after mobile-OTP verification for this.
-export async function payRegistrationFee(): Promise<string> {
-  const res = await api.post<ApiEnvelope<string>>('/api/auth/registration-fee/pay')
+// Order then verify, same pattern as wallet top-up — see RazorpayCheckout.
+export async function createRegistrationFeeOrder(): Promise<OrderIntent> {
+  const res = await api.post<ApiEnvelope<OrderIntent>>('/api/auth/registration-fee/order')
+  return res.data.data
+}
+export async function verifyRegistrationFee(orderId: string, paymentId: string, signature: string): Promise<string> {
+  const res = await api.post<ApiEnvelope<string>>('/api/auth/registration-fee/verify', { orderId, paymentId, signature })
   return res.data.message
 }
 export async function requestLoginOtp(emailOrMobile: string): Promise<string> {
@@ -515,15 +521,14 @@ export async function getWallet(): Promise<WalletBalance> {
   const res = await api.get<WalletBalance>('/api/wallet')
   return res.data
 }
-// Dev-only instant credit, bypasses Stripe entirely — for local/demo testing.
-export async function topUp(amount: number): Promise<WalletBalance> {
-  const res = await api.post<WalletBalance>('/api/wallet/topup', { amount })
+// Real top-up: creates a Razorpay Order for the frontend to open Checkout against.
+export async function createTopUpOrder(amount: number): Promise<OrderIntent> {
+  const res = await api.post<OrderIntent>('/api/wallet/topup/order', { amount })
   return res.data
 }
-// Real top-up: creates a Stripe PaymentIntent; the wallet is credited by the success webhook, not
-// immediately by this call.
-export async function createTopUpIntent(amount: number): Promise<TopUpIntent> {
-  const res = await api.post<TopUpIntent>('/api/wallet/topup/intent', { amount })
+// Called right after Razorpay Checkout succeeds — verifies the signature and credits the wallet.
+export async function verifyTopUp(orderId: string, paymentId: string, signature: string): Promise<WalletBalance> {
+  const res = await api.post<WalletBalance>('/api/wallet/topup/verify', { orderId, paymentId, signature })
   return res.data
 }
 export async function withdraw(amount: number): Promise<WithdrawResult> {
@@ -535,17 +540,16 @@ export async function getMyTransactions(): Promise<WalletTransaction[]> {
   return res.data
 }
 
-// ---- Seller Stripe Connect payouts ----
-export async function getSellerStripeStatus(): Promise<SellerStripeStatus> {
-  const res = await api.get<SellerStripeStatus>('/api/seller/stripe/status')
+// ---- Seller Razorpay payouts ----
+// No OAuth-redirect onboarding like Stripe Connect — bank details are submitted directly.
+export async function getSellerPayoutStatus(): Promise<SellerPayoutStatus> {
+  const res = await api.get<SellerPayoutStatus>('/api/seller/payouts/status')
   return res.data
 }
-export async function createSellerOnboardingLink(): Promise<string> {
-  const res = await api.post<{ url: string }>('/api/seller/stripe/onboarding-link')
-  return res.data.url
-}
-export async function refreshSellerStripeStatus(): Promise<SellerStripeStatus> {
-  const res = await api.post<SellerStripeStatus>('/api/seller/stripe/refresh')
+export async function saveSellerPayoutAccount(
+  accountHolderName: string, accountNumber: string, ifsc: string,
+): Promise<SellerPayoutStatus> {
+  const res = await api.post<SellerPayoutStatus>('/api/seller/payouts/account', { accountHolderName, accountNumber, ifsc })
   return res.data
 }
 
@@ -719,13 +723,17 @@ export async function updateListingRequiredTier(listingId: string, requiredTier:
   return res.data
 }
 
-// ---- Subscriptions (self-service, dev stub — no payment collected yet) ----
+// ---- Subscriptions — real Razorpay payment, order then verify ----
 export async function getMySubscription(): Promise<MySubscription> {
   const res = await api.get<MySubscription>('/api/subscriptions/me')
   return res.data
 }
-export async function subscribeToPlan(tier: SubscriptionTier, billingCycle: BillingCycle): Promise<MySubscription> {
-  const res = await api.post<MySubscription>('/api/subscriptions/subscribe', { tier, billingCycle })
+export async function createSubscriptionOrder(tier: SubscriptionTier, billingCycle: BillingCycle): Promise<OrderIntent> {
+  const res = await api.post<OrderIntent>('/api/subscriptions/order', { tier, billingCycle })
+  return res.data
+}
+export async function verifySubscription(orderId: string, paymentId: string, signature: string): Promise<MySubscription> {
+  const res = await api.post<MySubscription>('/api/subscriptions/verify', { orderId, paymentId, signature })
   return res.data
 }
 

@@ -3,14 +3,14 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import RegisterPage from '../RegisterPage'
-import { register, resendOtp, verifyEmailOtp, verifyMobileOtp, login, payRegistrationFee } from '../../api'
+import { register, resendOtp, verifyEmailOtp, verifyMobileOtp, login, createRegistrationFeeOrder, verifyRegistrationFee } from '../../api'
 import { AuthProvider } from '../../auth'
 
 vi.mock('../../api', async () => {
   const actual = await vi.importActual<typeof import('../../api')>('../../api')
   return {
     ...actual, register: vi.fn(), verifyEmailOtp: vi.fn(), verifyMobileOtp: vi.fn(), resendOtp: vi.fn(),
-    login: vi.fn(), payRegistrationFee: vi.fn(),
+    login: vi.fn(), createRegistrationFeeOrder: vi.fn(), verifyRegistrationFee: vi.fn(),
     // Avoid a real network call from RegisterPage's own useEffect in every test.
     getRegistrationFee: vi.fn().mockResolvedValue(500),
   }
@@ -94,8 +94,14 @@ describe('RegisterPage', () => {
     await waitFor(() => expect(login).toHaveBeenCalledWith('newuser@example.com', 'Test@1234'))
     expect(await screen.findByRole('heading', { name: /complete registration/i })).toBeInTheDocument()
 
-    vi.mocked(payRegistrationFee).mockResolvedValue('Registration fee paid.')
+    // Clicking "Pay ... to complete registration" starts a real Razorpay order — verified up to
+    // that point; actually completing the Checkout modal is Razorpay's own hosted UI, out of scope
+    // for this test (see RazorpayCheckout.tsx).
+    vi.mocked(createRegistrationFeeOrder).mockResolvedValue({
+      orderId: 'order_test123', amountPaise: 50000, currency: 'INR', keyId: 'rzp_test_dummy',
+    })
     await user.click(screen.getByRole('button', { name: /pay.*complete registration/i }))
-    await waitFor(() => expect(payRegistrationFee).toHaveBeenCalled())
+    await waitFor(() => expect(createRegistrationFeeOrder).toHaveBeenCalled())
+    expect(verifyRegistrationFee).not.toHaveBeenCalled()
   }, 15000)
 })

@@ -31,7 +31,7 @@ import java.util.UUID;
 
 /**
  * Internal wallet ledger. hold/release/capture are pure in-house balance moves (no external calls);
- * only topUp/withdraw touch real money (Stripe) — stubbed as internal credit until Phase 2.
+ * topUp/withdraw are driven by RazorpayPaymentService once a real payment/payout is confirmed.
  * Balances (available/held) always reconcile against the summed transaction log.
  */
 @Service
@@ -108,7 +108,8 @@ public class WalletService {
                 .orElseGet(() -> Wallet.builder().user(user).build());
     }
 
-    /** Dev funding — internal credit. Phase 2 replaces this with a real Stripe PaymentIntent. */
+    /** Credits the wallet — called by RazorpayPaymentService once a top-up payment is confirmed
+     *  (or directly, by the dev-only free top-up endpoint). */
     @Transactional
     public Wallet topUp(User user, BigDecimal amount) {
         requirePositive(amount);
@@ -116,7 +117,7 @@ public class WalletService {
         Wallet w = lockWallet(user.getId());
         w.setAvailableBalance(w.getAvailableBalance().add(amount));
         walletRepository.save(w);
-        record(w, WalletTxnType.TOPUP, amount, "STRIPE_PAYMENT_INTENT", null);
+        record(w, WalletTxnType.TOPUP, amount, "RAZORPAY_ORDER", null);
         notificationService.walletTopUp(user.getEmail(), amount);
         return w;
     }
@@ -192,7 +193,7 @@ public class WalletService {
     /**
      * Winner settlement remainder: the final winning bid may exceed the EMD (base price) already
      * captured by {@link #captureHold}. Debits the difference from available balance if funds
-     * allow, purely internally (no Stripe call — same "wallet-first" rule as hold/release/capture).
+     * allow, purely internally (no Razorpay call — same "wallet-first" rule as hold/release/capture).
      * Returns false (no state changed) if the winner doesn't have enough available balance yet;
      * the caller can retry later once they've topped up.
      */
@@ -213,9 +214,9 @@ public class WalletService {
 
     /**
      * Seller/dealer payout request: debits available balance immediately and records a PENDING
-     * withdrawal. {@link com.swipeauctions.payment.StripePaymentService} fulfils it via a real
-     * Stripe Transfer and marks the outcome — kept out of this class to avoid a circular
-     * dependency (StripePaymentService already depends on WalletService for top-up crediting).
+     * withdrawal. {@link com.swipeauctions.payment.RazorpayPaymentService} fulfils it via a real
+     * Razorpay Payout and marks the outcome — kept out of this class to avoid a circular
+     * dependency (RazorpayPaymentService already depends on WalletService for top-up crediting).
      */
     @Transactional
     public WalletWithdrawal initiateWithdrawal(User user, BigDecimal amount) {
@@ -233,14 +234,14 @@ public class WalletService {
     }
 
     @Transactional
-    public void markWithdrawalSucceeded(WalletWithdrawal withdrawal, String stripeTransferId) {
+    public void markWithdrawalSucceeded(WalletWithdrawal withdrawal, String razorpayPayoutId) {
         withdrawal.setStatus(WithdrawalStatus.SUCCEEDED);
-        withdrawal.setStripeTransferId(stripeTransferId);
+        withdrawal.setRazorpayPayoutId(razorpayPayoutId);
         withdrawal.setCompletedAt(LocalDateTime.now());
         withdrawalRepository.save(withdrawal);
     }
 
-    /** Stripe Transfer failed after the wallet was already debited — give the funds back. */
+    /** Razorpay Payout failed after the wallet was already debited — give the funds back. */
     @Transactional
     public void markWithdrawalFailed(WalletWithdrawal withdrawal) {
         Wallet w = lockWallet(withdrawal.getWallet().getUser().getId());

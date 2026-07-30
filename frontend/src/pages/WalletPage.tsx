@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  topUp, withdraw, getSellerStripeStatus, createSellerOnboardingLink,
-  refreshSellerStripeStatus, errorMessage, type SellerStripeStatus,
+  createTopUpOrder, verifyTopUp, withdraw, getSellerPayoutStatus, saveSellerPayoutAccount,
+  errorMessage, type SellerPayoutStatus, type OrderIntent,
 } from '../api'
 import { useAuth } from '../auth'
 import { useWallet } from '../WalletContext'
 import { useReveal } from '../useReveal'
 import { money, moneyCompact } from '../util'
-import StripeTopUpForm from '../components/StripeTopUpForm'
+import RazorpayCheckout from '../components/RazorpayCheckout'
 
 /** Counts a displayed value smoothly toward `value` over ~700ms instead of snapping — makes a
  *  balance update (top-up landing, a hold releasing) read as something real happening to your
@@ -67,21 +67,21 @@ function useChangeFlash(value: number | null | undefined): boolean {
 export default function WalletPage() {
   const { isAuthenticated } = useAuth()
   const { wallet, refreshWallet } = useWallet()
-  const [error, setError] = useState('')
   useReveal()
 
-  // Dev-only instant credit (bypasses Stripe) — kept for quick local/demo testing.
-  const [devAmount, setDevAmount] = useState('10000')
-  const [devBusy, setDevBusy] = useState(false)
-
-  // Real Stripe top-up.
+  // Real Razorpay top-up.
   const [payAmount, setPayAmount] = useState('1000')
-  const [checkoutAmount, setCheckoutAmount] = useState<number | null>(null)
+  const [checkoutOrder, setCheckoutOrder] = useState<OrderIntent | null>(null)
+  const [payBusy, setPayBusy] = useState(false)
   const [payMsg, setPayMsg] = useState('')
 
-  // Seller payouts (Stripe Connect + withdraw).
-  const [stripeStatus, setStripeStatus] = useState<SellerStripeStatus | null>(null)
-  const [connectBusy, setConnectBusy] = useState(false)
+  // Seller payouts (Razorpay bank account + withdraw).
+  const [payoutStatus, setPayoutStatus] = useState<SellerPayoutStatus | null>(null)
+  const [accountHolderName, setAccountHolderName] = useState('')
+  const [accountNumber, setAccountNumber] = useState('')
+  const [ifsc, setIfsc] = useState('')
+  const [accountBusy, setAccountBusy] = useState(false)
+  const [accountMsg, setAccountMsg] = useState('')
   const [withdrawAmount, setWithdrawAmount] = useState('1000')
   const [withdrawBusy, setWithdrawBusy] = useState(false)
   const [withdrawMsg, setWithdrawMsg] = useState('')
@@ -94,37 +94,32 @@ export default function WalletPage() {
 
   useEffect(() => {
     if (!isAuthenticated) return
-    getSellerStripeStatus().then(setStripeStatus).catch(() => {})
-    // Returning from Stripe's onboarding redirect (?connect=return) — re-check status.
-    if (new URLSearchParams(window.location.search).get('connect') === 'return') {
-      refreshSellerStripeStatus().then(setStripeStatus).catch(() => {})
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    getSellerPayoutStatus().then(setPayoutStatus).catch(() => {})
   }, [isAuthenticated])
 
-  const submitDev = async (e: FormEvent) => {
-    e.preventDefault(); setError(''); setDevBusy(true)
-    try { await topUp(Number(devAmount)); refreshWallet() }
-    catch (err) { setError(errorMessage(err)) } finally { setDevBusy(false) }
+  const startCheckout = async (e: FormEvent) => {
+    e.preventDefault(); setPayMsg(''); setPayBusy(true)
+    try { setCheckoutOrder(await createTopUpOrder(Number(payAmount))) }
+    catch (err) { setPayMsg(errorMessage(err)) } finally { setPayBusy(false) }
   }
 
-  const startCheckout = (e: FormEvent) => {
-    e.preventDefault(); setPayMsg('')
-    setCheckoutAmount(Number(payAmount))
-  }
-
-  const onCheckoutDone = (msg: string, ok: boolean) => {
-    setPayMsg(msg)
-    setCheckoutAmount(null)
-    if (ok) setTimeout(refreshWallet, 2000)
-  }
-
-  const connectPayouts = async () => {
-    setConnectBusy(true); setError('')
+  const onCheckoutSuccess = async (paymentId: string, signature: string) => {
+    if (!checkoutOrder) return
     try {
-      const url = await createSellerOnboardingLink()
-      window.location.href = url
-    } catch (err) { setError(errorMessage(err)); setConnectBusy(false) }
+      await verifyTopUp(checkoutOrder.orderId, paymentId, signature)
+      setPayMsg('Payment successful — your wallet has been credited.')
+      refreshWallet()
+    } catch (err) { setPayMsg(errorMessage(err)) } finally { setCheckoutOrder(null) }
+  }
+
+  const onCheckoutCancel = () => setCheckoutOrder(null)
+
+  const submitPayoutAccount = async (e: FormEvent) => {
+    e.preventDefault(); setAccountMsg(''); setAccountBusy(true)
+    try {
+      setPayoutStatus(await saveSellerPayoutAccount(accountHolderName, accountNumber, ifsc))
+      setAccountMsg('Payout bank account saved.')
+    } catch (err) { setAccountMsg(errorMessage(err)) } finally { setAccountBusy(false) }
   }
 
   const submitWithdraw = async (e: FormEvent) => {
@@ -180,33 +175,29 @@ export default function WalletPage() {
               <div className="trust-item"><span className="trust-icon">🛡️</span><span className="trust-label">Escrow protected</span></div>
               <div className="trust-item"><span className="trust-icon">⚡</span><span className="trust-label">Instant top-up</span></div>
             </div>
-            {error && <div className="error" style={{ marginTop: 12, marginBottom: 0 }}>{error}</div>}
           </div>
 
           <div className="card" data-reveal>
             <span className="eyebrow">Add Funds</span>
             <div className="wallet-subsection">
-              <label>Add funds with card</label>
-              {checkoutAmount == null ? (
+              <label>Add funds with card / UPI / netbanking</label>
+              {checkoutOrder == null ? (
                 <form onSubmit={startCheckout}>
                   <input style={{ width: '100%' }} type="number" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} min="1" />
-                  <div style={{ marginTop: 10 }}><button className="btn" disabled={Number(payAmount) <= 0}>Continue to payment</button></div>
+                  <div style={{ marginTop: 10 }}>
+                    <button className="btn" disabled={payBusy || Number(payAmount) <= 0}>{payBusy ? 'Starting…' : 'Continue to payment'}</button>
+                  </div>
                 </form>
               ) : (
                 <div style={{ marginTop: 10 }}>
-                  <StripeTopUpForm amount={checkoutAmount} onDone={onCheckoutDone} />
-                  <button type="button" className="btn ghost sm" style={{ marginTop: 10 }} onClick={() => setCheckoutAmount(null)}>Cancel</button>
+                  <RazorpayCheckout
+                    orderId={checkoutOrder.orderId} amountPaise={checkoutOrder.amountPaise}
+                    currency={checkoutOrder.currency} keyId={checkoutOrder.keyId}
+                    description="Wallet top-up" onSuccess={onCheckoutSuccess} onCancel={onCheckoutCancel}
+                  />
                 </div>
               )}
               {payMsg && <div className={payMsg.toLowerCase().includes('fail') ? 'error' : 'ok'} style={{ marginTop: 10 }}>{payMsg}</div>}
-            </div>
-
-            <div className="wallet-subsection">
-              <form onSubmit={submitDev}>
-                <label>Dev top-up (testing only, bypasses Stripe)</label>
-                <input style={{ width: '100%' }} type="number" value={devAmount} onChange={(e) => setDevAmount(e.target.value)} min="1" />
-                <div style={{ marginTop: 10 }}><button className="btn ghost" disabled={devBusy}>{devBusy ? 'Adding…' : 'Add dev funds'}</button></div>
-              </form>
             </div>
           </div>
         </div>
@@ -215,20 +206,27 @@ export default function WalletPage() {
           <div className="card" data-reveal>
             <span className="eyebrow">Payouts (sellers &amp; dealers)</span>
             <p className="muted" style={{ marginTop: 10 }}>
-              Withdraw your available balance to a real bank account via Stripe Connect.
+              Withdraw your available balance to a real bank account via Razorpay.
             </p>
-            {stripeStatus?.payoutsEnabled ? (
-              <span className="verified-badge" style={{ marginTop: 10 }}><span className="dot" />Payout account connected &amp; verified</span>
+            {payoutStatus?.payoutsEnabled ? (
+              <span className="verified-badge" style={{ marginTop: 10 }}><span className="dot" />Payout account saved</span>
             ) : (
               <>
                 <span className="verified-badge pending" style={{ marginTop: 10 }}>
-                  <span className="dot" />{stripeStatus?.connected ? 'Onboarding started' : 'Not connected yet'}
+                  <span className="dot" />Not set up yet
                 </span>
-                <div style={{ marginTop: 10 }}>
-                  <button type="button" className="btn sm" disabled={connectBusy} onClick={connectPayouts}>
-                    {connectBusy ? 'Redirecting…' : stripeStatus?.connected ? 'Continue onboarding' : 'Connect payout account'}
-                  </button>
-                </div>
+                <form onSubmit={submitPayoutAccount} className="wallet-subsection">
+                  <label>Account holder name</label>
+                  <input style={{ width: '100%' }} value={accountHolderName} onChange={(e) => setAccountHolderName(e.target.value)} required />
+                  <label style={{ marginTop: 8 }}>Account number</label>
+                  <input style={{ width: '100%' }} value={accountNumber} onChange={(e) => setAccountNumber(e.target.value)} required />
+                  <label style={{ marginTop: 8 }}>IFSC code</label>
+                  <input style={{ width: '100%' }} value={ifsc} onChange={(e) => setIfsc(e.target.value)} required />
+                  <div style={{ marginTop: 10 }}>
+                    <button type="submit" className="btn sm" disabled={accountBusy}>{accountBusy ? 'Saving…' : 'Save payout account'}</button>
+                  </div>
+                  {accountMsg && <div className={accountMsg.toLowerCase().includes('fail') || accountMsg.toLowerCase().includes('not configured') ? 'error' : 'ok'} style={{ marginTop: 10 }}>{accountMsg}</div>}
+                </form>
               </>
             )}
 
@@ -237,7 +235,7 @@ export default function WalletPage() {
                 <label>Withdraw amount</label>
                 <input style={{ width: '100%' }} type="number" value={withdrawAmount} onChange={(e) => setWithdrawAmount(e.target.value)} min="1" />
                 <div style={{ marginTop: 10 }}>
-                  <button className="btn" disabled={withdrawBusy || !stripeStatus?.payoutsEnabled}>{withdrawBusy ? 'Withdrawing…' : 'Withdraw'}</button>
+                  <button className="btn" disabled={withdrawBusy || !payoutStatus?.payoutsEnabled}>{withdrawBusy ? 'Withdrawing…' : 'Withdraw'}</button>
                 </div>
               </form>
               {withdrawMsg && <div className={withdrawMsg.toLowerCase().includes('fail') ? 'error' : 'ok'} style={{ marginTop: 10 }}>{withdrawMsg}</div>}

@@ -11,10 +11,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 
 /**
- * Grants a subscription tier to a user. No payment is collected here — no wallet debit, no Stripe
- * call — this only updates tier/expiry state so the tier-gating logic (see AuctionController's
- * register/bid checks) can be exercised end-to-end before real billing exists. Same "stub until
- * Phase 2" shape as {@link com.swipeauctions.wallet.service.WalletService#topUp}.
+ * Grants a subscription tier to a user. Called by {@code RazorpayPaymentService.settle} once a
+ * real Razorpay payment for the tier's price is confirmed — this method itself just updates
+ * tier/expiry state, same "wallet-first" separation of concerns as
+ * {@link com.swipeauctions.wallet.service.WalletService#topUp}.
  */
 @Service
 @RequiredArgsConstructor

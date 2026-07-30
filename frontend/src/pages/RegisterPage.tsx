@@ -1,8 +1,12 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate, useLocation, Link } from 'react-router-dom'
-import { register, verifyEmailOtp, verifyMobileOtp, resendOtp, getRegistrationFee, login, payRegistrationFee, errorMessage } from '../api'
+import {
+  register, verifyEmailOtp, verifyMobileOtp, resendOtp, getRegistrationFee, login,
+  createRegistrationFeeOrder, verifyRegistrationFee, errorMessage, type OrderIntent,
+} from '../api'
 import { useAuth } from '../auth'
 import { money } from '../util'
+import RazorpayCheckout from '../components/RazorpayCheckout'
 
 const RESEND_COOLDOWN_SECONDS = 30
 
@@ -26,6 +30,7 @@ export default function RegisterPage() {
   const [resending, setResending] = useState(false)
   const [unverifiedExisting, setUnverifiedExisting] = useState(false)
   const [registrationFee, setRegistrationFee] = useState<number | null>(null)
+  const [feeOrder, setFeeOrder] = useState<OrderIntent | null>(null)
 
   useEffect(() => {
     getRegistrationFee().then(setRegistrationFee).catch(() => {})
@@ -104,12 +109,21 @@ export default function RegisterPage() {
 
   const doPayFee = async () => {
     setError(''); setOk(''); setBusy(true)
+    try { setFeeOrder(await createRegistrationFeeOrder()) }
+    catch (err) { setError(errorMessage(err)) } finally { setBusy(false) }
+  }
+
+  const onFeePaymentSuccess = async (paymentId: string, signature: string) => {
+    if (!feeOrder) return
+    setError(''); setBusy(true)
     try {
-      await payRegistrationFee()
+      await verifyRegistrationFee(feeOrder.orderId, paymentId, signature)
       markRegistrationFeePaid()
       navigate(returnTo || '/')
-    } catch (err) { setError(errorMessage(err)) } finally { setBusy(false) }
+    } catch (err) { setError(errorMessage(err)) } finally { setBusy(false); setFeeOrder(null) }
   }
+
+  const onFeePaymentCancel = () => setFeeOrder(null)
 
   const handleResend = async () => {
     setError(''); setOk(''); setResending(true)
@@ -194,11 +208,21 @@ export default function RegisterPage() {
                 : 'Complete your one-time registration payment to activate your account.'}
             </p>
             {error && <div className="error">{error}</div>}
-            <div style={{ marginTop: 18 }}>
-              <button className="btn block" disabled={busy} onClick={doPayFee}>
-                {busy ? 'Processing…' : `Pay ${registrationFee ? money(registrationFee) : ''} to complete registration`}
-              </button>
-            </div>
+            {feeOrder == null ? (
+              <div style={{ marginTop: 18 }}>
+                <button className="btn block" disabled={busy} onClick={doPayFee}>
+                  {busy ? 'Starting…' : `Pay ${registrationFee ? money(registrationFee) : ''} to complete registration`}
+                </button>
+              </div>
+            ) : (
+              <div style={{ marginTop: 18 }}>
+                <RazorpayCheckout
+                  orderId={feeOrder.orderId} amountPaise={feeOrder.amountPaise}
+                  currency={feeOrder.currency} keyId={feeOrder.keyId}
+                  description="One-time registration fee" onSuccess={onFeePaymentSuccess} onCancel={onFeePaymentCancel}
+                />
+              </div>
+            )}
           </div>
         )}
       </div>

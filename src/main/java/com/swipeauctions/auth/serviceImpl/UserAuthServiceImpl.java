@@ -82,7 +82,6 @@ public class UserAuthServiceImpl implements UserAuthService {
 
     private final com.swipeauctions.settings.service.SubscriptionService subscriptionService;
 
-    private final com.swipeauctions.settings.service.PlatformSettingsService platformSettingsService;
 
     @Value("${app.frontend.url}")
     private String frontendUrl;
@@ -700,29 +699,6 @@ public class UserAuthServiceImpl implements UserAuthService {
         return "Logged out successfully";
     }
 
-    // Final step of registration: dev-instant "payment" — mirrors WalletService.topUp's
-    // "bypasses Stripe entirely" stub pattern. Tracked independently of the wallet (no balance
-    // touched, no WalletTransaction recorded) since this is a separate one-time charge.
-    @Override
-    @Transactional
-    public String payRegistrationFee(String email)
-    {
-        email = authHelperService.normalizeEmail(email);
-
-        User user = authHelperService.getUserByEmail(email);
-
-        if (Boolean.TRUE.equals(user.getRegistrationFeePaid()))
-        {
-            throw new BadRequestException("Registration fee already paid");
-        }
-
-        java.math.BigDecimal fee = platformSettingsService.getRegistrationFee();
-
-        user.setRegistrationFeePaid(true);
-        user.setRegistrationFeePaidAt(LocalDateTime.now());
-
-        userRepository.save(user);
-
-        return "Registration fee of " + fee + " paid. Your account is now fully active.";
-    }
+    // Registration fee payment moved to RazorpayPaymentService.createRegistrationFeeOrder /
+    // verifyAndSettle (see UserAuthController) — real Razorpay payment, not a free stub.
 }

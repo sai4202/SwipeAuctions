@@ -20,5 +20,5 @@ public interface UserRepository
 
     boolean existsByMobileNumber(String mobileNumber);
 
-    Optional<User> findByStripeAccountId(String stripeAccountId);
+    Optional<User> findByRazorpayContactId(String razorpayContactId);
 }

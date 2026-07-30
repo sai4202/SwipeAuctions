@@ -1,7 +1,7 @@
 package com.swipeauctions.wallet.controller;
 
 import com.swipeauctions.common.util.LoggedInUserUtil;
-import com.swipeauctions.payment.StripePaymentService;
+import com.swipeauctions.payment.RazorpayPaymentService;
 import com.swipeauctions.user.entity.User;
 import com.swipeauctions.wallet.entity.Wallet;
 import com.swipeauctions.wallet.entity.WalletTransaction;
@@ -9,6 +9,7 @@ import com.swipeauctions.wallet.entity.WalletWithdrawal;
 import com.swipeauctions.wallet.repository.WalletTransactionRepository;
 import com.swipeauctions.wallet.service.WalletService;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -18,14 +19,14 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
-/** View wallet balance, (dev) top up, and — once Stripe is configured — real top-up/withdraw. */
+/** View wallet balance, and — once Razorpay is configured — real top-up/withdraw. */
 @RestController
 @RequestMapping("/api/wallet")
 @RequiredArgsConstructor
 public class WalletController {
 
     private final WalletService walletService;
-    private final StripePaymentService stripePaymentService;
+    private final RazorpayPaymentService razorpayPaymentService;
     private final WalletTransactionRepository txnRepository;
     private final LoggedInUserUtil loggedInUserUtil;
 
@@ -57,31 +58,35 @@ public class WalletController {
                 t.getReferenceType(), t.getReferenceId(), t.getCreatedAt());
     }
 
-    /** Dev-only instant credit — bypasses Stripe entirely. Left in place for local/demo testing. */
-    @PostMapping("/topup")
-    public WalletResponse topUp(@Valid @RequestBody TopUpRequest req) {
+    /** Real top-up: creates a Razorpay Order for the frontend to open Checkout against. */
+    @PostMapping("/topup/order")
+    public RazorpayPaymentService.OrderIntent createTopUpOrder(@Valid @RequestBody TopUpRequest req) {
         User user = loggedInUserUtil.getCurrentUser();
-        Wallet w = walletService.topUp(user, req.amount());
-        return toResponse(w, user);
+        return razorpayPaymentService.createTopUpOrder(user, req.amount());
     }
 
-    /** Real top-up: creates a Stripe PaymentIntent; the wallet is credited by the success webhook. */
-    @PostMapping("/topup/intent")
-    public StripePaymentService.TopUpIntent createTopUpIntent(@Valid @RequestBody TopUpRequest req) {
+    /** Called right after Razorpay Checkout succeeds — verifies the signature and credits the
+     *  wallet (the webhook also confirms independently; whichever arrives first wins). */
+    @PostMapping("/topup/verify")
+    public WalletResponse verifyTopUp(@Valid @RequestBody VerifyPaymentRequest req) {
         User user = loggedInUserUtil.getCurrentUser();
-        return stripePaymentService.createTopUpIntent(user, req.amount());
+        razorpayPaymentService.verifyAndSettle(user, req.orderId(), req.paymentId(), req.signature());
+        return toResponse(walletService.getWallet(user), user);
     }
 
-    /** Real withdraw: debits the wallet and pays out via Stripe Transfer to the seller's Connect account. */
+    /** Real withdraw: debits the wallet and pays out via a Razorpay Payout to the seller's bank account. */
     @PostMapping("/withdraw")
     public WithdrawResponse withdraw(@Valid @RequestBody TopUpRequest req) {
         User user = loggedInUserUtil.getCurrentUser();
-        WalletWithdrawal withdrawal = stripePaymentService.withdraw(user, req.amount());
+        WalletWithdrawal withdrawal = razorpayPaymentService.withdraw(user, req.amount());
         Wallet w = walletService.getWallet(user);
         return new WithdrawResponse(withdrawal.getStatus().name(), w.getAvailableBalance());
     }
 
     public record TopUpRequest(@NotNull BigDecimal amount) {}
+
+    public record VerifyPaymentRequest(
+            @NotBlank String orderId, @NotBlank String paymentId, @NotBlank String signature) {}
 
     public record WalletResponse(BigDecimal availableBalance, BigDecimal heldBalance, BigDecimal creditLimit,
                                   BigDecimal availableCreditLimit) {}

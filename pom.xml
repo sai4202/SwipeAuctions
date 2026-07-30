@@ -106,9 +106,9 @@
             <version>3.0.0</version>
         </dependency>
         <dependency>
-            <groupId>com.stripe</groupId>
-            <artifactId>stripe-java</artifactId>
-            <version>33.1.1</version>
+            <groupId>com.razorpay</groupId>
+            <artifactId>razorpay-java</artifactId>
+            <version>1.4.9</version>
         </dependency>
         <!-- Excel (.xlsx/.xls) parsing for the admin "Add Stock" bulk-upload flow -->
         <dependency>

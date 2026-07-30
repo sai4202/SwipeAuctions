@@ -15,9 +15,8 @@ import java.util.List;
 
 /**
  * Admin-configurable platform fees: the one-time registration fee, and the 12 (tier x cycle)
- * subscription prices. Values here are informational/config only for now — nothing charges
- * against them yet (see SubscriptionService, same "Phase 2 wires this to Stripe" stub pattern as
- * WalletService.topUp).
+ * subscription prices. {@code RazorpayPaymentService} reads these when creating a registration-fee
+ * or subscription order, so a value changed here takes effect on the next order a user starts.
  */
 @Service
 @RequiredArgsConstructor

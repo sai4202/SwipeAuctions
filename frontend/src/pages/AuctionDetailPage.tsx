@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useParams, useSearchParams, Link } from 'react-router-dom'
 import {
-  getAuction, placeBid, raiseDispute, completeAuctionPayment, getRegistrationFee, payRegistrationFee, errorMessage,
-  type Auction,
+  getAuction, placeBid, raiseDispute, completeAuctionPayment, getRegistrationFee,
+  createRegistrationFeeOrder, verifyRegistrationFee, errorMessage,
+  type Auction, type OrderIntent,
 } from '../api'
 import { useAuth } from '../auth'
 import { useWallet } from '../WalletContext'
@@ -12,6 +13,7 @@ import { useCachedFetch } from '../useCachedFetch'
 import { AuctionDetailSkeleton } from '../components/Skeleton'
 import TermsModal from '../components/TermsModal'
 import DetailTabs from '../components/DetailTabs'
+import RazorpayCheckout from '../components/RazorpayCheckout'
 
 // Matches the backend's default auction.min-increment (BidService) — the smallest amount a bid must
 // clear the current highest by, and the step size for the +/- bid stepper below.
@@ -59,6 +61,7 @@ export default function AuctionDetailPage() {
   const [registrationFee, setRegistrationFee] = useState<number | null>(null)
   const [payingFee, setPayingFee] = useState(false)
   const [feeError, setFeeError] = useState('')
+  const [feeOrder, setFeeOrder] = useState<OrderIntent | null>(null)
   // Insufficient-credit-limit is surfaced as a popup (not an inline banner/pre-emptive block) —
   // the bid form always shows once fee-paid/KYC/tier pass; only a failed bid submission triggers this.
   const [creditLimitError, setCreditLimitError] = useState('')
@@ -104,14 +107,21 @@ export default function AuctionDetailPage() {
 
   const doPayFee = async () => {
     setFeeError(''); setPayingFee(true)
+    try { setFeeOrder(await createRegistrationFeeOrder()) }
+    catch (e) { setFeeError(errorMessage(e)) } finally { setPayingFee(false) }
+  }
+
+  const onFeePaymentSuccess = async (paymentId: string, signature: string) => {
+    if (!feeOrder) return
+    setFeeError(''); setPayingFee(true)
     try {
-      await payRegistrationFee()
+      await verifyRegistrationFee(feeOrder.orderId, paymentId, signature)
       markRegistrationFeePaid()
       refresh()
-    } catch (e) {
-      setFeeError(errorMessage(e))
-    } finally { setPayingFee(false) }
+    } catch (e) { setFeeError(errorMessage(e)) } finally { setPayingFee(false); setFeeOrder(null) }
   }
+
+  const onFeePaymentCancel = () => setFeeOrder(null)
 
   // First click (field empty) fills in the current minimum valid bid; every click after that just
   // steps by the minimum increment, floored so it can never drop below that minimum.
@@ -193,11 +203,21 @@ export default function AuctionDetailPage() {
                 : 'Pay the one-time registration fee to view auction details and start bidding.'}
             </p>
             {feeError && <div className="error">{feeError}</div>}
-            <div style={{ marginTop: 16 }}>
-              <button className="btn block" disabled={payingFee} onClick={doPayFee}>
-                {payingFee ? 'Processing…' : `Pay ${registrationFee ? money(registrationFee) : ''} to continue`}
-              </button>
-            </div>
+            {feeOrder == null ? (
+              <div style={{ marginTop: 16 }}>
+                <button className="btn block" disabled={payingFee} onClick={doPayFee}>
+                  {payingFee ? 'Starting…' : `Pay ${registrationFee ? money(registrationFee) : ''} to continue`}
+                </button>
+              </div>
+            ) : (
+              <div style={{ marginTop: 16 }}>
+                <RazorpayCheckout
+                  orderId={feeOrder.orderId} amountPaise={feeOrder.amountPaise}
+                  currency={feeOrder.currency} keyId={feeOrder.keyId}
+                  description="One-time registration fee" onSuccess={onFeePaymentSuccess} onCancel={onFeePaymentCancel}
+                />
+              </div>
+            )}
           </div>
         ) : error ? (
           <div className="error">{error}</div>

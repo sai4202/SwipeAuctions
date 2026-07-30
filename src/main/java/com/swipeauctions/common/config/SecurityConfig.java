@@ -118,8 +118,8 @@ public class SecurityConfig {
                                 "/api/admin/auth/forgot-password",
                                 "/api/admin/auth/reset-password",
 
-                                // Stripe calls this directly — no JWT, auth is the Stripe-Signature header
-                                "/api/webhooks/stripe"
+                                // Razorpay calls this directly — no JWT, auth is the X-Razorpay-Signature header
+                                "/api/webhooks/razorpay"
 
                         ).permitAll()
 

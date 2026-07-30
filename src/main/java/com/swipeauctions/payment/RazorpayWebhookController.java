@@ -4,20 +4,20 @@ import com.swipeauctions.common.response.ApiResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
-/** Public endpoint Stripe calls directly (no JWT) — the payload's Stripe-Signature is the auth. */
+/** Public endpoint Razorpay calls directly (no JWT) — the payload's X-Razorpay-Signature is the auth. */
 @RestController
-@RequestMapping("/api/webhooks/stripe")
+@RequestMapping("/api/webhooks/razorpay")
 @RequiredArgsConstructor
-public class StripeWebhookController {
+public class RazorpayWebhookController {
 
-    private final StripePaymentService stripePaymentService;
+    private final RazorpayPaymentService razorpayPaymentService;
 
     @PostMapping
     public ApiResponse<String> handle(
             @RequestBody String payload,
-            @RequestHeader("Stripe-Signature") String signature
+            @RequestHeader("X-Razorpay-Signature") String signature
     ) {
-        stripePaymentService.handleWebhook(payload, signature);
+        razorpayPaymentService.handleWebhook(payload, signature);
         return ApiResponse.success("received", null);
     }
 }

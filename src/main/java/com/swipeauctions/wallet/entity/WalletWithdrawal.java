@@ -8,7 +8,7 @@ import lombok.*;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
-/** One seller/dealer payout attempt: wallet debited immediately, paid out via a Stripe Transfer. */
+/** One seller/dealer payout attempt: wallet debited immediately, paid out via a Razorpay Payout. */
 @Entity
 @Table(name = "wallet_withdrawals")
 @Getter
@@ -22,8 +22,8 @@ public class WalletWithdrawal extends BaseEntity {
     @JoinColumn(name = "wallet_id", nullable = false)
     private Wallet wallet;
 
-    @Column(name = "stripe_transfer_id", unique = true)
-    private String stripeTransferId;
+    @Column(name = "razorpay_payout_id", unique = true)
+    private String razorpayPayoutId;
 
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal amount;

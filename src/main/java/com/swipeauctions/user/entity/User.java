@@ -81,22 +81,21 @@ public class User extends BaseEntity {
 
     private LocalDateTime lockedUntil;
 
-    // ---- Stripe (Phase 2) ----
+    // ---- Razorpay payouts ----
 
-    @Column(name = "stripe_customer_id")
-    private String stripeCustomerId;
+    /** Razorpay Contact id — created once a seller/dealer submits payout bank details. */
+    @Column(name = "razorpay_contact_id")
+    private String razorpayContactId;
 
-    /** Connect Express account id — sellers/dealers need this to receive wallet withdrawals. */
-    @Column(name = "stripe_account_id")
-    private String stripeAccountId;
+    /** Razorpay Fund Account id (their bank account) — sellers/dealers need this to receive
+     *  wallet withdrawals. No OAuth-redirect onboarding like Stripe Connect: bank details are
+     *  submitted directly in-app and turned into a Contact + Fund Account server-side. */
+    @Column(name = "razorpay_fund_account_id")
+    private String razorpayFundAccountId;
 
     @Builder.Default
-    @Column(name = "stripe_charges_enabled", nullable = false)
-    private Boolean stripeChargesEnabled = false;
-
-    @Builder.Default
-    @Column(name = "stripe_payouts_enabled", nullable = false)
-    private Boolean stripePayoutsEnabled = false;
+    @Column(name = "razorpay_payouts_enabled", nullable = false)
+    private Boolean razorpayPayoutsEnabled = false;
 
     // ---- Subscription tier (buyer content access) ----
 

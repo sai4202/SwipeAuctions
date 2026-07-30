@@ -23,7 +23,7 @@ export default function PrivacyPage() {
         <section>
           <h3 style={{ marginBottom: 6 }}>Who we share it with</h3>
           <p className="muted">
-            KYC data is shared only with our verification provider. Payment data is processed by Stripe and
+            KYC data is shared only with our verification provider. Payment data is processed by Razorpay and
             never stored on our servers in raw form. We don't sell your data to third parties.
           </p>
         </section>

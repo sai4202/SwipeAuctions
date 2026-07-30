@@ -232,7 +232,7 @@ public class AuctionService {
                     notificationService.auctionEndedNotWon(b.getEmail(), auctionIdStr, title, true, newCreditLimit);
                 }
             }
-            // Settle the remainder immediately if funds allow (internal wallet debit, no Stripe call
+            // Settle the remainder immediately if funds allow (internal wallet debit, no Razorpay call
             // — same rule as hold/release/capture). If the winner (dealer or otherwise) doesn't have
             // enough available balance yet, leave settlementPaid false so they can pay it off later.
             User winner = a.getCurrentWinner();

@@ -10,7 +10,11 @@ import com.swipeauctions.auth.dto.*;
 import com.swipeauctions.auth.service.UserAuthService;
 import com.swipeauctions.common.exception.BadRequestException;
 import com.swipeauctions.common.response.ApiResponse;
+import com.swipeauctions.common.util.LoggedInUserUtil;
+import com.swipeauctions.payment.RazorpayPaymentService;
 import com.swipeauctions.user.dtos.RegisterRequestDTO;
+import com.swipeauctions.user.entity.User;
+import jakarta.validation.constraints.NotBlank;
 
 import java.security.Principal;
 
@@ -21,6 +25,11 @@ import java.security.Principal;
 public class UserAuthController {
 
     private final UserAuthService userAuthService;
+    private final RazorpayPaymentService razorpayPaymentService;
+    private final LoggedInUserUtil loggedInUserUtil;
+
+    public record VerifyPaymentDTO(
+            @NotBlank String orderId, @NotBlank String paymentId, @NotBlank String signature) {}
 
     // Register a new user
     @PostMapping("/register")
@@ -126,12 +135,20 @@ public class UserAuthController {
         return ResponseEntity.ok(ApiResponse.success(userAuthService.changePassword(request, principal.getName()), null));
     }
 
-    // Final step of registration: authenticated dev-instant "payment" of the one-time platform
-    // registration fee. The frontend logs the user in right after mobile-OTP verification so this
-    // call has a JWT — see RegisterPage's post-OTP flow.
-    @PostMapping("/registration-fee/pay")
-    public ResponseEntity<ApiResponse<String>> payRegistrationFee(Principal principal) {
-        return ResponseEntity.ok(ApiResponse.success(userAuthService.payRegistrationFee(principal.getName()), null));
+    // Final step of registration: real Razorpay payment of the one-time platform registration fee.
+    // The frontend logs the user in right after mobile-OTP verification so these calls have a JWT
+    // — see RegisterPage's post-OTP flow. Order then verify, same pattern as wallet top-up.
+    @PostMapping("/registration-fee/order")
+    public ResponseEntity<ApiResponse<RazorpayPaymentService.OrderIntent>> createRegistrationFeeOrder() {
+        User user = loggedInUserUtil.getCurrentUser();
+        return ResponseEntity.ok(ApiResponse.success(null, razorpayPaymentService.createRegistrationFeeOrder(user)));
+    }
+
+    @PostMapping("/registration-fee/verify")
+    public ResponseEntity<ApiResponse<String>> verifyRegistrationFee(@Valid @RequestBody VerifyPaymentDTO request) {
+        User user = loggedInUserUtil.getCurrentUser();
+        razorpayPaymentService.verifyAndSettle(user, request.orderId(), request.paymentId(), request.signature());
+        return ResponseEntity.ok(ApiResponse.success("Registration fee paid. Your account is now fully active.", null));
     }
 
     @PostMapping("/resend-otp")
