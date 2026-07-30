@@ -152,6 +152,13 @@ public class AuctionController {
             throw new com.swipeauctions.common.exception.BadRequestException(
                     "Complete your KYC verification before bidding.");
         }
+        // Mirrors BidService.placeBid's guard — without it, a bidder who hasn't "paid" the
+        // registration fee could still lock real wallet funds into an EMD hold via /register, just
+        // couldn't subsequently bid. See Findings_pendings.md (Low/Informational).
+        if (!Boolean.TRUE.equals(bidder.getRegistrationFeePaid())) {
+            throw new com.swipeauctions.common.exception.BadRequestException(
+                    "Pay the one-time registration fee to unlock bidding.");
+        }
         Auction a = auctionService.get(id);
         // Mirrors BidService.placeBid's guard — without it, a bidder can pay an EMD hold on an auction
         // that's already past its end time but hasn't been flipped to CLOSED/UNSOLD yet by the scheduler

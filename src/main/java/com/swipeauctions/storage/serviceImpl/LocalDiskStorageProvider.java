@@ -8,6 +8,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -38,6 +39,14 @@ public class LocalDiskStorageProvider implements StorageProvider {
         if (!isMedia) {
             throw new BadRequestException("Only image or video uploads are supported");
         }
+        // The client-supplied Content-Type header is attacker-controlled — sniff the actual file
+        // bytes too, so e.g. an SVG-with-embedded-<script> can't get in by just claiming
+        // "image/svg+xml" (SVG is a text/XML format with no binary magic number, so it never
+        // matches any signature below and is rejected here regardless of the header it arrives
+        // with). See Findings_pendings.md #7.
+        if (!hasKnownMediaSignature(file)) {
+            throw new BadRequestException("File content doesn't match a supported image or video format");
+        }
         String extension = "";
         String original = StringUtils.getFilenameExtension(file.getOriginalFilename());
         if (original != null && !original.isBlank()) {
@@ -55,5 +64,50 @@ public class LocalDiskStorageProvider implements StorageProvider {
             throw new UncheckedIOException("Failed to store uploaded file", e);
         }
         return "/uploads/" + subDir + "/" + filename;
+    }
+
+    /**
+     * Reads the leading bytes of the upload and checks them against known binary magic numbers for
+     * the raster-image and video formats this app actually accepts. Deliberately allowlist-only: an
+     * SVG (or any other text/XML-based format) has no binary signature to match, so it's rejected
+     * here regardless of what Content-Type it claims — no denylist of "dangerous" formats to keep
+     * up to date.
+     */
+    private boolean hasKnownMediaSignature(MultipartFile file) {
+        byte[] header = new byte[16];
+        int read;
+        try (InputStream in = file.getInputStream()) {
+            read = in.readNBytes(header, 0, header.length);
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to read uploaded file", e);
+        }
+        if (read < 4) {
+            return false;
+        }
+        if (startsWith(header, 0xFF, 0xD8, 0xFF)) return true;                          // JPEG
+        if (startsWith(header, 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)) return true; // PNG
+        if (startsWith(header, 0x47, 0x49, 0x46, 0x38)) return true;                    // GIF87a/89a
+        if (read >= 12 && startsWith(header, 0x52, 0x49, 0x46, 0x46)                    // RIFF....
+                && (matchesAt(header, 8, 0x57, 0x45, 0x42, 0x50)                        // ....WEBP
+                || matchesAt(header, 8, 0x41, 0x56, 0x49, 0x20))) return true;          // ....AVI␠
+        if (read >= 8 && matchesAt(header, 4, 0x66, 0x74, 0x79, 0x70)) return true;     // ISO base media (mp4/mov/m4v): ....ftyp
+        if (startsWith(header, 0x1A, 0x45, 0xDF, 0xA3)) return true;                    // WebM/Matroska (EBML header)
+        return false;
+    }
+
+    private boolean startsWith(byte[] header, int... expected) {
+        return matchesAt(header, 0, expected);
+    }
+
+    private boolean matchesAt(byte[] header, int offset, int... expected) {
+        if (offset + expected.length > header.length) {
+            return false;
+        }
+        for (int i = 0; i < expected.length; i++) {
+            if ((header[offset + i] & 0xFF) != expected[i]) {
+                return false;
+            }
+        }
+        return true;
     }
 }

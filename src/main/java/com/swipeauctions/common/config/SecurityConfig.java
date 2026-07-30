@@ -148,9 +148,11 @@ public class SecurityConfig {
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/auctions")
                         .permitAll()
 
-                        // User Session APIs
+                        // User Session APIs — DEALER included so dealers can self-manage/logout their
+                        // own devices too, not just USER (fails closed before this fix: DEALER got a
+                        // blanket 403). See Findings_pendings.md (Low/Informational).
                         .requestMatchers("/api/sessions/**")
-                        .hasRole("USER")
+                        .hasAnyRole("USER", "DEALER")
 
                         // Admin Protected APIs
                         .requestMatchers("/api/admin/**")

@@ -14,6 +14,7 @@ import com.swipeauctions.catalog.enums.AttributeValueType;
 import com.swipeauctions.catalog.enums.ListingStatus;
 import com.swipeauctions.catalog.repository.ListingRepository;
 import com.swipeauctions.catalog.service.CatalogService;
+import com.swipeauctions.common.exception.BadRequestException;
 import com.swipeauctions.common.exception.ResourceNotFoundException;
 import com.swipeauctions.common.response.PageResponse;
 import com.swipeauctions.dispute.controller.DisputeController;
@@ -125,6 +126,14 @@ public class AdminController {
     public ReleaseHoldResponse releaseHold(@PathVariable UUID holdId) {
         BidEligibilityHold hold = holdRepository.findById(holdId)
                 .orElseThrow(() -> new ResourceNotFoundException("Hold not found"));
+        // This is for clearing a genuinely stuck hold (auction already decided one way or another)
+        // — releasing on a still-live auction would strip a bidder's eligibility mid-auction without
+        // also unregistering them, an inconsistent state. See Findings_pendings.md (Low/Informational).
+        AuctionStatus auctionStatus = hold.getAuction().getStatus();
+        if (auctionStatus == AuctionStatus.SCHEDULED || auctionStatus == AuctionStatus.OPEN) {
+            throw new BadRequestException(
+                    "Cannot release an EMD hold while its auction is still " + auctionStatus + " — wait until it closes.");
+        }
         walletService.releaseHold(hold.getAuction(), hold.getBidder());
         Wallet w = walletService.getWallet(hold.getBidder());
         return new ReleaseHoldResponse(w.getAvailableBalance(), w.getHeldBalance(), walletService.creditLimitFor(w.getAvailableBalance()));

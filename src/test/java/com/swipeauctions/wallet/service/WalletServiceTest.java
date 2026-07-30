@@ -1,6 +1,7 @@
 package com.swipeauctions.wallet.service;
 
 import com.swipeauctions.auction.entity.Auction;
+import com.swipeauctions.auction.repository.AuctionRepository;
 import com.swipeauctions.bidding.repository.BidRepository;
 import com.swipeauctions.notification.AuctionNotificationService;
 import com.swipeauctions.user.entity.User;
@@ -42,6 +43,7 @@ class WalletServiceTest {
 
     @Mock private WalletRepository walletRepository;
     @Mock private WalletTransactionRepository txnRepository;
+    @Mock private AuctionRepository auctionRepository;
     @Mock private BidEligibilityHoldRepository holdRepository;
     @Mock private WalletWithdrawalRepository withdrawalRepository;
     @Mock private SaleProceedsHoldRepository proceedsRepository;
@@ -52,7 +54,7 @@ class WalletServiceTest {
 
     @BeforeEach
     void setUp() {
-        walletService = new WalletService(walletRepository, txnRepository, holdRepository,
+        walletService = new WalletService(walletRepository, txnRepository, auctionRepository, holdRepository,
                 withdrawalRepository, proceedsRepository, notificationService, bidRepository);
     }
 
@@ -77,6 +79,7 @@ class WalletServiceTest {
 
         when(walletRepository.findByUser_Id(bidder.getId())).thenReturn(Optional.of(wallet));
         when(walletRepository.findByUserIdForUpdate(bidder.getId())).thenReturn(Optional.of(wallet));
+        when(auctionRepository.findByIdForUpdate(auctionEntity.getId())).thenReturn(Optional.of(auctionEntity));
         when(holdRepository.findByAuction_IdAndBidder_Id(auctionEntity.getId(), bidder.getId()))
                 .thenReturn(Optional.empty());
         when(holdRepository.save(any(BidEligibilityHold.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -88,7 +91,7 @@ class WalletServiceTest {
         assertThat(hold.getStatus()).isEqualTo(HoldStatus.ACTIVE);
 
         // Winner: capture the hold.
-        when(holdRepository.findByAuction_IdAndBidder_Id(auctionEntity.getId(), bidder.getId()))
+        when(holdRepository.findByAuction_IdAndBidder_IdForUpdate(auctionEntity.getId(), bidder.getId()))
                 .thenReturn(Optional.of(hold));
         lenient().when(holdRepository.save(any(BidEligibilityHold.class))).thenAnswer(inv -> inv.getArgument(0));
 
@@ -117,6 +120,7 @@ class WalletServiceTest {
 
         when(walletRepository.findByUser_Id(bidder.getId())).thenReturn(Optional.of(wallet));
         when(walletRepository.findByUserIdForUpdate(bidder.getId())).thenReturn(Optional.of(wallet));
+        when(auctionRepository.findByIdForUpdate(auctionEntity.getId())).thenReturn(Optional.of(auctionEntity));
         when(holdRepository.findByAuction_IdAndBidder_Id(auctionEntity.getId(), bidder.getId()))
                 .thenReturn(Optional.empty());
         when(holdRepository.save(any(BidEligibilityHold.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -127,7 +131,7 @@ class WalletServiceTest {
         assertThat(wallet.getHeldBalance()).isEqualByComparingTo("150.00");
 
         // Loser: release the hold back to available.
-        when(holdRepository.findByAuction_IdAndBidder_Id(auctionEntity.getId(), bidder.getId()))
+        when(holdRepository.findByAuction_IdAndBidder_IdForUpdate(auctionEntity.getId(), bidder.getId()))
                 .thenReturn(Optional.of(hold));
 
         walletService.releaseHold(auctionEntity, bidder);

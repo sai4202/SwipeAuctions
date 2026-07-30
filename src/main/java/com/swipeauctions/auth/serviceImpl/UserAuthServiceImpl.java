@@ -321,7 +321,16 @@ public class UserAuthServiceImpl implements UserAuthService {
     public LoginResponseDTO login(LoginRequestDTO request, HttpServletRequest httpServletRequest)
     {
 
-        User user = authHelperService.findUserByIdentifier(request.getEmailOrMobile());
+        User user;
+        try {
+            user = authHelperService.findUserByIdentifier(request.getEmailOrMobile());
+        } catch (ResourceNotFoundException e) {
+            // Same status + message a wrong password gets on a fresh account's first attempt —
+            // don't let login leak whether an email/mobile is registered (forgotPassword and the
+            // OTP-verify endpoints already avoid this; login was the one gap). See
+            // Findings_pendings.md #6.
+            throw new UnauthorizedException("Invalid credentials. 4 attempt(s) remaining.");
+        }
         loginValidationService.validateUserAccountStatus(user);
 
         if (!passwordEncoder.matches(request.getPassword(), user.getPassword()))
@@ -486,15 +495,12 @@ public class UserAuthServiceImpl implements UserAuthService {
 
         User user = userRepository.findByEmail(email).orElse(null);
 
-        // Prevent user enumeration attacks.
-        if (user == null)
+        // Prevent user enumeration attacks — same generic response whether the account doesn't
+        // exist at all, or exists but isn't active/verified yet (a distinct exception here was a
+        // secondary enumeration signal — see Findings_pendings.md, Low/Informational).
+        if (user == null || !Boolean.TRUE.equals(user.getActive()))
         {
             return "If an account exists, a password reset link has been sent successfully";
-        }
-
-        if (!Boolean.TRUE.equals(user.getActive()))
-        {
-            throw new BadRequestException("Account is not active");
         }
 
         PasswordResetToken resetToken = passwordResetTokenRepository.findByUser(user)

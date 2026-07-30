@@ -72,6 +72,14 @@ public class CatalogController {
     public ImageResponse addImage(@PathVariable UUID id, @RequestParam MultipartFile file,
                                    @RequestParam(defaultValue = "false") boolean cover) {
         User seller = loggedInUserUtil.getCurrentUser();
+        // Verify ownership before writing anything to disk — storageProvider.store used to run
+        // first, so a non-owner's upload attempt still wrote (and left behind) a file before
+        // catalogService.addImage's ownership check ever threw. See Findings_pendings.md
+        // (Low/Informational: storage-quota-pollution).
+        Listing listing = catalogService.getListing(id);
+        if (!listing.getSeller().getId().equals(seller.getId())) {
+            throw new BadRequestException("You do not own this listing");
+        }
         String url = storageProvider.store(file, "listings/" + id);
         ListingImage image = catalogService.addImage(seller, id, url, cover);
         return new ImageResponse(image.getId(), image.getUrl(), image.isCover());

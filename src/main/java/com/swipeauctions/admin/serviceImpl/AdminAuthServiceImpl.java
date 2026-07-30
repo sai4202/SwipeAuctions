@@ -31,6 +31,7 @@ import com.swipeauctions.session.entity.AdminSessions;
 import com.swipeauctions.session.repository.AdminSessionRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import com.swipeauctions.common.exception.ResourceNotFoundException;
+import com.swipeauctions.common.exception.UnauthorizedException;
 
 import java.util.UUID;
 import java.time.LocalDateTime;
@@ -98,9 +99,10 @@ public class AdminAuthServiceImpl implements AdminAuthService {
         // Normalize email before authentication.
         String email = request.getEmail().trim().toLowerCase();
 
-        // Fetch admin details.
+        // Fetch admin details. Same failure response as a wrong password (below) rather than a
+        // distinct 404 — don't leak whether an email is a registered admin. See Findings_pendings.md #6.
         Admin admin = adminRepository.findByEmail(email)
-                .orElseThrow(() -> new ResourceNotFoundException("Admin not found"));
+                .orElseThrow(() -> new UnauthorizedException("Invalid credentials. 4 attempt(s) remaining."));
 
         // Validate account status.
         loginValidationService.validateAdminAccountStatus(admin);

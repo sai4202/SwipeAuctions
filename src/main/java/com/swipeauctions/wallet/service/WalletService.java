@@ -1,6 +1,7 @@
 package com.swipeauctions.wallet.service;
 
 import com.swipeauctions.auction.entity.Auction;
+import com.swipeauctions.auction.repository.AuctionRepository;
 import com.swipeauctions.bidding.repository.BidRepository;
 import com.swipeauctions.common.exception.BadRequestException;
 import com.swipeauctions.common.exception.ResourceNotFoundException;
@@ -40,6 +41,7 @@ public class WalletService {
 
     private final WalletRepository walletRepository;
     private final WalletTransactionRepository txnRepository;
+    private final AuctionRepository auctionRepository;
     private final BidEligibilityHoldRepository holdRepository;
     private final WalletWithdrawalRepository withdrawalRepository;
     private final SaleProceedsHoldRepository proceedsRepository;
@@ -125,13 +127,19 @@ public class WalletService {
     /** Register-to-bid: move the auction's base price from available → held (the bidding gate). */
     @Transactional
     public BidEligibilityHold placeHold(User bidder, Auction auction) {
-        holdRepository.findByAuction_IdAndBidder_Id(auction.getId(), bidder.getId())
+        // Locks the auction row so this genuinely serializes against AuctionService.adminUpdate
+        // (which locks the same row before changing basePrice) — without it, an admin's base-price
+        // edit could commit in the window between this method reading auction.getBasePrice() and
+        // saving the hold, sizing the hold to a price that's already stale. See Findings_pendings.md #4.
+        Auction locked = auctionRepository.findByIdForUpdate(auction.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("Auction not found"));
+        holdRepository.findByAuction_IdAndBidder_Id(locked.getId(), bidder.getId())
                 .ifPresent(h -> {
                     if (h.getStatus() == HoldStatus.ACTIVE) {
                         throw new BadRequestException("You are already registered to bid on this auction");
                     }
                 });
-        BigDecimal amount = auction.getBasePrice();
+        BigDecimal amount = locked.getBasePrice();
         getOrCreateWallet(bidder);
         Wallet w = lockWallet(bidder.getId());
         if (w.getAvailableBalance().compareTo(amount) < 0) {
@@ -140,10 +148,10 @@ public class WalletService {
         w.setAvailableBalance(w.getAvailableBalance().subtract(amount));
         w.setHeldBalance(w.getHeldBalance().add(amount));
         walletRepository.save(w);
-        record(w, WalletTxnType.HOLD, amount, "AUCTION", auction.getId().toString());
+        record(w, WalletTxnType.HOLD, amount, "AUCTION", locked.getId().toString());
 
-        BidEligibilityHold hold = holdRepository.findByAuction_IdAndBidder_Id(auction.getId(), bidder.getId())
-                .orElseGet(() -> BidEligibilityHold.builder().auction(auction).bidder(bidder).build());
+        BidEligibilityHold hold = holdRepository.findByAuction_IdAndBidder_Id(locked.getId(), bidder.getId())
+                .orElseGet(() -> BidEligibilityHold.builder().auction(locked).bidder(bidder).build());
         hold.setAmount(amount);
         hold.setStatus(HoldStatus.ACTIVE);
         hold.setResolvedAt(null);
@@ -275,15 +283,16 @@ public class WalletService {
     /** Escrow window elapsed with no open dispute, or an admin resolved the dispute in the seller's favor. */
     @Transactional
     public void releaseSaleProceeds(SaleProceedsHold hold) {
-        requireActive(hold);
-        Wallet w = lockWallet(hold.getSeller().getId());
-        w.setHeldBalance(w.getHeldBalance().subtract(hold.getAmount()));
-        w.setAvailableBalance(w.getAvailableBalance().add(hold.getAmount()));
+        SaleProceedsHold locked = lockProceedsHold(hold.getId());
+        requireActive(locked);
+        Wallet w = lockWallet(locked.getSeller().getId());
+        w.setHeldBalance(w.getHeldBalance().subtract(locked.getAmount()));
+        w.setAvailableBalance(w.getAvailableBalance().add(locked.getAmount()));
         walletRepository.save(w);
-        hold.setStatus(ProceedsStatus.RELEASED);
-        hold.setResolvedAt(LocalDateTime.now());
-        proceedsRepository.save(hold);
-        record(w, WalletTxnType.RELEASE, hold.getAmount(), "AUCTION", hold.getAuction().getId().toString());
+        locked.setStatus(ProceedsStatus.RELEASED);
+        locked.setResolvedAt(LocalDateTime.now());
+        proceedsRepository.save(locked);
+        record(w, WalletTxnType.RELEASE, locked.getAmount(), "AUCTION", locked.getAuction().getId().toString());
     }
 
     /**
@@ -293,21 +302,22 @@ public class WalletService {
      */
     @Transactional
     public void refundSaleProceeds(SaleProceedsHold hold, User buyer) {
-        requireActive(hold);
-        Wallet sellerWallet = lockWallet(hold.getSeller().getId());
-        sellerWallet.setHeldBalance(sellerWallet.getHeldBalance().subtract(hold.getAmount()));
+        SaleProceedsHold locked = lockProceedsHold(hold.getId());
+        requireActive(locked);
+        Wallet sellerWallet = lockWallet(locked.getSeller().getId());
+        sellerWallet.setHeldBalance(sellerWallet.getHeldBalance().subtract(locked.getAmount()));
         walletRepository.save(sellerWallet);
-        record(sellerWallet, WalletTxnType.DEBIT, hold.getAmount(), "DISPUTE_REFUND", hold.getAuction().getId().toString());
+        record(sellerWallet, WalletTxnType.DEBIT, locked.getAmount(), "DISPUTE_REFUND", locked.getAuction().getId().toString());
 
         getOrCreateWallet(buyer);
         Wallet buyerWallet = lockWallet(buyer.getId());
-        buyerWallet.setAvailableBalance(buyerWallet.getAvailableBalance().add(hold.getAmount()));
+        buyerWallet.setAvailableBalance(buyerWallet.getAvailableBalance().add(locked.getAmount()));
         walletRepository.save(buyerWallet);
-        record(buyerWallet, WalletTxnType.REFUND, hold.getAmount(), "DISPUTE_REFUND", hold.getAuction().getId().toString());
+        record(buyerWallet, WalletTxnType.REFUND, locked.getAmount(), "DISPUTE_REFUND", locked.getAuction().getId().toString());
 
-        hold.setStatus(ProceedsStatus.REFUNDED);
-        hold.setResolvedAt(LocalDateTime.now());
-        proceedsRepository.save(hold);
+        locked.setStatus(ProceedsStatus.REFUNDED);
+        locked.setResolvedAt(LocalDateTime.now());
+        proceedsRepository.save(locked);
     }
 
     /** Escrow holds past the release window — the caller filters out ones with an open dispute. */
@@ -329,13 +339,21 @@ public class WalletService {
                 .orElseThrow(() -> new ResourceNotFoundException("Wallet not found"));
     }
 
+    /** Locks the hold row before checking ACTIVE status — see Findings_pendings.md #3: a
+     *  non-locking read-then-check here let two concurrent callers (admin double-click, or the
+     *  auto-release scheduler racing a manual release) both pass and both apply their credit. */
     private BidEligibilityHold activeHold(Auction auction, User bidder) {
-        BidEligibilityHold hold = holdRepository.findByAuction_IdAndBidder_Id(auction.getId(), bidder.getId())
+        BidEligibilityHold hold = holdRepository.findByAuction_IdAndBidder_IdForUpdate(auction.getId(), bidder.getId())
                 .orElseThrow(() -> new ResourceNotFoundException("No EMD hold found for this bidder/auction"));
         if (hold.getStatus() != HoldStatus.ACTIVE) {
             throw new BadRequestException("EMD hold is not active");
         }
         return hold;
+    }
+
+    private SaleProceedsHold lockProceedsHold(UUID id) {
+        return proceedsRepository.findByIdForUpdate(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Sale proceeds hold not found"));
     }
 
     private void record(Wallet w, WalletTxnType type, BigDecimal amount, String refType, String refId) {

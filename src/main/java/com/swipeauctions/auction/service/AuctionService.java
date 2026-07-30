@@ -179,7 +179,12 @@ public class AuctionService {
     @Transactional
     public Auction adminUpdate(UUID auctionId, String title, BigDecimal basePrice,
                                 LocalDateTime startTime, LocalDateTime endTime) {
-        Auction a = get(auctionId);
+        // Locks the auction row (matching forceClose/closeAuction) so this genuinely serializes
+        // against WalletService.placeHold, which locks the same row before sizing a new EMD hold
+        // to basePrice — otherwise a hold could commit in the window between this method's read
+        // and its save, desyncing the hold amount from the price it's supposed to be locked to.
+        // See Findings_pendings.md #4.
+        Auction a = getForUpdate(auctionId);
         if (a.getStatus() != AuctionStatus.SCHEDULED && a.getStatus() != AuctionStatus.OPEN) {
             throw new BadRequestException("Only a scheduled or open auction can be modified");
         }
