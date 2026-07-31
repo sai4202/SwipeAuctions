@@ -22,6 +22,7 @@ import com.swipeauctions.auth.dto.ChangePasswordRequestDTO;
 import com.swipeauctions.auth.dto.ForgotPasswordRequestDTO;
 import com.swipeauctions.auth.dto.ResetPasswordRequestDTO;
 import com.swipeauctions.common.exception.BadRequestException;
+import com.swipeauctions.common.security.LoginRateLimiterService;
 import com.swipeauctions.common.security.jwt.JwtService;
 import com.swipeauctions.common.util.LoggedInUserUtil;
 import com.swipeauctions.email.dto.EmailRequestDTO;
@@ -34,6 +35,7 @@ import com.swipeauctions.common.exception.ResourceNotFoundException;
 import com.swipeauctions.common.exception.UnauthorizedException;
 
 import java.util.UUID;
+import java.time.Duration;
 import java.time.LocalDateTime;
 
 @Service
@@ -66,6 +68,8 @@ public class AdminAuthServiceImpl implements AdminAuthService {
 
     private final AdminSessionManagementService sessionManagementService;
 
+    private final LoginRateLimiterService loginRateLimiterService;
+
     //reset password variable storing link
     @Value("${app.frontend.url}")
     private String frontendUrl;
@@ -95,6 +99,11 @@ public class AdminAuthServiceImpl implements AdminAuthService {
     @Override
     public AdminLoginResponseDTO login(AdminLoginRequestDTO request, HttpServletRequest httpServletRequest)
     {
+
+        // Per-IP throttle, ahead of any DB lookup — catches credential stuffing across many
+        // admin emails from one source, which the per-account lockout below can't see.
+        loginRateLimiterService.checkAndRecord(
+                "admin-login", httpServletRequest.getRemoteAddr(), 8, Duration.ofMinutes(10));
 
         // Normalize email before authentication.
         String email = request.getEmail().trim().toLowerCase();

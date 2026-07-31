@@ -366,8 +366,8 @@ function errorMessage(e: unknown): string {
 }
 
 // ---- Auth ----
-export async function login(emailOrMobile: string, password: string): Promise<LoginData> {
-  const res = await api.post<ApiEnvelope<LoginData>>('/api/auth/login', { emailOrMobile, password })
+export async function login(emailOrMobile: string, password: string, clientDeviceModel?: string): Promise<LoginData> {
+  const res = await api.post<ApiEnvelope<LoginData>>('/api/auth/login', { emailOrMobile, password, clientDeviceModel })
   return res.data.data
 }
 export async function adminLogin(email: string, password: string): Promise<AdminLoginData> {
@@ -407,8 +407,8 @@ export async function requestLoginOtp(emailOrMobile: string): Promise<string> {
   const res = await api.post<ApiEnvelope<string>>('/api/auth/login/otp/request', { emailOrMobile })
   return res.data.message
 }
-export async function verifyLoginOtp(emailOrMobile: string, otp: string): Promise<LoginData> {
-  const res = await api.post<ApiEnvelope<LoginData>>('/api/auth/login/otp/verify', { emailOrMobile, otp })
+export async function verifyLoginOtp(emailOrMobile: string, otp: string, clientDeviceModel?: string): Promise<LoginData> {
+  const res = await api.post<ApiEnvelope<LoginData>>('/api/auth/login/otp/verify', { emailOrMobile, otp, clientDeviceModel })
   return res.data.data
 }
 // Logs out a specific device from the "device limit reached" login prompt (re-verifies credentials

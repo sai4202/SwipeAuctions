@@ -1,7 +1,14 @@
 # SwipeAuctions — End-to-End Security & Money-Flow Findings
 
-**Status: all findings below are PENDING — nothing has been fixed yet.** This is a report only,
-awaiting a decision on scope/priority before any code changes.
+**Status: RESOLVED.** All findings below were fixed in commit `f563ac3` (2026-07-30). Payments have
+since moved from Stripe to Razorpay (commit `a69b6c2`), so file-level details below describing
+Stripe are historical — the same root causes and fixes applied to the Razorpay implementation that
+replaced it. Kept as a historical record of what was found and why; not an open task list.
+
+A follow-up audit on 2026-07-31 re-verified every fix in this document against current code (still
+correct) and additionally: confirmed no admin-privilege-escalation path exists, added a per-IP login
+throttle (`common/security/LoginRateLimiterService`) on top of the existing per-account lockout, and
+fixed the device-list UI to show device name + last-active time instead of IP address.
 
 **Scope:** Full end-to-end review requested by the user ("front end, back end, security issues,
 login loopholes, money tightness, and everything"). Covered via two parallel read-only deep-dive

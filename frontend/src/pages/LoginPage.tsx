@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { login, requestLoginOtp, verifyLoginOtp, logoutDevice, errorMessage, type LoginData, type SessionInfo } from '../api'
 import { useAuth } from '../auth'
+import { getClientDeviceModel } from '../util'
 
 type Mode = 'password' | 'otp'
 
@@ -49,7 +50,7 @@ export default function LoginPage() {
   const submitPassword = async (e: FormEvent) => {
     e.preventDefault(); setError(''); setBusy(true)
     try {
-      const data = await login(identifier, password)
+      const data = await login(identifier, password, await getClientDeviceModel())
       if (data.deviceLimitReached) {
         setDeviceChoice(data.activeSessions ?? [])
         setLimitMsg(data.message ?? 'Maximum device limit reached. Log out a device below to continue.')
@@ -91,7 +92,7 @@ export default function LoginPage() {
   const submitOtp = async (e: FormEvent) => {
     e.preventDefault(); setError(''); setBusy(true)
     try {
-      const data = await verifyLoginOtp(identifier, otp)
+      const data = await verifyLoginOtp(identifier, otp, await getClientDeviceModel())
       if (data.deviceLimitReached) {
         setDeviceChoice(data.activeSessions ?? [])
         setLimitMsg(data.message ?? 'Maximum device limit reached. Log out a device below to continue.')
@@ -115,7 +116,7 @@ export default function LoginPage() {
     try {
       await logoutDevice(identifier, password, sessionId)
       setDeviceChoice(null)
-      const data = await login(identifier, password)
+      const data = await login(identifier, password, await getClientDeviceModel())
       if (data.deviceLimitReached) {
         // Shouldn't happen (we just freed a slot), but re-show the picker defensively.
         setDeviceChoice(data.activeSessions ?? [])
@@ -162,7 +163,7 @@ export default function LoginPage() {
                   <li key={s.sessionId} className="card" style={{ marginBottom: 10, padding: 14 }}>
                     <div style={{ fontWeight: 600 }}>{s.deviceName || 'Unknown device'}</div>
                     <div className="muted" style={{ fontSize: 13 }}>
-                      IP {s.ipAddress || '—'} · Signed in {formatWhen(s.loginTime)}
+                      Signed in {formatWhen(s.loginTime)}
                       {s.lastActivityTime && <> · Last active {formatWhen(s.lastActivityTime)}</>}
                     </div>
                     <button

@@ -29,11 +29,13 @@ import com.swipeauctions.user.repository.OtpVerificationRepository;
 import com.swipeauctions.user.repository.PasswordResetTokenRepository;
 import com.swipeauctions.user.repository.UserRepository;
 import com.swipeauctions.common.security.jwt.JwtService;
+import com.swipeauctions.common.security.LoginRateLimiterService;
 import com.swipeauctions.common.exception.BadRequestException;
 import com.swipeauctions.common.exception.ResourceNotFoundException;
 import com.swipeauctions.common.exception.UnauthorizedException;
 import com.swipeauctions.session.entity.UserSessions;
 import com.swipeauctions.session.repository.UserSessionRepository;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -81,6 +83,8 @@ public class UserAuthServiceImpl implements UserAuthService {
     private final com.swipeauctions.notification.AuctionNotificationService auctionNotificationService;
 
     private final com.swipeauctions.settings.service.SubscriptionService subscriptionService;
+
+    private final LoginRateLimiterService loginRateLimiterService;
 
 
     @Value("${app.frontend.url}")
@@ -321,6 +325,11 @@ public class UserAuthServiceImpl implements UserAuthService {
     public LoginResponseDTO login(LoginRequestDTO request, HttpServletRequest httpServletRequest)
     {
 
+        // Per-IP throttle, ahead of any DB lookup — catches credential stuffing across many
+        // user accounts from one source, which the per-account lockout below can't see.
+        loginRateLimiterService.checkAndRecord(
+                "user-login", httpServletRequest.getRemoteAddr(), 20, Duration.ofMinutes(10));
+
         User user;
         try {
             user = authHelperService.findUserByIdentifier(request.getEmailOrMobile());
@@ -342,7 +351,7 @@ public class UserAuthServiceImpl implements UserAuthService {
 
         loginValidationService.validateVerificationStatus(user);
 
-        return issueLoginSession(user, httpServletRequest);
+        return issueLoginSession(user, httpServletRequest, request.getClientDeviceModel());
     }
 
     // Requests a one-shot login OTP, delivered to the account's email.
@@ -388,6 +397,11 @@ public class UserAuthServiceImpl implements UserAuthService {
     @Transactional
     public LoginResponseDTO verifyLoginOtp(VerifyLoginOtpDTO request, HttpServletRequest httpServletRequest)
     {
+        // Per-IP throttle — an OTP is a 6-digit secret, brute-forceable across many accounts
+        // from one source faster than any single account's 5-attempt lock would catch.
+        loginRateLimiterService.checkAndRecord(
+                "otp-verify", httpServletRequest.getRemoteAddr(), 20, Duration.ofMinutes(10));
+
         User user = authHelperService.findUserByIdentifier(request.getEmailOrMobile());
         loginValidationService.validateUserAccountStatus(user);
 
@@ -413,7 +427,7 @@ public class UserAuthServiceImpl implements UserAuthService {
 
         loginValidationService.validateVerificationStatus(user);
 
-        LoginResponseDTO response = issueLoginSession(user, httpServletRequest);
+        LoginResponseDTO response = issueLoginSession(user, httpServletRequest, request.getClientDeviceModel());
 
         // Only consume the OTP once a real token is actually issued — if the device-limit gate fires
         // instead, the same OTP can be resubmitted after the user frees a device slot, rather than
@@ -428,7 +442,7 @@ public class UserAuthServiceImpl implements UserAuthService {
     }
 
     // Shared tail of password and OTP login: device-limit gate, JWT issuance, session bookkeeping.
-    private LoginResponseDTO issueLoginSession(User user, HttpServletRequest httpServletRequest)
+    private LoginResponseDTO issueLoginSession(User user, HttpServletRequest httpServletRequest, String clientDeviceModel)
     {
         List<UserSessions> activeSessions = sessionManagementService.getActiveSessions(user);
 
@@ -462,7 +476,7 @@ public class UserAuthServiceImpl implements UserAuthService {
                 || !sessionRepository.existsByUserAndUserAgent(user, userAgent);
 
         sessionManagementService.updateUserLoginAudit(user, httpServletRequest);
-        sessionManagementService.createUserSession(user, jwtId, httpServletRequest);
+        sessionManagementService.createUserSession(user, jwtId, httpServletRequest, clientDeviceModel);
 
         if (newDevice) {
             auctionNotificationService.loginConfirmation(user.getEmail(), LocalDateTime.now(),

@@ -201,3 +201,28 @@ export function removeMultiBid(id: string): string[] {
   localStorage.setItem(MULTI_KEY, JSON.stringify(ids))
   return ids
 }
+
+// ---- Device identification (login device list) ----
+interface UserAgentDataHints { model?: string }
+interface NavigatorWithUAData extends Navigator {
+  userAgentData?: { getHighEntropyValues(hints: string[]): Promise<UserAgentDataHints> }
+}
+
+/**
+ * Exact device model (e.g. "Pixel 9", "SM-S928B") for the "signed-in devices" list, read via the
+ * User-Agent Client Hints API. Only Chromium browsers on Android implement this — resolves to
+ * undefined on iOS/Safari, Firefox, and desktop, where the backend falls back to a browser/OS label
+ * parsed from the User-Agent header instead. iOS in particular can never report a real model to any
+ * website (Apple doesn't expose it to any browser API, by design) — not something fixable client-side.
+ */
+export async function getClientDeviceModel(): Promise<string | undefined> {
+  try {
+    const uaData = (navigator as NavigatorWithUAData).userAgentData
+    if (!uaData) return undefined
+    const hints = await uaData.getHighEntropyValues(['model'])
+    const model = (hints.model || '').trim()
+    return model || undefined
+  } catch {
+    return undefined
+  }
+}

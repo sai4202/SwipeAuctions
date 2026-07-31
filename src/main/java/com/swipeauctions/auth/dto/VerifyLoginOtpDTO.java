@@ -15,4 +15,8 @@ public class VerifyLoginOtpDTO {
     @NotBlank(message = "OTP is required")
     @Pattern(regexp = "^\\d{6}$", message = "OTP must be 6 digits")
     private String otp;
+
+    /** Optional exact device model (e.g. "Pixel 9") from the User-Agent Client Hints API — only
+     *  Chromium browsers on Android can supply this; null everywhere else (iOS, Firefox, desktop). */
+    private String clientDeviceModel;
 }

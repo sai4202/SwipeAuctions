@@ -23,7 +23,7 @@ public class UserSessionManagementService {
 
     private final UserRepository userRepository;
 
-    public void createUserSession(User user, String jwtId, HttpServletRequest request)
+    public void createUserSession(User user, String jwtId, HttpServletRequest request, String clientDeviceModel)
     {
 
         UserSessions session = new UserSessions();
@@ -40,7 +40,7 @@ public class UserSessionManagementService {
 
         session.setIpAddress(request.getRemoteAddr());
 
-        session.setDeviceName(DeviceUtils.extractDeviceName(userAgent));
+        session.setDeviceName(DeviceUtils.buildDeviceName(userAgent, clientDeviceModel));
 
         session.setActive(true);
 

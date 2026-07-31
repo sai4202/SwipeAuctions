@@ -54,6 +54,14 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.error(exception.getMessage()));
     }
 
+    @ExceptionHandler(TooManyRequestsException.class)
+    public ResponseEntity<ApiResponse<Object>> handleTooManyRequestsException(TooManyRequestsException exception)
+    {
+        return ResponseEntity
+                .status(HttpStatus.TOO_MANY_REQUESTS)
+                .body(ApiResponse.error(exception.getMessage()));
+    }
+
     @ExceptionHandler(EmailConfigurationException.class)
     public ResponseEntity<ApiResponse<Object>> handleEmailConfigurationException(EmailConfigurationException exception)
     {
