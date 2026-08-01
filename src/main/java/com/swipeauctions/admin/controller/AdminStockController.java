@@ -18,6 +18,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
 import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.ss.usermodel.DateUtil;
 import org.apache.poi.ss.usermodel.Row;
@@ -62,24 +63,51 @@ public class AdminStockController {
 
     /**
      * The structured item-detail fields shown as tabs (General Details / Registration / Insurance /
-     * Other Details / Remarks) on the item detail page — same 21 fields, same order, as
+     * Other Details / Remarks) on the item detail page — same 23 fields, same order, as
      * {@code frontend/src/detailFields.ts}, which is the source of truth for the single-item Add
-     * Stock form. Kept in sync manually (TS and Java can't literally share this list) — a column
-     * header here is exactly the sheet header a bulk-uploader fills in; the second element is the
-     * {@code ListingAttribute} key it's stored under, exactly matching {@code DetailFieldDef.key}.
+     * Stock form. Kept in sync manually (TS and Java can't literally share this list). Each entry is
+     * {header, ListingAttribute key, tab} — the header is what a bulk-uploader sees (either as its
+     * own column, for a mandatory/Remarks field, or as the label half of a "Label: value" line inside
+     * its tab's collapsed column — see {@link #COLLAPSIBLE_TABS}/{@link #parseDetailListCell}).
      */
     private static final String[][] DETAIL_COLUMNS = {
-            {"Power Steering", "powerSteering"}, {"Yard Name", "yardName"}, {"Yard Location", "yardLocation"},
-            {"Payment Terms", "paymentTerms"}, {"RC Book Available", "rcBookAvailable"},
-            {"Seller Reference", "sellerReference"}, {"Sun Roof", "sunRoof"},
-            {"CTE Contact Person", "cteContactPerson"}, {"CTE Contact Person Phone", "cteContactPersonPhone"},
-            {"Registration Number", "registrationNumber"}, {"Year of Manufacturing", "yearOfManufacturing"},
-            {"Insurance Provider", "insuranceProvider"}, {"Insurance Valid Upto", "insuranceValidUpto"},
-            {"Hypothecation", "hypothecation"}, {"Has Loan Been Paid Off", "loanPaidOff"},
-            {"Whether Valid Form 35 NOC Available", "form35NocAvailable"}, {"Listing Remarks", "listingRemarks"},
-            {"Faremeter", "faremeter"}, {"Chassis No", "chassisNo"}, {"Engine No", "engineNo"},
-            {"Repo Date", "repoDate"}, {"Parking Rate (per day)", "parkingRatePerDay"},
-            {"Additional Remarks", "additionalRemarks"},
+            {"Power Steering", "powerSteering", "General Details"}, {"Yard Name", "yardName", "General Details"},
+            {"Yard Location", "yardLocation", "General Details"}, {"Payment Terms", "paymentTerms", "General Details"},
+            {"RC Book Available", "rcBookAvailable", "General Details"},
+            {"Seller Reference", "sellerReference", "General Details"}, {"Sun Roof", "sunRoof", "General Details"},
+            {"CTE Contact Person", "cteContactPerson", "General Details"},
+            {"CTE Contact Person Phone", "cteContactPersonPhone", "General Details"},
+            {"Registration Number", "registrationNumber", "Registration"},
+            {"Year of Manufacturing", "yearOfManufacturing", "Registration"},
+            {"Insurance Provider", "insuranceProvider", "Insurance"}, {"Insurance Valid Upto", "insuranceValidUpto", "Insurance"},
+            {"Hypothecation", "hypothecation", "Other Details"}, {"Has Loan Been Paid Off", "loanPaidOff", "Other Details"},
+            {"Whether Valid Form 35 NOC Available", "form35NocAvailable", "Other Details"},
+            {"Listing Remarks", "listingRemarks", "Other Details"}, {"Faremeter", "faremeter", "Other Details"},
+            {"Chassis No", "chassisNo", "Other Details"}, {"Engine No", "engineNo", "Other Details"},
+            {"Repo Date", "repoDate", "Remarks"}, {"Parking Rate (per day)", "parkingRatePerDay", "Remarks"},
+            {"Additional Remarks", "additionalRemarks", "Remarks"},
+    };
+
+    /** Every real used/repossessed vehicle has a registration, chassis, and yard — see
+     *  {@link #requireVehicleDetails}. These 4 keys keep their own dedicated column/input rather than
+     *  folding into their tab's collapsed "Label: value" list, mirroring
+     *  {@code frontend/src/detailFields.ts}'s {@code REQUIRED_FOR_USED_VEHICLES}. A {@code List}, not
+     *  a {@code Set} — order matters here (deterministic missing-fields error message / column order),
+     *  and {@code Set.of()} doesn't guarantee iteration order. */
+    private static final java.util.List<String> MANDATORY_DETAIL_KEYS =
+            java.util.List.of("registrationNumber", "chassisNo", "yardName", "yardLocation");
+
+    /**
+     * {tab, Excel column header} for the tabs whose non-mandatory fields are entered as a single
+     * "Label: value per line" column instead of one column per field — mirrors
+     * {@code frontend/src/detailFields.ts}'s {@code COLLAPSIBLE_TABS}. Remarks is left out: no
+     * mandatory fields, already mostly free-text.
+     */
+    private static final String[][] COLLAPSED_COLUMNS = {
+            {"General Details", "General Details (Label: Value, one per line)"},
+            {"Registration", "Registration (Label: Value, one per line)"},
+            {"Insurance", "Insurance (Label: Value, one per line)"},
+            {"Other Details", "Other Details (Label: Value, one per line)"},
     };
 
     private final CatalogService catalogService;
@@ -148,12 +176,14 @@ public class AdminStockController {
     /**
      * One row per item. Header row required (case-insensitive, any column order): Title, Category,
      * Brand, Condition, City, State, Zip, Base Price, Start Time, End Time, Swipe Stock, Vehicle Type,
-     * plus any of the {@link #DETAIL_COLUMNS} (Yard Name, Registration Number, Chassis No, ...) —
-     * those populate the item's detail-page tabs exactly like the single-item Add Stock form does.
-     * Only Title, Category and Base Price are required — everything else has a sensible default, and
-     * every other column is optional (blank cells are simply omitted, same as leaving a form field
-     * empty). A row is one vehicle type, never a mix — see {@link #VEHICLE_TYPE_ATTR_KEY}. A row-level
-     * error doesn't abort the batch; every other valid row is still imported.
+     * the 4 {@link #MANDATORY_DETAIL_KEYS} columns (Registration Number, Chassis No, Yard Name, Yard
+     * Location), one combined "Label: Value per line" column per {@link #COLLAPSIBLE_TABS} tab (see
+     * {@link #COLLAPSED_COLUMNS}/{@link #parseDetailListCell}), and Remarks' 3 individual columns —
+     * together these populate the item's detail-page tabs exactly like the single-item Add Stock form
+     * does. Only Title, Category and Base Price are required — everything else has a sensible
+     * default, and every other column is optional (blank cells are simply omitted, same as leaving a
+     * form field empty). A row is one vehicle type, never a mix — see {@link #VEHICLE_TYPE_ATTR_KEY}.
+     * A row-level error doesn't abort the batch; every other valid row is still imported.
      */
     @PostMapping(value = "/bulk", consumes = "multipart/form-data")
     public BulkImportResponse bulkImport(@RequestParam MultipartFile file,
@@ -201,7 +231,16 @@ public class AdminStockController {
                     boolean effectiveSwipeStock = rowSwipeStock != null ? rowSwipeStock : swipeStock;
 
                     Map<String, String> attributes = new LinkedHashMap<>();
+                    for (String key : MANDATORY_DETAIL_KEYS) {
+                        String value = optionalString(row, cols, detailColumnLabel(key).toLowerCase());
+                        if (value != null) attributes.put(key, value);
+                    }
+                    for (String[] tabCol : COLLAPSED_COLUMNS) {
+                        String value = optionalString(row, cols, tabCol[1].toLowerCase());
+                        if (value != null) attributes.putAll(parseDetailListCell(tabCol[0], value));
+                    }
                     for (String[] col : DETAIL_COLUMNS) {
+                        if (!"Remarks".equals(col[2])) continue;
                         String value = optionalString(row, cols, col[0].toLowerCase());
                         if (value != null) attributes.put(col[1], value);
                     }
@@ -231,26 +270,38 @@ public class AdminStockController {
             "Base Price", "Start Time", "End Time", "Swipe Stock", "Vehicle Type"};
 
     /**
-     * A ready-to-fill .xlsx with the exact header row the bulk importer expects (base columns plus
-     * every {@link #DETAIL_COLUMNS} entry), plus a few example rows spanning different
-     * categories/field combinations — every detail column is optional, so the examples deliberately
-     * leave some blank per row rather than filling all 23 on every line, showing that's expected.
+     * A ready-to-fill .xlsx with the exact header row the bulk importer expects (base columns, the 4
+     * mandatory detail columns, one combined "Label: Value per line" column per
+     * {@link #COLLAPSED_COLUMNS} tab, and Remarks' 3 columns — 23 total, down from a flat 35 when
+     * every one of the 23 {@link #DETAIL_COLUMNS} had its own column), plus a few example rows
+     * spanning different categories/field combinations.
      */
     @GetMapping("/template")
     public ResponseEntity<byte[]> template() {
         try (XSSFWorkbook wb = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             Sheet sheet = wb.createSheet("Stock");
             List<String> headers = new ArrayList<>(List.of(BASE_HEADERS));
-            for (String[] col : DETAIL_COLUMNS) headers.add(col[0]);
+            for (String key : MANDATORY_DETAIL_KEYS) headers.add(detailColumnLabel(key));
+            for (String[] tabCol : COLLAPSED_COLUMNS) headers.add(tabCol[1]);
+            for (String[] col : DETAIL_COLUMNS) {
+                if ("Remarks".equals(col[2])) headers.add(col[0]);
+            }
 
             Row headerRow = sheet.createRow(0);
             for (int i = 0; i < headers.size(); i++) headerRow.createCell(i).setCellValue(headers.get(i));
 
+            CellStyle wrapStyle = wb.createCellStyle();
+            wrapStyle.setWrapText(true);
+
             for (int i = 0; i < EXAMPLE_ROWS.length; i++) {
                 Row row = sheet.createRow(i + 1);
+                row.setHeightInPoints(60);
                 String[] values = EXAMPLE_ROWS[i];
                 for (int col = 0; col < values.length; col++) {
-                    if (!values[col].isEmpty()) row.createCell(col).setCellValue(values[col]);
+                    if (values[col].isEmpty()) continue;
+                    Cell cell = row.createCell(col);
+                    cell.setCellValue(values[col]);
+                    if (values[col].contains("\n")) cell.setCellStyle(wrapStyle);
                 }
             }
 
@@ -266,38 +317,44 @@ public class AdminStockController {
     }
 
     /**
-     * Sample rows for the template, column-for-column aligned to BASE_HEADERS + DETAIL_COLUMNS.
-     * Deliberately varied: a fully-detailed bank-repo vehicle, a lighter insurance-salvage item, and
-     * a plain electronics item using none of the detail columns at all — showing the range from "fill
-     * in everything" to "ignore the detail columns entirely." Both vehicle-category rows still carry
-     * Registration Number/Chassis No/Yard Name/Yard Location since requireVehicleDetails makes those
-     * 4 mandatory for any non-NEW item in a vehicle category (Vehicles/Bank Vehicles/Auto/Insurance),
-     * and a Vehicle Type — a single row is always one vehicle type, never a mix (see
-     * {@link #VEHICLE_TYPE_ATTR_KEY}); Electronics leaves it blank since it isn't a vehicle category.
+     * Sample rows for the template, column-for-column aligned to BASE_HEADERS + the 4 mandatory
+     * columns + {@link #COLLAPSED_COLUMNS} + Remarks' 3 columns. Deliberately varied: a fully-detailed
+     * bank-repo vehicle, a lighter insurance-salvage item, and a plain electronics item using none of
+     * the detail columns at all — showing the range from "fill in everything" to "ignore the detail
+     * columns entirely." Both vehicle-category rows still carry Registration Number/Chassis No/Yard
+     * Name/Yard Location since requireVehicleDetails makes those 4 mandatory for any non-NEW item in
+     * a vehicle category (Vehicles/Bank Vehicles/Auto/Insurance), and a Vehicle Type — a single row is
+     * always one vehicle type, never a mix (see {@link #VEHICLE_TYPE_ATTR_KEY}); Electronics leaves it
+     * blank since it isn't a vehicle category.
      */
     private static final String[][] EXAMPLE_ROWS = {
             // Title, Category, Brand, Condition, City, State, Zip, Base Price, Start, End, Swipe Stock, Vehicle Type,
-            // Power Steering, Yard Name, Yard Location, Payment Terms, RC Book Available, Seller Reference,
-            // Sun Roof, CTE Contact Person, CTE Contact Person Phone, Registration Number, Year of Manufacturing,
-            // Insurance Provider, Insurance Valid Upto, Hypothecation, Has Loan Been Paid Off,
-            // Whether Valid Form 35 NOC Available, Listing Remarks, Faremeter, Chassis No, Engine No,
+            // Registration Number, Chassis No, Yard Name, Yard Location,
+            // General Details (list), Registration (list), Insurance (list), Other Details (list),
             // Repo Date, Parking Rate (per day), Additional Remarks
             {"Mahindra Bolero Pickup (Repo)", "Bank Vehicles", "Mahindra", "USED", "Madanapalle", "Andhra Pradesh",
                     "517325", "130200", "2026-08-01 10:00", "2026-08-05 18:00", "FALSE", "CV",
-                    "No", "Shriram Yard Bengaluru", "Shriram Yard Bengaluru, Survey No 52/1A", "Payment to be made within 24 hours from the time of approval",
-                    "No", "L2ATHI10845213", "No", "Tulsi B", "9892803643", "AP02Y8911", "2015",
-                    "", "", "No", "No", "No", "L2A_THI10845213", "No", "MD2B77AX3PWA26654", "PFXWPA18287",
+                    "AP02Y8911", "MD2B77AX3PWA26654", "Shriram Yard Bengaluru", "Shriram Yard Bengaluru, Survey No 52/1A",
+                    "Power Steering: No\nPayment Terms: Payment to be made within 24 hours from the time of approval\n"
+                            + "RC Book Available: No\nSeller Reference: L2ATHI10845213\nSun Roof: No\n"
+                            + "CTE Contact Person: Tulsi B\nCTE Contact Person Phone: 9892803643",
+                    "Year of Manufacturing: 2015",
+                    "",
+                    "Hypothecation: No\nHas Loan Been Paid Off: No\nWhether Valid Form 35 NOC Available: No\n"
+                            + "Listing Remarks: L2A_THI10845213\nFaremeter: No\nEngine No: PFXWPA18287",
                     "2026-07-17", "100", "Bids once placed cannot be cancelled. Parking charges to be paid by buyer as per seller terms."},
             {"Water-Damaged Hyundai Creta (Salvage)", "Insurance", "Hyundai", "FOR_PARTS", "Chennai", "Tamil Nadu",
                     "600001", "260000", "2026-08-02 09:00", "2026-08-06 18:00", "FALSE", "4W",
-                    "", "IDBI Yard Chennai", "IDBI Yard Chennai, Guindy Industrial Estate", "", "", "", "", "", "",
-                    "TN09CD5678", "2021",
-                    "ICICI Lombard", "2027-03-31", "", "", "", "", "", "MA3ETEB1S00123456", "",
+                    "TN09CD5678", "MA3ETEB1S00123456", "IDBI Yard Chennai", "IDBI Yard Chennai, Guindy Industrial Estate",
+                    "",
+                    "Year of Manufacturing: 2021",
+                    "Insurance Provider: ICICI Lombard\nInsurance Valid Upto: 2027-03-31",
+                    "",
                     "", "", "Flood-damaged; sold as-is for parts/scrap only."},
             {"Sealed Dell Laptop (Grade A)", "Electronics", "Dell", "NEW", "Hyderabad", "Telangana",
                     "500001", "45000", "", "", "TRUE", "",
-                    "", "", "", "", "", "", "", "", "", "", "",
-                    "", "", "", "", "", "", "", "", "",
+                    "", "", "", "",
+                    "", "", "", "",
                     "", "", ""},
     };
 
@@ -315,16 +372,51 @@ public class AdminStockController {
         if (!isVehicleCategory || isNew) return;
 
         List<String> missing = new ArrayList<>();
-        for (String[] pair : new String[][]{{"registrationNumber", "Registration Number"}, {"chassisNo", "Chassis No"},
-                {"yardName", "Yard Name"}, {"yardLocation", "Yard Location"}}) {
-            String value = attributes == null ? null : attributes.get(pair[0]);
-            if (value == null || value.isBlank()) missing.add(pair[1]);
+        for (String key : MANDATORY_DETAIL_KEYS) {
+            String value = attributes == null ? null : attributes.get(key);
+            if (value == null || value.isBlank()) missing.add(detailColumnLabel(key));
         }
         if (!missing.isEmpty()) {
             throw new BadRequestException(String.join(", ", missing)
                     + (missing.size() > 1 ? " are required" : " is required")
                     + " for a used " + category.getName() + " item (only exempt for Condition = NEW)");
         }
+    }
+
+    private static String detailColumnLabel(String key) {
+        for (String[] col : DETAIL_COLUMNS) {
+            if (col[1].equals(key)) return col[0];
+        }
+        return key;
+    }
+
+    /**
+     * Parses one collapsed tab's cell text (one "Label: value" pair per line) back into
+     * {@code {ListingAttribute key: value}} entries — the bulk-import mirror of
+     * {@code frontend/src/detailFields.ts}'s {@code parseDetailListText}. A line whose label doesn't
+     * match any of that tab's non-mandatory {@link #DETAIL_COLUMNS} headers (case-insensitive) isn't
+     * dropped — its raw trimmed label becomes the attribute key, which the detail page's existing
+     * fallback rendering already displays sensibly instead of silently losing it.
+     */
+    private static Map<String, String> parseDetailListCell(String tab, String cellText) {
+        Map<String, String> labelToKey = new java.util.HashMap<>();
+        for (String[] col : DETAIL_COLUMNS) {
+            if (col[2].equals(tab) && !MANDATORY_DETAIL_KEYS.contains(col[1])) {
+                labelToKey.put(col[0].trim().toLowerCase(), col[1]);
+            }
+        }
+        Map<String, String> result = new LinkedHashMap<>();
+        if (cellText == null) return result;
+        for (String line : cellText.split("\n")) {
+            int idx = line.indexOf(':');
+            if (idx < 0) continue;
+            String rawLabel = line.substring(0, idx).trim();
+            String value = line.substring(idx + 1).trim();
+            if (rawLabel.isEmpty() || value.isEmpty()) continue;
+            String key = labelToKey.getOrDefault(rawLabel.toLowerCase(), rawLabel);
+            result.put(key, value);
+        }
+        return result;
     }
 
     /** If a Vehicle Type was given, it must be one of the fixed values the events browse filter uses. */

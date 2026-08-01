@@ -3,7 +3,7 @@ import { type Auction } from '../api'
 import { money, cardImage, downloadValuation, formatDateTimeShort } from '../util'
 import { useAuctionBid } from '../useAuctionBid'
 import BidModals from './BidModals'
-import VehicleDetailStrip from './VehicleDetailStrip'
+import ItemDetailStrip from './ItemDetailStrip'
 
 interface Props {
   auction: Auction
@@ -35,7 +35,7 @@ export default function AuctionListRow({ auction: a, inTray, onToggleTray }: Pro
         <Link to={`/auctions/${auction.id}`}><b>{auction.title}</b></Link>
         <div className="muted" style={{ fontSize: 12 }}>{[auction.brand, auction.condition.replace('_', ' ')].filter(Boolean).join(' · ')}</div>
         <div className="muted" style={{ fontSize: 12 }}>◍ {[auction.city, auction.state].filter(Boolean).join(', ') || '—'}</div>
-        <VehicleDetailStrip attributes={auction.attributes} />
+        <ItemDetailStrip attributes={auction.attributes} />
       </td>
       <td style={{ whiteSpace: 'nowrap' }}>{formatDateTimeShort(auction.startTime)}</td>
       <td style={{ whiteSpace: 'nowrap' }}>{formatDateTimeShort(auction.currentEndTime)}</td>

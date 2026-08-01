@@ -19,7 +19,7 @@ import { money, moneyCompact, formatDateTimeShort, openUserDetails } from '../ut
 import { StatTilesSkeleton } from '../components/Skeleton'
 import SortableTh from '../components/SortableTh'
 import { useSortableData } from '../useSort'
-import { DETAIL_FIELDS, DETAIL_TABS, REQUIRED_FOR_USED_VEHICLES, requiresVehicleDetails, type DetailFieldDef } from '../detailFields'
+import { DETAIL_FIELDS, DETAIL_TABS, COLLAPSIBLE_TABS, REQUIRED_FOR_USED_VEHICLES, requiresVehicleDetails, parseDetailListText, type DetailFieldDef } from '../detailFields'
 import { VEHICLE_TYPE_OPTIONS } from '../catalogFilters'
 import { EVENT_CATEGORIES } from '../eventCategories'
 
@@ -1264,6 +1264,11 @@ function AddStockSingleForm({ categories, onCategoriesChanged, onCreated }: {
   // on the detail page — see detailFields.ts, the single source of truth shared with DetailTabs.tsx.
   const [detailValues, setDetailValues] = useState<Record<string, string>>({})
   const setDetailValue = (key: string, value: string) => setDetailValues((v) => ({ ...v, [key]: value }))
+  // Non-mandatory fields for the 4 COLLAPSIBLE_TABS are entered as one "Label: value per line" free
+  // text box per tab instead of one input per field — parsed back into individual attribute keys on
+  // submit via parseDetailListText, so everything downstream (storage, the detail page) is unaware
+  // this collapsed box exists at all.
+  const [tabListText, setTabListText] = useState<Record<string, string>>({})
   // Vehicle Type (4W/CV/2W/TR-FE/3W/CE) — the events browse UI's Vehicle Type filter reads this exact
   // attribute key. Kept separate from detailValues since it's category-conditional and a fixed
   // dropdown, not one of the generic detail-tab fields.
@@ -1280,7 +1285,7 @@ function AddStockSingleForm({ categories, onCategoriesChanged, onCreated }: {
   const reset = () => {
     setTitle(''); setDescription(''); setBrand(''); setCity(''); setState(''); setZip('')
     setReservePrice(''); setStartTime(''); setEndTime(''); setSwipeStock(false); setRequiredTier('NONE'); setFiles([])
-    setCategoryId(''); setNewCategoryName(''); setDetailValues({}); setVehicleType('')
+    setCategoryId(''); setNewCategoryName(''); setDetailValues({}); setTabListText({}); setVehicleType('')
   }
 
   const submit = async (e: FormEvent) => {
@@ -1295,6 +1300,9 @@ function AddStockSingleForm({ categories, onCategoriesChanged, onCreated }: {
       const attributes = Object.fromEntries(
         Object.entries(detailValues).filter(([, v]) => v.trim() !== ''),
       )
+      for (const tab of COLLAPSIBLE_TABS) {
+        Object.assign(attributes, parseDetailListText(tab, tabListText[tab] ?? '', REQUIRED_FOR_USED_VEHICLES))
+      }
       if (showVehicleType && vehicleType) attributes['Vehicle Type'] = vehicleType
 
       const listing = await createStockListing({
@@ -1439,17 +1447,44 @@ function AddStockSingleForm({ categories, onCategoriesChanged, onCreated }: {
           repossessed/used vehicle has these. Only exempt when Condition is set to NEW.
         </p>
       )}
-      {DETAIL_TABS.map((tab) => (
-        <div key={tab} className="detail-field-group">
-          <div className="cat-filters-head">{tab}</div>
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            {DETAIL_FIELDS.filter((f) => f.tab === tab).map((f) => (
-              <DetailFieldInput key={f.key} field={f} value={detailValues[f.key] ?? ''} onChange={(v) => setDetailValue(f.key, v)}
-                                 required={vehicleDetailsRequired && REQUIRED_FOR_USED_VEHICLES.includes(f.key)} />
-            ))}
+      {DETAIL_TABS.map((tab) => {
+        const isCollapsible = COLLAPSIBLE_TABS.includes(tab)
+        const tabFields = DETAIL_FIELDS.filter((f) => f.tab === tab)
+        const mandatoryFields = isCollapsible ? tabFields.filter((f) => REQUIRED_FOR_USED_VEHICLES.includes(f.key)) : []
+        const freeFields = isCollapsible ? tabFields.filter((f) => !REQUIRED_FOR_USED_VEHICLES.includes(f.key)) : tabFields
+        return (
+          <div key={tab} className="detail-field-group">
+            <div className="cat-filters-head">{tab}</div>
+            {mandatoryFields.length > 0 && (
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: isCollapsible ? 10 : 0 }}>
+                {mandatoryFields.map((f) => (
+                  <DetailFieldInput key={f.key} field={f} value={detailValues[f.key] ?? ''} onChange={(v) => setDetailValue(f.key, v)}
+                                     required={vehicleDetailsRequired} />
+                ))}
+              </div>
+            )}
+            {isCollapsible ? (
+              <div className="fgroup">
+                <small>
+                  {tab} — one "Label: value" per line{freeFields.length > 0 && ` (e.g. ${freeFields[0].label}: ...)`}
+                </small>
+                <textarea
+                  style={{ width: '100%', minHeight: 80, fontFamily: 'inherit' }}
+                  value={tabListText[tab] ?? ''}
+                  onChange={(e) => setTabListText((v) => ({ ...v, [tab]: e.target.value }))}
+                  placeholder={freeFields.map((f) => `${f.label}: `).join('\n')}
+                />
+              </div>
+            ) : (
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                {freeFields.map((f) => (
+                  <DetailFieldInput key={f.key} field={f} value={detailValues[f.key] ?? ''} onChange={(v) => setDetailValue(f.key, v)} />
+                ))}
+              </div>
+            )}
           </div>
-        </div>
-      ))}
+        )
+      })}
 
       <div className="fgroup" style={{ maxWidth: 220 }}>
         <small>Required subscription tier</small>

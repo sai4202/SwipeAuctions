@@ -83,3 +83,38 @@ export const REQUIRED_FOR_USED_VEHICLES = ['registrationNumber', 'chassisNo', 'y
 export function requiresVehicleDetails(categoryName: string, condition: string): boolean {
   return VEHICLE_CATEGORY_NAMES.has(categoryName.trim().toLowerCase()) && condition !== 'NEW'
 }
+
+/** Tabs collapsed into a single "Label: value per line" free-text box in the Add Stock form and
+ *  bulk-Excel template, instead of one input/column per field — Remarks is left out since it has
+ *  no mandatory fields and is already mostly free-text. Mirrored on the backend in
+ *  AdminStockController.COLLAPSIBLE_TABS. */
+export const COLLAPSIBLE_TABS: DetailTab[] = ['General Details', 'Registration', 'Insurance', 'Other Details']
+
+/**
+ * Parses a collapsed tab's free text (one "Label: value" pair per line) back into
+ * `{ [DETAIL_FIELDS key]: value }` entries, matching each line's label against that tab's known
+ * field labels (case-insensitive). A line whose label doesn't match anything known is kept, not
+ * dropped — its raw (trimmed) label text becomes the attribute key, which DetailTabs.tsx's
+ * existing fallback rendering already displays sensibly (under General Details, generic icon,
+ * label = key) rather than silently losing whatever the admin typed.
+ *
+ * `excludeKeys` (normally REQUIRED_FOR_USED_VEHICLES) are skipped when matching so a line that
+ * happens to type e.g. "Registration Number: ..." into the free-text box doesn't fight with the
+ * dedicated mandatory-field input for the same key.
+ */
+export function parseDetailListText(tab: DetailTab, text: string, excludeKeys: string[]): Record<string, string> {
+  const candidates = DETAIL_FIELDS.filter((f) => f.tab === tab && !excludeKeys.includes(f.key))
+  const labelToKey = new Map(candidates.map((f) => [f.label.trim().toLowerCase(), f.key]))
+
+  const result: Record<string, string> = {}
+  for (const line of text.split('\n')) {
+    const idx = line.indexOf(':')
+    if (idx === -1) continue
+    const rawLabel = line.slice(0, idx).trim()
+    const value = line.slice(idx + 1).trim()
+    if (!rawLabel || !value) continue
+    const key = labelToKey.get(rawLabel.toLowerCase()) ?? rawLabel
+    result[key] = value
+  }
+  return result
+}

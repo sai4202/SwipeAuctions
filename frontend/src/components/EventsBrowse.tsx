@@ -8,7 +8,7 @@ import { type BrowseFilter, filterParam, matchesFilter } from '../browseFilters'
 import { useCachedFetch } from '../useCachedFetch'
 import { SkeletonTableRows } from './Skeleton'
 import FilterModal, { CheckboxListBody } from './FilterModal'
-import VehicleDetailStrip from './VehicleDetailStrip'
+import ItemDetailStrip from './ItemDetailStrip'
 import SortableTh from './SortableTh'
 import { useSortableData } from '../useSort'
 
@@ -257,7 +257,7 @@ export default function EventsBrowse({ categorySlug }: { categorySlug?: string }
                         <Link to={`/auctions/${a.id}`}><b>{a.title}</b></Link>
                         <div className="muted" style={{ fontSize: 12 }}>{[a.brand, a.condition.replace('_', ' ')].filter(Boolean).join(' · ')}</div>
                         <div className="muted" style={{ fontSize: 12 }}>◍ {[a.city, a.state].filter(Boolean).join(', ') || '—'}</div>
-                        <VehicleDetailStrip attributes={a.attributes} />
+                        <ItemDetailStrip attributes={a.attributes} />
                       </td>
                       <td style={{ whiteSpace: 'nowrap' }}>{fmt(a.startTime)}</td>
                       <td style={{ whiteSpace: 'nowrap' }}>{fmt(a.currentEndTime)}</td>
