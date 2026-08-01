@@ -71,10 +71,13 @@ export default function HomePage() {
   const [eventsLoading, setEventsLoading] = useState(true)
 
   useEffect(() => {
-    if (!isAuthenticated) return
-    getCategories().then((cats) => setCategories(cats.filter((c) => !c.parentId))).catch(() => {})
-    // Featured events on the homepage should only ever tease something a visitor can still act on —
-    // never a closed one. Live events surface first, then upcoming ones fill any remaining slots.
+    if (isAuthenticated) {
+      getCategories().then((cats) => setCategories(cats.filter((c) => !c.parentId))).catch(() => {})
+    }
+    // Featured events are a public teaser — shown (and fetched) regardless of sign-in status, same
+    // as the /api/auctions catalogue, so an anonymous visitor sees real auctions before deciding to
+    // register. Should only ever tease something a visitor can still act on — never a closed one.
+    // Live events surface first, then upcoming ones fill any remaining slots.
     getEvents().then((evs) => {
       const active = evs
         .filter((e) => eventStatus(e) !== 'CLOSED')
@@ -180,7 +183,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {isAuthenticated && (eventsLoading || events.length > 0) && (
+      {(eventsLoading || events.length > 0) && (
         <section className="home-band band-events" id="events">
           <div className="road-strip" aria-hidden="true">
             <CarSilhouette className="road-car road-car-1" />
@@ -193,8 +196,16 @@ export default function HomePage() {
               </div>
               {eventsLoading ? <EventTileGridSkeleton count={FEATURED_EVENT_COUNT} /> : (
               <div className="event-tile-grid">
-                {events.map((e) => (
-                  <Link key={e.id} to={`/auctions?category=${e.categorySlug}&event=${e.id}`} className="event-tile" data-reveal>
+                {events.map((e) => {
+                  const eventPath = `/auctions?category=${e.categorySlug}&event=${e.id}`
+                  return (
+                  <Link
+                    key={e.id}
+                    to={isAuthenticated ? eventPath : '/login'}
+                    state={isAuthenticated ? undefined : { from: eventPath }}
+                    className="event-tile"
+                    data-reveal
+                  >
                     <span className="event-tile-name">{e.name}</span>
                     <span className="event-tile-meta">
                       {e.itemCount} item{e.itemCount === 1 ? '' : 's'}{e.location ? ` · ${e.location}` : ''}
@@ -204,7 +215,8 @@ export default function HomePage() {
                     </span>
                     <span className="event-tile-cta">Explore event →</span>
                   </Link>
-                ))}
+                  )
+                })}
               </div>
               )}
             </div>

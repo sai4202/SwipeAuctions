@@ -148,6 +148,13 @@ public class SecurityConfig {
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/auctions")
                         .permitAll()
 
+                        // Same public-teaser rationale as GET /api/auctions above — the homepage's
+                        // "Featured auction events" row is shown to anonymous visitors too (must be
+                        // checked before GET /api/events/mine's authenticated() rule, which it already
+                        // is, above).
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/events")
+                        .permitAll()
+
                         // User Session APIs — DEALER included so dealers can self-manage/logout their
                         // own devices too, not just USER (fails closed before this fix: DEALER got a
                         // blanket 403). See Findings_pendings.md (Low/Informational).
