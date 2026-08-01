@@ -9,10 +9,11 @@ import {
   createStockListing, uploadStockImage, createStockAuction, bulkImportStock, downloadStockTemplate,
   getAdminKycQueue, approveKyc, rejectKyc,
   getRegistrationFee, updateRegistrationFee, getSubscriptionPrices, updateSubscriptionPrices,
+  getMembershipBenefits, createMembershipBenefit, updateMembershipBenefitTiers, deleteMembershipBenefit,
   type AdminStats, type AdminUser, type AdminAuction, type Dispute, type AdminHold, type ReleaseHoldResult,
   type AdminUserBid,
   type AdminCategory, type AdminCategoryAttribute, type BulkImportResult, type AdminKyc,
-  type SubscriptionPrice, type SubscriptionTier, type BillingCycle,
+  type SubscriptionPrice, type SubscriptionTier, type BillingCycle, type MembershipBenefit,
 } from '../api'
 import { money, moneyCompact, formatDateTimeShort, openUserDetails } from '../util'
 import { StatTilesSkeleton } from '../components/Skeleton'
@@ -959,9 +960,18 @@ function Settings() {
   const [priceMsg, setPriceMsg] = useState('')
   const [priceError, setPriceError] = useState('')
 
+  const [benefits, setBenefits] = useState<MembershipBenefit[]>([])
+  const [benefitsSaving, setBenefitsSaving] = useState(false)
+  const [benefitsMsg, setBenefitsMsg] = useState('')
+  const [benefitsError, setBenefitsError] = useState('')
+  const [newBenefitName, setNewBenefitName] = useState('')
+  const [addingBenefit, setAddingBenefit] = useState(false)
+  const [addBenefitError, setAddBenefitError] = useState('')
+
   useEffect(() => {
     getRegistrationFee().then((f) => setFee(String(f))).catch((e) => setFeeError(errorMessage(e)))
     getSubscriptionPrices().then(setPrices).catch((e) => setPriceError(errorMessage(e)))
+    getMembershipBenefits().then(setBenefits).catch((e) => setBenefitsError(errorMessage(e)))
   }, [])
 
   const priceFor = (tier: SubscriptionTier, cycle: BillingCycle) =>
@@ -994,6 +1004,42 @@ function Settings() {
       setPrices(saved)
       setPriceMsg('Subscription prices saved.')
     } catch (e2) { setPriceError(errorMessage(e2)) } finally { setPriceSaving(false) }
+  }
+
+  const toggleBenefitTier = (benefitId: string, tier: SubscriptionTier, checked: boolean) => {
+    setBenefits((prev) => prev.map((b) => b.id !== benefitId ? b : {
+      ...b,
+      enabledTiers: checked ? [...b.enabledTiers, tier] : b.enabledTiers.filter((t) => t !== tier),
+    }))
+  }
+
+  const submitBenefitTiers = async (e: FormEvent) => {
+    e.preventDefault()
+    setBenefitsSaving(true); setBenefitsError(''); setBenefitsMsg('')
+    try {
+      const saved = await updateMembershipBenefitTiers(benefits.map((b) => ({ benefitId: b.id, enabledTiers: b.enabledTiers })))
+      setBenefits(saved)
+      setBenefitsMsg('Membership benefits saved.')
+    } catch (e2) { setBenefitsError(errorMessage(e2)) } finally { setBenefitsSaving(false) }
+  }
+
+  const submitNewBenefit = async (e: FormEvent) => {
+    e.preventDefault()
+    setAddingBenefit(true); setAddBenefitError('')
+    try {
+      const created = await createMembershipBenefit(newBenefitName)
+      setBenefits((prev) => [...prev, created])
+      setNewBenefitName('')
+    } catch (e2) { setAddBenefitError(errorMessage(e2)) } finally { setAddingBenefit(false) }
+  }
+
+  const removeBenefit = async (id: string) => {
+    if (!confirm('Remove this benefit? It will disappear from every tier card.')) return
+    setBenefitsError('')
+    try {
+      await deleteMembershipBenefit(id)
+      setBenefits((prev) => prev.filter((b) => b.id !== id))
+    } catch (e2) { setBenefitsError(errorMessage(e2)) }
   }
 
   return (
@@ -1055,6 +1101,67 @@ function Settings() {
         </form>
         {priceError && <div className="error">{priceError}</div>}
         {priceMsg && <div className="ok">{priceMsg}</div>}
+      </div>
+
+      <div className="card">
+        <h2 style={{ fontSize: 15, margin: '0 0 12px' }}>Membership benefits</h2>
+        <p className="muted" style={{ fontSize: 12.5, marginTop: 0 }}>
+          Shown under every tier on the membership page. Check a tier to include a benefit on that
+          tier's card; unchecked benefits show as a red cross instead.
+        </p>
+        <form onSubmit={submitBenefitTiers}>
+          <div style={{ overflowX: 'auto' }}>
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>Benefit</th>
+                  {TIERS.map((tier) => <th key={tier}>{tier}</th>)}
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {benefits.map((b) => (
+                  <tr key={b.id}>
+                    <td>{b.name}</td>
+                    {TIERS.map((tier) => (
+                      <td key={tier}>
+                        <input
+                          type="checkbox"
+                          checked={b.enabledTiers.includes(tier)}
+                          onChange={(e) => toggleBenefitTier(b.id, tier, e.target.checked)}
+                        />
+                      </td>
+                    ))}
+                    <td>
+                      <button type="button" className="btn ghost sm" onClick={() => removeBenefit(b.id)}>Remove</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <button type="submit" className="btn sm" style={{ marginTop: 12 }} disabled={benefitsSaving}>
+            {benefitsSaving ? 'Saving…' : 'Save benefit tiers'}
+          </button>
+        </form>
+        {benefitsError && <div className="error">{benefitsError}</div>}
+        {benefitsMsg && <div className="ok">{benefitsMsg}</div>}
+
+        <form onSubmit={submitNewBenefit} style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap', marginTop: 16 }}>
+          <div className="fgroup" style={{ maxWidth: 320, flex: 1 }}>
+            <small>New benefit</small>
+            <input
+              type="text"
+              placeholder="e.g. Priority customer support"
+              value={newBenefitName}
+              onChange={(e) => setNewBenefitName(e.target.value)}
+            />
+          </div>
+          <button type="submit" className="btn ghost sm" disabled={addingBenefit || !newBenefitName.trim()}>
+            {addingBenefit ? 'Adding…' : 'Add benefit'}
+          </button>
+        </form>
+        {addBenefitError && <div className="error">{addBenefitError}</div>}
       </div>
     </div>
   )

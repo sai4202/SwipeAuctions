@@ -91,16 +91,14 @@ export default function SubscriptionPage() {
       <TierCards
         currentTier={isAuthenticated ? (subscriptionTier as SubscriptionTier) : undefined}
         renderCta={(tier) => (
-          tier === 'NONE' ? null : (
-            <button
-              type="button"
-              className="btn block sm"
-              disabled={!isAuthenticated || busyKey === `${tier}-MONTHLY`}
-              onClick={() => subscribe(tier, 'MONTHLY')}
-            >
-              {busyKey === `${tier}-MONTHLY` ? '…' : isAuthenticated && subscriptionTier === tier ? 'Renew monthly' : 'Subscribe monthly'}
-            </button>
-          )
+          <button
+            type="button"
+            className="btn block sm"
+            disabled={!isAuthenticated || busyKey === `${tier}-MONTHLY`}
+            onClick={() => subscribe(tier, 'MONTHLY')}
+          >
+            {busyKey === `${tier}-MONTHLY` ? '…' : isAuthenticated && subscriptionTier === tier ? 'Renew monthly' : 'Subscribe monthly'}
+          </button>
         )}
       />
 

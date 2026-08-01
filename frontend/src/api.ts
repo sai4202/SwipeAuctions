@@ -83,6 +83,12 @@ export interface MySubscription {
   tier: SubscriptionTier
   expiresAt: string | null
 }
+export interface MembershipBenefit {
+  id: string
+  name: string
+  sortOrder: number
+  enabledTiers: SubscriptionTier[]
+}
 export interface KycStatusResult {
   kycCompleted: boolean
   status: string
@@ -712,6 +718,10 @@ export async function getSubscriptionPrices(): Promise<SubscriptionPrice[]> {
   const res = await api.get<SubscriptionPrice[]>('/api/settings/subscription-prices')
   return res.data
 }
+export async function getMembershipBenefits(): Promise<MembershipBenefit[]> {
+  const res = await api.get<MembershipBenefit[]>('/api/settings/membership-benefits')
+  return res.data
+}
 
 // ---- Platform settings (admin writes) ----
 export async function updateRegistrationFee(fee: number): Promise<number> {
@@ -721,6 +731,19 @@ export async function updateRegistrationFee(fee: number): Promise<number> {
 export async function updateSubscriptionPrices(prices: SubscriptionPrice[]): Promise<SubscriptionPrice[]> {
   const res = await api.put<SubscriptionPrice[]>('/api/admin/settings/subscription-prices', { prices })
   return res.data
+}
+export async function createMembershipBenefit(name: string): Promise<MembershipBenefit> {
+  const res = await api.post<MembershipBenefit>('/api/admin/settings/membership-benefits', { name })
+  return res.data
+}
+export async function updateMembershipBenefitTiers(
+  updates: { benefitId: string; enabledTiers: SubscriptionTier[] }[],
+): Promise<MembershipBenefit[]> {
+  const res = await api.put<MembershipBenefit[]>('/api/admin/settings/membership-benefits/tiers', { updates })
+  return res.data
+}
+export async function deleteMembershipBenefit(id: string): Promise<void> {
+  await api.delete(`/api/admin/settings/membership-benefits/${id}`)
 }
 export async function updateListingRequiredTier(listingId: string, requiredTier: SubscriptionTier): Promise<AdminListing> {
   const res = await api.patch<AdminListing>(`/api/admin/listings/${listingId}/required-tier`, { requiredTier })

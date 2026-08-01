@@ -194,7 +194,7 @@ export default function HomePage() {
               {eventsLoading ? <EventTileGridSkeleton count={FEATURED_EVENT_COUNT} /> : (
               <div className="event-tile-grid">
                 {events.map((e) => (
-                  <Link key={e.id} to={`/auctions?eventId=${e.id}`} className="event-tile" data-reveal>
+                  <Link key={e.id} to={`/auctions?category=${e.categorySlug}&event=${e.id}`} className="event-tile" data-reveal>
                     <span className="event-tile-name">{e.name}</span>
                     <span className="event-tile-meta">
                       {e.itemCount} item{e.itemCount === 1 ? '' : 's'}{e.location ? ` · ${e.location}` : ''}
@@ -225,10 +225,8 @@ export default function HomePage() {
             </p>
             <TierCards
               currentTier={isAuthenticated ? (subscriptionTier as SubscriptionTier) : undefined}
-              renderCta={(tier) => (
-                <Link to="/subscription" className="btn ghost sm block">
-                  {tier === 'NONE' ? 'Get started' : 'View plans'}
-                </Link>
+              renderCta={() => (
+                <Link to="/subscription" className="btn ghost sm block">View plans</Link>
               )}
             />
           </div>
