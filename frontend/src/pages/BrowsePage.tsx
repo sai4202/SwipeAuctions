@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useLocation, useSearchParams } from 'react-router-dom'
+import { useLocation, useSearchParams } from 'react-router-dom'
 import { getAuctions, getCategories, getCategoryFilters, errorMessage, type Auction, type Category, type CategoryFilter } from '../api'
 import { addMultiBid, removeMultiBid, getMultiBidIds, money, tierMeets, effectiveStatus, MULTI_KEY } from '../util'
 import { type BrowseFilter, filterParam, matchesFilter } from '../browseFilters'
 import { EVENT_CATEGORY_SLUGS } from '../eventCategories'
-import { useAuth } from '../auth'
 import { useCachedFetch } from '../useCachedFetch'
 import AuctionCard from '../components/AuctionCard'
 import AuctionListTable from '../components/AuctionListTable'
@@ -32,7 +31,6 @@ interface Chip {
 }
 
 export default function BrowsePage() {
-  const { isAuthenticated } = useAuth()
   const location = useLocation()
   // /swipe-stock renders this same page, locked down to the Swipe Stock platform seller's own
   // listings — everything else (filters, layout, grid) is identical to the normal auctions page.
@@ -259,12 +257,32 @@ export default function BrowsePage() {
           {isSwipeStockView && <span className="eyebrow">Swipe Stock</span>}
           <div className="tabs status-tabs">
             {STATUS.map((s) => (
-              <button key={s} className={`tab ${status === s ? 'active' : ''}`} onClick={() => setParam('status', s)}>{SLABEL[s]}</button>
+              <button key={s} className={`tab ${status === s ? 'active' : ''}`} onClick={() => setParam('status', s)}>
+                {SLABEL[s]}{status === s && !loading ? ` (${filtered.length})` : ''}
+              </button>
             ))}
           </div>
         </div>
-        {isAuthenticated && (
-          <Link to="/wishlist" className="btn ghost sm">♡ Wishlist{multiIds.length > 0 ? ` (${multiIds.length})` : ''}</Link>
+        {!loading && !error && (
+          <div className="view-toggle">
+            <button
+              type="button" className={view === 'catalogue' ? 'active' : ''}
+              onClick={() => setParam('view', '')} title="Catalogue view" aria-label="Catalogue view"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="8" height="8" rx="1.5" /><rect x="13" y="3" width="8" height="8" rx="1.5" />
+                <rect x="3" y="13" width="8" height="8" rx="1.5" /><rect x="13" y="13" width="8" height="8" rx="1.5" />
+              </svg>
+            </button>
+            <button
+              type="button" className={view === 'list' ? 'active' : ''}
+              onClick={() => setParam('view', 'list')} title="List view" aria-label="List view"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="4" y1="6" x2="20" y2="6" /><line x1="4" y1="12" x2="20" y2="12" /><line x1="4" y1="18" x2="20" y2="18" />
+              </svg>
+            </button>
+          </div>
         )}
       </div>
 
@@ -391,30 +409,6 @@ export default function BrowsePage() {
 
       <div className="results">
         {error && <div className="error">{error}</div>}
-        {!loading && !error && (
-          <div className="results-bar">
-            <span className="muted">{filtered.length} {filtered.length === 1 ? 'auction' : 'auctions'}</span>
-            <div className="view-toggle">
-              <button
-                type="button" className={view === 'catalogue' ? 'active' : ''}
-                onClick={() => setParam('view', '')} title="Catalogue view" aria-label="Catalogue view"
-              >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="3" y="3" width="8" height="8" rx="1.5" /><rect x="13" y="3" width="8" height="8" rx="1.5" />
-                  <rect x="3" y="13" width="8" height="8" rx="1.5" /><rect x="13" y="13" width="8" height="8" rx="1.5" />
-                </svg>
-              </button>
-              <button
-                type="button" className={view === 'list' ? 'active' : ''}
-                onClick={() => setParam('view', 'list')} title="List view" aria-label="List view"
-              >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="4" y1="6" x2="20" y2="6" /><line x1="4" y1="12" x2="20" y2="12" /><line x1="4" y1="18" x2="20" y2="18" />
-                </svg>
-              </button>
-            </div>
-          </div>
-        )}
         {loading ? (
           view === 'list' ? (
             <div className="card" style={{ padding: 0, overflow: 'hidden' }}>

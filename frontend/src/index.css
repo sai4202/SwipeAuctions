@@ -31,7 +31,10 @@
   --transition-fast: .15s var(--ease);
   --transition-base: .25s var(--ease);
 
-  font-family: 'Segoe UI', system-ui, -apple-system, Roboto, sans-serif;
+  /* Plus Jakarta Sans (self-hosted via @fontsource, loaded in main.tsx) — one consistent typeface
+     across every OS/browser instead of each rendering its own system default; the system stack
+     stays as a fallback for the instant before the webfont finishes loading. */
+  font-family: 'Plus Jakarta Sans', 'Segoe UI', system-ui, -apple-system, Roboto, sans-serif;
 }
 
 /* ---------- Dark theme override (toggled via ThemeContext, see Header's theme switch) ---------- */
@@ -63,7 +66,11 @@ html, body { margin: 0; padding: 0; }
    overflow at the document root eliminates that failure mode outright, regardless of which component
    caused it. Elements that intentionally scroll sideways (.home-subnav-inner, .thumb-rail, table
    wrappers) use their own `overflow-x: auto` and are unaffected — this only clips the page as a whole. */
-html, body, #root { overflow-x: hidden; }
+/* overflow-x: clip (not hidden) — hidden forces the other axis to overflow-y:auto, which makes this
+   ancestor count as a "scrolling box" and silently breaks position:sticky on .header/.home-subnav
+   further down the tree (their sticky containment stops here instead of at the real viewport
+   scroll). clip has the same horizontal-clipping effect without that side effect. */
+html, body, #root { overflow-x: clip; }
 html { scroll-behavior: smooth; }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
@@ -94,7 +101,10 @@ button { font-family: inherit; }
 
 /* ---------- Header / nav ---------- */
 .header {
-  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; column-gap: 16px; row-gap: 10px;
+  /* auto auto 1fr (not 1fr auto 1fr) — user decision 2026-07-31: nav sits right next to the logo
+     instead of floating centered, since it now carries more items (My Wins, Wishlist) and reads
+     better as a left-aligned nav bar with actions pinned to the right. */
+  display: grid; grid-template-columns: auto auto 1fr; align-items: center; column-gap: 24px; row-gap: 10px;
   padding: 16px 28px; position: sticky; top: 0; z-index: 20;
   background: rgba(255,255,255,.82); backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--border);
@@ -102,11 +112,10 @@ button { font-family: inherit; }
 [data-theme="dark"] .header { background: rgba(10,10,12,.82); }
 .brand { grid-column: 1; justify-self: start; display: flex; align-items: center; gap: 12px; }
 .brand .mark { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center;
-  background: linear-gradient(135deg, var(--red), #b91c1c); color: #fff; font-weight: 900; box-shadow: 0 6px 18px rgba(239,61,46,.35); }
+  background: linear-gradient(135deg, var(--red), #b91c1c); color: #fff; font-weight: 800; box-shadow: 0 6px 18px rgba(239,61,46,.35); }
 .brand .name { font-weight: 800; letter-spacing: .14em; font-size: 15px; }
 .brand .name span { color: var(--red); }
-/* Centered independently of the brand/header-right widths on either side (grid, not flex space-between). */
-.mainnav { grid-column: 2; justify-self: center; display: flex; align-items: center; gap: 26px; font-size: 13px; font-weight: 700; letter-spacing: .08em; flex-wrap: wrap; }
+.mainnav { grid-column: 2; justify-self: start; display: flex; align-items: center; gap: 22px; font-size: 13px; font-weight: 700; letter-spacing: .08em; flex-wrap: wrap; }
 .mainnav a { color: var(--muted); text-transform: uppercase; white-space: nowrap; }
 .mainnav a:hover, .mainnav a.active { color: var(--text); }
 .add-tab-btn { display: flex; align-items: center; gap: 4px; background: transparent; border: 1px dashed var(--border);
@@ -117,27 +126,40 @@ button { font-family: inherit; }
 .add-tab-btn:disabled { color: var(--dim); cursor: not-allowed; opacity: .6; }
 .header-right { grid-column: 3; justify-self: end; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; justify-content: flex-end; }
 .header-right > * { white-space: nowrap; }
+/* Base width trimmed 160px->130px (2026-08-01: My Wins/Wishlist moved here from .mainnav) to make
+   room for .header-quicklinks alongside it without pushing the wrap threshold even lower — see the
+   wrap-fragility note below, which is now under more pressure than when it was written. */
 .header-search { display: flex; align-items: center; gap: 8px; background: var(--panel); border: 1px solid var(--border);
-  border-radius: var(--radius-full); padding: 7px 14px; flex: 0 1 160px; min-width: 90px;
+  border-radius: var(--radius-full); padding: 7px 14px; flex: 0 1 130px; min-width: 80px;
   transition: border-color var(--transition-fast), flex-basis var(--transition-fast); }
-/* Kept modest on purpose: at some desktop widths this row (search + theme toggle + credit-limit
-   chip + account menu) sits only ~10-20px under the header's third grid column before wrapping
-   the whole row down onto its own line (a taller-than-expected header) — a wider expansion here
-   eats into that margin and makes the wrap trigger at even more common widths. */
-.header-search:focus-within { flex-basis: 190px; }
+/* Kept modest on purpose: at some desktop widths this row (search + quicklinks + theme toggle +
+   credit-limit chip + account menu) sits only ~10-20px under the header's third grid column before
+   wrapping the whole row down onto its own line (a taller-than-expected header) — a wider expansion
+   here eats into that margin and makes the wrap trigger at even more common widths. */
+.header-search:focus-within { flex-basis: 160px; }
 .header-search:focus-within { border-color: var(--red); }
 .header-search-icon { color: var(--dim); font-size: 12.5px; flex: none; }
 .header-search input { flex: 1; min-width: 0; background: transparent; border: none; outline: none; color: var(--text); font-size: 13px; }
 .header-search input::placeholder { color: var(--dim); }
+.header-quicklinks { display: flex; align-items: center; gap: 18px; font-size: 13px; font-weight: 700; letter-spacing: .08em; }
+.header-quicklinks a { color: var(--muted); text-transform: uppercase; white-space: nowrap; }
+.header-quicklinks a:hover, .header-quicklinks a.active { color: var(--text); }
 .mobile-search { padding: 12px 16px; border-bottom: 1px solid var(--border); }
 .mobile-search input { width: 100%; padding: 10px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border);
   background: var(--panel); color: var(--text); font-size: 13.5px; }
-.credit { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted);
-  border: 1px solid var(--border); border-radius: var(--radius-full); padding: 6px 12px; background: var(--panel);
-  transition: border-color var(--transition-fast); }
-.credit:hover { border-color: var(--green); }
-.credit .gdot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); }
-.credit b { color: var(--text); }
+.credit { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; color: var(--green);
+  border: 1px solid var(--green); border-radius: var(--radius-full); padding: 6px 14px;
+  background: color-mix(in srgb, var(--green) 12%, var(--panel));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 10%, transparent);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast); }
+.credit:hover { box-shadow: 0 0 0 5px color-mix(in srgb, var(--green) 16%, transparent); }
+.credit .gdot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green);
+  animation: credit-dot-pulse 1.8s ease-in-out infinite; }
+.credit b { color: var(--text); font-size: 13px; }
+@keyframes credit-dot-pulse {
+  0%, 100% { box-shadow: 0 0 6px var(--green); opacity: 1; }
+  50% { box-shadow: 0 0 12px 3px var(--green); opacity: .75; }
+}
 .link-login { font-size: 13px; font-weight: 700; letter-spacing: .06em; color: var(--muted); text-transform: uppercase; transition: color var(--transition-fast); }
 .link-login:hover { color: var(--text); }
 .theme-toggle { width: 36px; height: 36px; border-radius: 999px; flex: none; }
@@ -210,7 +232,10 @@ button { font-family: inherit; }
 .btn.sm { padding: 7px 12px; font-size: 12px; }
 .search-btn { text-transform: none; border-radius: var(--radius-full); padding: 11px 22px; letter-spacing: normal; }
 
-.container { max-width: 1160px; margin: 0 auto; padding: 34px 28px 64px; }
+/* 1320px (up from 1160px, user decision 2026-07-31: the old width left a lot of dead space on
+   screens wider than ~1400px — most content pages are just a centered column of cards regardless
+   of container width, so there was no real reason to cap it that tight). */
+.container { max-width: 1320px; margin: 0 auto; padding: 20px 28px 64px; }
 /* List-view tables (AuctionListTable, EventsBrowse's item table) have 9 columns of mostly-fixed-width
    data (dates, prices, counts) plus one content-heavy "Details" column — the default centered
    1160px container left them squeezed enough that Base Price/Current Bid/Bids/Action scrolled off
@@ -390,7 +415,8 @@ button { font-family: inherit; }
 .cat-tile-grid [data-reveal]:nth-child(7) { --reveal-i: 6; } .cat-tile-grid [data-reveal]:nth-child(8) { --reveal-i: 7; }
 .cat-tile-grid [data-reveal]:nth-child(n+9) { --reveal-i: 8; }
 .event-tile-grid [data-reveal]:nth-child(1) { --reveal-i: 0; } .event-tile-grid [data-reveal]:nth-child(2) { --reveal-i: 1; }
-.event-tile-grid [data-reveal]:nth-child(3) { --reveal-i: 2; }
+.event-tile-grid [data-reveal]:nth-child(3) { --reveal-i: 2; } .event-tile-grid [data-reveal]:nth-child(4) { --reveal-i: 3; }
+.event-tile-grid [data-reveal]:nth-child(5) { --reveal-i: 4; }
 .step-grid [data-reveal]:nth-child(1) { --reveal-i: 0; } .step-grid [data-reveal]:nth-child(2) { --reveal-i: 1; }
 .step-grid [data-reveal]:nth-child(3) { --reveal-i: 2; } .step-grid [data-reveal]:nth-child(4) { --reveal-i: 3; }
 @media (prefers-reduced-motion: reduce) {
@@ -404,7 +430,9 @@ button { font-family: inherit; }
 .cta-banner p { margin: 0; max-width: 480px; }
 .cta-banner-actions { display: flex; gap: 10px; flex: none; }
 
-.event-tile-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }
+/* auto-fit (not auto-fill): with fewer than 5 events the unused tracks collapse to 0 instead of
+   sitting there empty, so the existing tiles stretch to fill the row rather than bunching left. */
+.event-tile-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
 .event-tile { display: flex; flex-direction: column; gap: 6px; background: var(--panel); border: 1px solid var(--border);
   border-radius: 14px; padding: 20px; color: var(--text); transition: transform .12s, border-color .12s; }
 .event-tile:hover { transform: translateY(-3px); border-color: var(--red); }
@@ -493,7 +521,7 @@ button { font-family: inherit; }
 }
 
 /* ---------- Homepage in-page sub-nav + full-bleed section bands ---------- */
-.home-subnav { position: sticky; top: 67px; z-index: 15; background: rgba(255,255,255,.9); backdrop-filter: blur(8px);
+.home-subnav { position: sticky; top: 84px; z-index: 15; background: rgba(255,255,255,.9); backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--border); }
 [data-theme="dark"] .home-subnav { background: rgba(10,10,12,.9); }
 .home-subnav-inner { display: flex; gap: 4px; overflow-x: auto; max-width: 1160px; margin: 0 auto; padding: 10px 28px; }
@@ -615,7 +643,7 @@ button { font-family: inherit; }
 [data-theme="dark"] .band-how .step-tile { box-shadow: none; }
 
 @media (max-width: 700px) {
-  .home-subnav { top: 61px; }
+  .home-subnav { top: 67px; }
   .home-band { padding: 34px 0; }
 }
 
@@ -628,7 +656,7 @@ button { font-family: inherit; }
 .tier-card-badge { position: absolute; top: -11px; right: 16px; background: var(--green); color: #fff;
   font-size: 10.5px; font-weight: 800; padding: 3px 10px; border-radius: 999px; text-transform: uppercase; letter-spacing: .04em; }
 .tier-card h3 { margin: 0; font-size: 17px; }
-.tier-card-price { font-size: 26px; font-weight: 900; }
+.tier-card-price { font-size: 26px; font-weight: 800; }
 .tier-card-price-period { font-size: 13px; font-weight: 700; color: var(--muted); margin-left: 2px; }
 .tier-card-features { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px;
   font-size: 13px; color: var(--muted); flex: 1; }
@@ -646,11 +674,11 @@ button { font-family: inherit; }
 }
 
 /* ---------- Cards / grid ---------- */
-/* minmax(210px, 1fr) is tuned against .container's own max-width (1160px, minus its 2x28px side
-   padding = 1104px usable): (1104 - 4*gap)/5 ≈ 210px, so exactly 5 columns fit on a laptop/desktop
-   screen — auto-fill then steps down to 4/3/2 on its own as the viewport narrows, with no extra
-   breakpoints needed, down to the explicit 2-column override below for phones. */
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 13px; align-items: stretch; }
+/* Fixed 4-per-row on desktop (user decision 2026-07-31: auto-fill's variable 5/4/3-column count
+   from row to row read as visually unstable — a firm count reads as an intentional layout instead).
+   Steps down to 3 at tablet widths and 2 on phones (media queries below) rather than reflowing
+   continuously, so a row is always evenly filled instead of leaving an odd gap on the last one. */
+.grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; align-items: stretch; }
 .card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 18px; }
 .acard.card { padding: 13px; }
 /* min-width: 0 overrides the browser default (min-width: auto) that grid/flex items get. Without
@@ -660,7 +688,7 @@ button { font-family: inherit; }
    sizing and the browser falls back to the image's natural size. That forced every grid track to
    grow to fit the widest photo among all the cards, blowing the whole row past the viewport on
    phones (root cause of the "2-up grid still needs horizontal scrolling" bug). */
-.acard { display: flex; flex-direction: column; gap: 9px; min-width: 0; transition: transform .12s, border-color .12s; }
+.acard { display: flex; flex-direction: column; gap: 6px; min-width: 0; transition: transform .12s, border-color .12s; }
 .acard:hover { transform: translateY(-3px); border-color: var(--red); }
 .acard h3 { margin: 2px 0; font-size: 15px; }
 .acard .cat { color: var(--red); font-size: 11px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
@@ -669,6 +697,12 @@ button { font-family: inherit; }
 .row { display: flex; align-items: center; justify-content: space-between; }
 .muted { color: var(--muted); font-size: 13px; }
 .price { font-size: 16px; font-weight: 800; }
+
+/* Tablet step-down from the fixed 4-column desktop grid — the phone override further down
+   (max-width: 560px) takes it to 2. */
+@media (max-width: 900px) {
+  .grid { grid-template-columns: repeat(3, 1fr); }
+}
 
 /* ---------- Skeleton loading placeholders ---------- */
 @keyframes skeleton-shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
@@ -716,10 +750,10 @@ button { font-family: inherit; }
 
 /* ---------- Product card price block (Amazon/Flipkart-style) ---------- */
 .acard-title { margin: 2px 0; font-size: 13.5px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 2.2em; }
-.price-block { padding: 8px 0; border-top: 1px solid var(--border); }
-.price-block.big { border-top: none; padding: 4px 0 14px; }
+.price-block { padding: 6px 0; border-top: 1px solid var(--border); }
+.price-block.big { border-top: none; padding: 4px 0 8px; }
 .price-row { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
-.price-now { font-size: 18px; font-weight: 900; }
+.price-now { font-size: 18px; font-weight: 800; }
 .price-block.big .price-now { font-size: 30px; }
 .price-was { color: var(--dim); font-size: 12.5px; text-decoration: line-through; }
 .price-label { color: var(--dim); font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; display: block; margin-bottom: 2px; }
@@ -746,6 +780,18 @@ button { font-family: inherit; }
 .card-cta-icon { flex: none; width: 30px; padding: 0; display: grid; place-items: center; }
 .card-cta-input { flex: 1; min-width: 0; padding: 7px 4px; font-size: 12.5px; text-align: center; }
 .card-cta-disabled { flex: 1; text-align: center; opacity: .55; pointer-events: none; }
+/* Draws the eye to the fact that this field is directly typeable — a bidder can enter an amount
+   right here instead of opening the auction page first. Pulses gently until focused/filled, then
+   settles down so it doesn't keep distracting once the bidder is already using it. */
+.bid-input-highlight { border-color: var(--red); animation: bid-input-pulse 2.2s ease-in-out infinite; }
+.bid-input-highlight:focus, .bid-input-highlight:not(:placeholder-shown) { animation: none; box-shadow: none; }
+@keyframes bid-input-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 61, 46, .35); }
+  50% { box-shadow: 0 0 0 5px rgba(239, 61, 46, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bid-input-highlight { animation: none; }
+}
 .icon-btn { width: 40px; flex: none; border-radius: var(--radius-sm); border: 1px solid var(--border); background: transparent;
   color: var(--text); cursor: pointer; font-size: 16px; display: grid; place-items: center;
   transition: border-color var(--transition-fast), background-color var(--transition-fast); }
@@ -789,7 +835,7 @@ button { font-family: inherit; }
 .price-range { display: flex; align-items: center; gap: 8px; }
 .price-range input { width: 100%; min-width: 0; }
 .price-range span { color: var(--muted); }
-.results-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.results-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
 .view-toggle { display: flex; gap: 4px; flex: none; }
 .view-toggle button { display: flex; align-items: center; justify-content: center; width: 32px; height: 32px;
   border-radius: var(--radius-sm); border: 1px solid var(--border); background: transparent; color: var(--muted);
@@ -804,9 +850,20 @@ button { font-family: inherit; }
 .global-search input { width: 100%; padding: 12px 16px; border-radius: 10px; font-size: 14.5px; }
 
 /* Horizontal filter pill row — replaces the old sidebar. */
-.filter-pill-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 0 0 14px; }
+/* Sticks directly under the header so Category/State/City/etc. stay reachable while scrolling
+   through results (user decision 2026-07-31). Bounded to .container's own width rather than a
+   full-viewport breakout — position:sticky's left/margin offsets resolve against the containing
+   block, not the viewport, so the usual 100vw/-50vw breakout trick miscalculates here. */
+.filter-pill-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 0 0 8px;
+  position: sticky; top: 84px; z-index: 15;
+  padding: 10px 0; background: rgba(255,255,255,.92); backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--border); }
+[data-theme="dark"] .filter-pill-row { background: rgba(10,10,12,.92); }
+@media (max-width: 700px) {
+  .filter-pill-row { top: 67px; }
+}
 .filter-pill-wrap { position: relative; }
-.filter-pill { display: flex; align-items: center; gap: 6px; padding: 9px 14px; border-radius: var(--radius-full);
+.filter-pill { display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: var(--radius-full);
   border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer;
   font-size: 13px; font-weight: 600; white-space: nowrap;
   transition: border-color var(--transition-fast), background-color var(--transition-fast), color var(--transition-fast); }
@@ -871,8 +928,8 @@ button { font-family: inherit; }
 @media (max-width: 780px) { .filter-dropdown { left: auto; right: 0; } }
 
 /* Active-filter chip row. */
-.chip-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 18px; }
-.chip-reset-all { background: none; border: 1px solid var(--border); border-radius: var(--radius-full); padding: 9px 14px;
+.chip-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 0 8px; }
+.chip-reset-all { background: none; border: 1px solid var(--border); border-radius: var(--radius-full); padding: 6px 12px;
   color: var(--red); font-size: 13px; font-weight: 700; cursor: pointer; transition: border-color var(--transition-fast), background-color var(--transition-fast); }
 .chip-reset-all:hover { border-color: var(--red); background: rgba(239,61,46,.06); }
 .chip { display: flex; flex-direction: column; gap: 2px; border: 1px solid var(--border); border-radius: var(--radius-md);
@@ -926,14 +983,14 @@ button { font-family: inherit; }
 @media (max-width: 780px) { .filter-pill-panel { left: auto; right: 0; } }
 
 /* ---------- Product detail page (Amazon/Flipkart-style PDP) ---------- */
-.pdp-layout { display: grid; grid-template-columns: 1.25fr 1fr; gap: 26px; align-items: start; }
+.pdp-layout { display: grid; grid-template-columns: 1.25fr 1fr; gap: 20px; align-items: start; }
 /* Grid items default to a min-width of "auto" (≈ their content's min-content size), not 0 — without
    this, the gallery image's intrinsic size stops its column from ever shrinking past ~380px, blowing
    the whole page out horizontally on narrow (<400px) screens even though the image itself already has
    width:100%. Same fix needed on both columns since they share one track once the layout collapses to
    a single column below 900px. */
 .pdp-gallery, .pdp-buybox { min-width: 0; }
-.pdp-gallery { padding: 20px; }
+.pdp-gallery { padding: 16px; }
 .gallery-wrap { display: flex; gap: 12px; }
 .thumb-rail { display: flex; flex-direction: column; gap: 8px; flex: none; max-height: 460px; overflow-y: auto; padding-right: 2px; }
 .thumb-rail img, .thumb-rail video { width: 58px; height: 58px; object-fit: cover; border-radius: 8px; cursor: pointer; display: block;
@@ -941,9 +998,14 @@ button { font-family: inherit; }
 .thumb-rail img:hover, .thumb-rail video:hover { opacity: 1; }
 .thumb-rail img.active, .thumb-rail video.active { border-color: var(--red); opacity: 1; }
 .gallery-main { flex: 1; min-width: 0; border-radius: 12px; overflow: hidden; background: var(--panel-2); }
-.gallery-main img, .gallery-main video { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; display: block; }
+/* Fixed height (not aspect-ratio) — the column's own width scaling would otherwise scale the image
+   taller too, working against "the whole listing fits without scrolling" (user decision
+   2026-07-31). object-fit:cover still fills the full column width. Also sized to land close to
+   .pdp-buybox's own height so the two columns end near-level instead of leaving a dead gap under
+   the shorter one. */
+.gallery-main img, .gallery-main video { width: 100%; height: 260px; object-fit: cover; display: block; }
 /* ---------- Detail tabs (General Details / Registration / Insurance / Other Details / Remarks) ---------- */
-.detail-tabs { margin-top: 20px; padding-top: 16px; border-top: 1px dashed var(--border); }
+.detail-tabs { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border); }
 /* Underline-style segmented nav (not the pill-style .tabs used for filters elsewhere) — a full-width
    bottom rule so the tab strip reads as one deliberate bar instead of a few pills floating with dead
    space around them in a wide card. */
@@ -957,12 +1019,15 @@ button { font-family: inherit; }
 /* Each attribute gets real visual weight as its own bordered tile (matching .stat-tile's language)
    instead of bare icon+text floating in a mostly-empty grid — a tab with a single field still looks
    deliberate rather than sparse. */
-.detail-tabs-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; margin-top: 18px; }
-.detail-field { display: flex; align-items: flex-start; gap: 12px; min-width: 0;
-  background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 14px; }
+/* minmax dropped from 220px to 150px (user decision 2026-07-31) so a typical listing's fields (6-8
+   of them) fit on one row instead of wrapping to two-plus — the single biggest lever left for
+   fitting the whole page in view without scrolling, short of hiding fields. */
+.detail-tabs-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; margin-top: 14px; }
+.detail-field { display: flex; align-items: flex-start; gap: 8px; min-width: 0;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 8px; }
 .detail-field.wide { grid-column: 1 / -1; }
-.detail-field-icon { flex: none; width: 34px; height: 34px; border-radius: 50%; background: var(--panel);
-  display: grid; place-items: center; font-size: 15px; }
+.detail-field-icon { flex: none; width: 28px; height: 28px; border-radius: 50%; background: var(--panel);
+  display: grid; place-items: center; font-size: 13px; }
 .detail-field-label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
 .detail-field-value { font-size: 14px; font-weight: 700; margin-top: 3px; word-break: break-word; }
 @media (max-width: 480px) { .detail-tabs-grid { grid-template-columns: 1fr; gap: 10px; } .detail-tabs-nav { gap: 14px; } }
@@ -970,7 +1035,7 @@ button { font-family: inherit; }
 /* Admin "Add Stock" form's grouped detail-field sections (General Details / Registration / ...) */
 .detail-field-group { margin-top: 10px; padding-top: 14px; border-top: 1px dashed var(--border); display: flex; flex-direction: column; gap: 10px; }
 
-.pdp-buybox { position: sticky; top: 88px; padding: 22px; }
+.pdp-buybox { position: sticky; top: 88px; padding: 14px; }
 .pdp-buybox h1 { font-size: 21px; margin: 10px 0 4px; line-height: 1.3; }
 /* "Bid Now" from a catalog card lands here with the gallery/specs hidden — a single centered card
    instead of stretching the buy box across the full two-column grid. */
@@ -979,7 +1044,7 @@ button { font-family: inherit; }
 /* Detail tabs sit below the two-column grid (not inside the gallery column) so they can span the
    full page width instead of being squeezed into ~55% of it while the buy box next to them ends
    early and leaves the right side empty. */
-.pdp-details-full { margin-top: 22px; padding: 20px; }
+.pdp-details-full { margin-top: 8px; padding: 10px; }
 .pdp-cta { display: flex; gap: 10px; margin: 16px 0 4px; }
 .pdp-cta .btn { flex: 1; text-align: center; }
 
@@ -1072,11 +1137,19 @@ label { display: block; font-size: 12.5px; color: var(--muted); margin: 14px 0 6
 @keyframes flash { 0% { background: rgba(52,211,153,.22); } 100% { background: transparent; } }
 
 /* ---------- Admin dashboard ---------- */
-.admin-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.admin-table th, .admin-table td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
-.admin-table th { color: var(--muted); font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+/* Shared by every admin table (Users/Auctions/Disputes/Categories/KYC/etc.) AND the browse-page
+   list view (AuctionListTable, via the combined "admin-table list-view-table" class) — one row
+   styling standard everywhere a list of items appears as a table instead of a card grid (user
+   decision 2026-07-31: each row should read as its own bordered item with a little breathing room
+   between rows, matching the catalogue card grid, instead of a dense continuously-ruled table). */
+.admin-table { width: 100%; border-collapse: separate; border-spacing: 0 8px; font-size: 13px; }
+.admin-table th, .admin-table td { text-align: left; padding: 9px 10px; vertical-align: middle; }
+.admin-table th { color: var(--muted); font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; border-bottom: 1px solid var(--border); }
 .admin-table tbody tr { transition: background-color var(--transition-fast); }
-.admin-table tbody tr:hover { background: var(--panel-2); cursor: default; }
+.admin-table tbody tr:hover td { background: var(--panel-2); cursor: default; }
+.admin-table tbody td { background: var(--panel); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.admin-table tbody td:first-child { border-left: 1px solid var(--border); border-top-left-radius: 10px; border-bottom-left-radius: 10px; }
+.admin-table tbody td:last-child { border-right: 1px solid var(--border); border-top-right-radius: 10px; border-bottom-right-radius: 10px; }
 /* Fixed layout + colgroup widths (set in AuctionListTable.tsx / EventsBrowse.tsx) so the
    content-heavy "Details" column actually claims the space auto-layout otherwise left empty,
    instead of leaving a gap before the date/price columns start. */
@@ -1089,7 +1162,7 @@ label { display: block; font-size: 12.5px; color: var(--muted); margin: 14px 0 6
 .vehicle-detail-strip { margin-top: 4px; font-size: 11.5px; display: flex; flex-direction: column; gap: 1px; }
 .vehicle-detail-strip b { color: var(--text); font-weight: 700; }
 .vehicle-detail-strip-row { display: flex; gap: 14px; flex-wrap: wrap; }
-.admin-filters { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
+.admin-filters { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
 .admin-filters input, .admin-filters select { width: auto; }
 
 /* User Details modal — staggered section reveal */
@@ -1099,8 +1172,8 @@ label { display: block; font-size: 12.5px; color: var(--muted); margin: 14px 0 6
 @media (prefers-reduced-motion: reduce) { .udetail-section { animation: none; opacity: 1; } }
 
 /* ---------- Events browse filter bar (Bank Vehicles / Insurance / Premium / Auto) ---------- */
-.event-filter-bar { display: flex; flex-direction: column; gap: 14px; padding: 16px; margin-bottom: 14px; }
-.event-filter-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.event-filter-bar { display: flex; flex-direction: column; gap: 8px; padding: 12px; margin-bottom: 8px; }
+.event-filter-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .event-filter-row input, .event-filter-row select { width: auto; }
 .stat-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; margin: 16px 0 22px; }
 .stat-tile { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
@@ -1205,7 +1278,7 @@ label { display: block; font-size: 12.5px; color: var(--muted); margin: 14px 0 6
    design system rather than a marketing homepage bolted onto plain utility pages. */
 .section-head { position: relative; isolation: isolate; overflow: hidden;
   display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
-  margin: 0 0 26px; padding: 24px 28px; border-radius: 16px; border: 1px solid var(--border);
+  margin: 0 0 14px; padding: 14px 28px; border-radius: 16px; border: 1px solid var(--border);
   background: radial-gradient(120% 160% at 8% 0%, rgba(239,61,46,.09), transparent 55%), var(--panel); }
 .section-head::before { content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none; opacity: .5;
   background-image: radial-gradient(rgba(239,61,46,.16) 1px, transparent 1px); background-size: 20px 20px;

@@ -8,7 +8,8 @@ function getInitialTheme(): Theme {
     const stored = localStorage.getItem(THEME_KEY)
     if (stored === 'light' || stored === 'dark') return stored
   } catch { /* localStorage unavailable (private mode, etc.) — fall back to default */ }
-  return 'light'
+  // Dark is the default (user decision 2026-07-31) — matches index.html's pre-paint script.
+  return 'dark'
 }
 
 interface ThemeState {

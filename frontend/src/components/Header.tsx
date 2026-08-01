@@ -5,7 +5,7 @@ import { useWallet } from '../WalletContext'
 import { useFloatingTabs } from '../FloatingTabsContext'
 import { useTheme } from '../ThemeContext'
 import { logout, adminLogout } from '../api'
-import { moneyCompact } from '../util'
+import { money } from '../util'
 
 export default function Header() {
   const { isAuthenticated, role, lastRole, kycCompleted, signOut } = useAuth()
@@ -20,6 +20,9 @@ export default function Header() {
   // in the header by writing that same param, preserving whatever other filters are already applied
   // if we're already on one of those pages.
   const isBrowseRoute = location.pathname === '/auctions' || location.pathname === '/swipe-stock'
+  // Home has its own prominent hero search box — a second search field in the header right above
+  // it is redundant, so skip rendering it only on that route.
+  const isHome = location.pathname === '/'
   const [q, setQ] = useState('')
   useEffect(() => {
     setQ(isBrowseRoute ? new URLSearchParams(location.search).get('q') || '' : '')
@@ -99,38 +102,28 @@ export default function Header() {
         </nav>
 
         <div className="header-right">
-          <form className="header-search" onSubmit={submitSearch}>
-            <span className="header-search-icon">🔍</span>
-            <input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Search auctions…"
-              aria-label="Search auctions"
-            />
-          </form>
-          <button
-            type="button"
-            className="icon-btn theme-toggle"
-            onClick={toggleTheme}
-            aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-            title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-          >
-            {theme === 'dark' ? (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="4" />
-                <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
-              </svg>
-            ) : (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-              </svg>
-            )}
-          </button>
+          {isAuthenticated && !isHome && (
+            <form className="header-search" onSubmit={submitSearch}>
+              <span className="header-search-icon">🔍</span>
+              <input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Search auctions…"
+                aria-label="Search auctions"
+              />
+            </form>
+          )}
+          {isAuthenticated && !isAdmin && (
+            <div className="header-quicklinks">
+              <NavLink to="/my-wins">My Wins</NavLink>
+              <NavLink to="/wishlist">Wishlist</NavLink>
+            </div>
+          )}
           {isAuthenticated && !isAdmin && !kycCompleted && (
             <Link to="/kyc" className="link-login" style={{ color: 'var(--orange, #d97706)', whiteSpace: 'nowrap' }}>Complete KYC</Link>
           )}
           {isAuthenticated && credit != null && (
-            <Link to="/wallet" className="credit"><span className="gdot" />Credit Limit <b>{moneyCompact(credit)}</b></Link>
+            <Link to="/wallet" className="credit"><span className="gdot" />Credit Limit <b>{money(credit)}</b></Link>
           )}
           {isAuthenticated && !isAdmin && (
             <div className="account-menu" ref={profileRef}>
@@ -143,13 +136,14 @@ export default function Header() {
               {profileOpen && (
                 <div className="account-dropdown">
                   <NavLink to="/profile" className="account-dropdown-item" onClick={() => setProfileOpen(false)}>Profile</NavLink>
-                  <NavLink to="/my-wins" className="account-dropdown-item" onClick={() => setProfileOpen(false)}>My Wins</NavLink>
                   <NavLink to="/my-transactions" className="account-dropdown-item" onClick={() => setProfileOpen(false)}>My Transactions</NavLink>
                   <NavLink to="/subscription" className="account-dropdown-item" onClick={() => setProfileOpen(false)}>Subscription</NavLink>
-                  <NavLink to="/wishlist" className="account-dropdown-item" onClick={() => setProfileOpen(false)}>Wishlist</NavLink>
                   <NavLink to="/wallet" className="account-dropdown-item" onClick={() => setProfileOpen(false)}>Wallet</NavLink>
                   <NavLink to="/about" className="account-dropdown-item" onClick={() => setProfileOpen(false)}>About Us</NavLink>
                   <NavLink to="/contact" className="account-dropdown-item" onClick={() => setProfileOpen(false)}>Contact Us</NavLink>
+                  <button type="button" className="account-dropdown-item" onClick={toggleTheme}>
+                    {theme === 'dark' ? '☀ Light mode' : '☾ Dark mode'}
+                  </button>
                   <button type="button" className="account-dropdown-item" onClick={() => { setProfileOpen(false); doLogout() }}>Logout</button>
                 </div>
               )}
@@ -175,17 +169,25 @@ export default function Header() {
       </header>
 
       <nav className={`mobile-menu ${mobileOpen ? 'open' : ''}`}>
-        <form className="mobile-search" onSubmit={(e) => { submitSearch(e); closeMobile() }}>
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search auctions…"
-            aria-label="Search auctions"
-          />
-        </form>
+        {isAuthenticated && !isHome && (
+          <form className="mobile-search" onSubmit={(e) => { submitSearch(e); closeMobile() }}>
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search auctions…"
+              aria-label="Search auctions"
+            />
+          </form>
+        )}
         <NavLink to="/" end onClick={closeMobile}>Home</NavLink>
         <NavLink to="/auctions" onClick={closeMobile}>Auctions</NavLink>
         <NavLink to="/swipe-stock" onClick={closeMobile}>Swipe Stock</NavLink>
+        {isAuthenticated && !isAdmin && (
+          <>
+            <NavLink to="/my-wins" onClick={closeMobile}>My Wins</NavLink>
+            <NavLink to="/wishlist" onClick={closeMobile}>Wishlist</NavLink>
+          </>
+        )}
         {isAuthenticated && isTopLevel && (
           <button type="button" disabled={tabsFull} onClick={() => { addTab('/auctions'); closeMobile() }}>
             ＋ Add Tab{tabsFull ? ` (max ${maxTabs})` : ''}
@@ -199,17 +201,15 @@ export default function Header() {
           <>
             <div className="mobile-menu-divider" />
             <NavLink to="/profile" onClick={closeMobile}>Profile</NavLink>
-            <NavLink to="/my-wins" onClick={closeMobile}>My Wins</NavLink>
             <NavLink to="/my-transactions" onClick={closeMobile}>My Transactions</NavLink>
             <NavLink to="/subscription" onClick={closeMobile}>Subscription</NavLink>
-            <NavLink to="/wishlist" onClick={closeMobile}>Wishlist</NavLink>
-            {credit != null && <NavLink to="/wallet" onClick={closeMobile}>Wallet — <b>{moneyCompact(credit)}</b></NavLink>}
+            {credit != null && <NavLink to="/wallet" onClick={closeMobile}>Wallet — <b>{money(credit)}</b></NavLink>}
             <NavLink to="/about" onClick={closeMobile}>About Us</NavLink>
             <NavLink to="/contact" onClick={closeMobile}>Contact Us</NavLink>
+            <button type="button" onClick={toggleTheme}>{theme === 'dark' ? '☀ Light mode' : '☾ Dark mode'}</button>
           </>
         )}
         <div className="mobile-menu-divider" />
-        <button type="button" onClick={toggleTheme}>{theme === 'dark' ? '☀ Light mode' : '☾ Dark mode'}</button>
         {isAuthenticated ? (
           <button type="button" onClick={() => { doLogout(); closeMobile() }}>Logout</button>
         ) : (

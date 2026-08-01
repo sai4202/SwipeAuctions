@@ -1,5 +1,6 @@
 package com.swipeauctions.settings.controller;
 
+import com.swipeauctions.auth.config.MobileVerificationConfig;
 import com.swipeauctions.enums.BillingCycle;
 import com.swipeauctions.enums.SubscriptionTier;
 import com.swipeauctions.settings.service.PlatformSettingsService;
@@ -20,9 +21,19 @@ public class SettingsController {
 
     private final PlatformSettingsService settingsService;
 
+    private final MobileVerificationConfig mobileVerificationConfig;
+
     @GetMapping("/registration-fee")
     public BigDecimal registrationFee() {
         return settingsService.getRegistrationFee();
+    }
+
+    // Lets the registration wizard know whether to render the mobile-OTP step, without hardcoding
+    // that decision on the frontend — flipping AUTH_MOBILE_VERIFICATION_REQUIRED alone is then
+    // enough to change both sides' behavior.
+    @GetMapping("/mobile-verification-required")
+    public boolean mobileVerificationRequired() {
+        return mobileVerificationConfig.isRequired();
     }
 
     @GetMapping("/subscription-prices")

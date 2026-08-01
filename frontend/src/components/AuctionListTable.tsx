@@ -1,7 +1,7 @@
-import { Link } from 'react-router-dom'
 import { type Auction } from '../api'
-import { money, cardImage, downloadValuation, effectiveStatus, formatDateTimeShort } from '../util'
-import VehicleDetailStrip from './VehicleDetailStrip'
+import AuctionListRow from './AuctionListRow'
+import SortableTh from './SortableTh'
+import { useSortableData } from '../useSort'
 
 interface Props {
   auctions: Auction[]
@@ -9,77 +9,53 @@ interface Props {
   onToggleTray: (id: string) => void
 }
 
+function getSortValue(a: Auction, key: string) {
+  switch (key) {
+    case 'title': return a.title?.toLowerCase()
+    case 'startTime': return a.startTime
+    case 'endTime': return a.currentEndTime
+    case 'basePrice': return a.basePrice
+    case 'currentBid': return a.currentHighestBid ?? -1
+    case 'bids': return a.bidCount
+    case 'bidsLeft': return a.bidsRemaining ?? -1
+    default: return null
+  }
+}
+
 /**
  * Flat "list view" rendering of an auction set — the table-style alternative to AuctionCard's
- * grid ("catalogue view"), toggled by the user on the browse/swipe-stock pages. The Action column
- * checks effectiveStatus (not just bidsRemaining) so closed/scheduled items never offer "Bid Now".
+ * grid ("catalogue view"), toggled by the user on the browse/swipe-stock pages. Each row
+ * (AuctionListRow) carries the exact same inline bid flow as the grid card.
  */
 export default function AuctionListTable({ auctions, multiIds, onToggleTray }: Props) {
+  const { sorted, sortKey, sortDir, toggleSort } = useSortableData(auctions, getSortValue)
   return (
     <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
       <div style={{ overflowX: 'auto', padding: 16 }}>
         <table className="admin-table list-view-table">
           <colgroup>
             <col style={{ width: 90 }} /><col />
-            <col style={{ width: 110 }} /><col style={{ width: 110 }} />
-            <col style={{ width: 100 }} /><col style={{ width: 100 }} />
-            <col style={{ width: 60 }} /><col style={{ width: 70 }} /><col style={{ width: 150 }} />
+            <col style={{ width: 135 }} /><col style={{ width: 135 }} />
+            <col style={{ width: 105 }} /><col style={{ width: 105 }} />
+            <col style={{ width: 60 }} /><col style={{ width: 70 }} /><col style={{ width: 200 }} />
           </colgroup>
           <thead>
             <tr>
-              <th>Image</th><th>Details</th><th>Start Time</th><th>End Time</th>
-              <th>Base Price</th><th>Current Bid</th><th>Bids</th><th>Bids Left</th><th>Action</th>
+              <th>Image</th>
+              <SortableTh label="Details" sortKey="title" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+              <SortableTh label="Start Time" sortKey="startTime" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+              <SortableTh label="End Time" sortKey="endTime" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+              <SortableTh label="Base Price" sortKey="basePrice" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+              <SortableTh label="Current Bid" sortKey="currentBid" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+              <SortableTh label="Bids" sortKey="bids" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+              <SortableTh label="Bids Left" sortKey="bidsLeft" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+              <th>Action</th>
             </tr>
           </thead>
           <tbody>
-            {auctions.map((a) => {
-              const es = effectiveStatus(a)
-              return (
-                <tr key={a.id}>
-                  <td>
-                    <Link to={`/auctions/${a.id}`}>
-                      <img src={cardImage(a)} alt={a.title} style={{ width: 70, height: 52, objectFit: 'cover', borderRadius: 8, display: 'block' }} />
-                    </Link>
-                    <button type="button" className="linkbtn" style={{ fontSize: 11 }} onClick={() => downloadValuation(a)}>⬇ Valuation</button>
-                  </td>
-                  <td>
-                    <Link to={`/auctions/${a.id}`}><b>{a.title}</b></Link>
-                    <div className="muted" style={{ fontSize: 12 }}>{[a.brand, a.condition.replace('_', ' ')].filter(Boolean).join(' · ')}</div>
-                    <div className="muted" style={{ fontSize: 12 }}>◍ {[a.city, a.state].filter(Boolean).join(', ') || '—'}</div>
-                    <VehicleDetailStrip attributes={a.attributes} />
-                  </td>
-                  <td style={{ whiteSpace: 'nowrap' }}>{formatDateTimeShort(a.startTime)}</td>
-                  <td style={{ whiteSpace: 'nowrap' }}>{formatDateTimeShort(a.currentEndTime)}</td>
-                  <td>{money(a.basePrice)}</td>
-                  <td>{a.currentHighestBid != null ? money(a.currentHighestBid) : '—'}</td>
-                  <td>{a.bidCount}</td>
-                  <td>
-                    {a.bidsRemaining == null ? '—' : a.bidsRemaining === 0 ? (
-                      <span style={{ color: 'var(--red-2)', fontWeight: 700 }}>None left</span>
-                    ) : a.bidsRemaining}
-                  </td>
-                  <td>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 120 }}>
-                      <Link to={`/auctions/${a.id}`} className="btn ghost sm">View Details</Link>
-                      {es !== 'OPEN' ? (
-                        <span className="btn sm" style={{ opacity: .55, pointerEvents: 'none' }}>
-                          {es === 'SCHEDULED' ? 'Not started' : 'Closed'}
-                        </span>
-                      ) : a.bidsRemaining === 0 ? (
-                        <span className="btn sm" style={{ opacity: .55, pointerEvents: 'none' }}>No bids left</span>
-                      ) : (
-                        <Link to={`/auctions/${a.id}?bid=1`} className="btn sm">Bid Now</Link>
-                      )}
-                      {multiIds.includes(a.id) ? (
-                        <button type="button" className="btn light sm" onClick={() => onToggleTray(a.id)}>♥ In wishlist</button>
-                      ) : (
-                        <button type="button" className="btn ghost sm" onClick={() => onToggleTray(a.id)}>♡ Wishlist</button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              )
-            })}
+            {sorted.map((a) => (
+              <AuctionListRow key={a.id} auction={a} inTray={multiIds.includes(a.id)} onToggleTray={onToggleTray} />
+            ))}
           </tbody>
         </table>
       </div>

@@ -704,6 +704,10 @@ export async function getRegistrationFee(): Promise<number> {
   const res = await api.get<number>('/api/settings/registration-fee')
   return res.data
 }
+export async function getMobileVerificationRequired(): Promise<boolean> {
+  const res = await api.get<boolean>('/api/settings/mobile-verification-required')
+  return res.data
+}
 export async function getSubscriptionPrices(): Promise<SubscriptionPrice[]> {
   const res = await api.get<SubscriptionPrice[]>('/api/settings/subscription-prices')
   return res.data

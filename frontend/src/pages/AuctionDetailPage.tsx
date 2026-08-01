@@ -191,7 +191,7 @@ export default function AuctionDetailPage() {
     const feeRequired = !auctionLoading && error.toLowerCase().includes('registration fee')
     return (
       <div className="container">
-        <p><Link to="/auctions">← Back to auctions</Link></p>
+        <p style={{ margin: '0 0 12px' }}><Link to="/auctions">← Back to auctions</Link></p>
         {auctionLoading ? (
           <AuctionDetailSkeleton />
         ) : feeRequired ? (
@@ -242,7 +242,7 @@ export default function AuctionDetailPage() {
 
   return (
     <div className="container">
-      <p><Link to="/auctions">← Back to auctions</Link></p>
+      <p style={{ margin: '0 0 6px' }}><Link to="/auctions">← Back to auctions</Link></p>
 
       <div className={`pdp-layout${showFullDetails ? '' : ' pdp-layout-focused'}`}>
         {/* ---- Gallery + specs ---- */}
@@ -351,10 +351,10 @@ export default function AuctionDetailPage() {
               {needsKyc(error) && <> — <Link to="/kyc" state={{ from: `/auctions/${id}` }}>Complete KYC now</Link></>}
             </div>
           )}
-          {wallet && <p className="muted" style={{ marginTop: 16 }}>Wallet — available {money(wallet.availableBalance)}, held {money(wallet.heldBalance)}</p>}
+          {wallet && <p className="muted" style={{ marginTop: 10 }}>Wallet — available {money(wallet.availableBalance)}, held {money(wallet.heldBalance)}</p>}
 
           {isAuthenticated && (
-            <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px dashed var(--border)' }}>
+            <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px dashed var(--border)' }}>
               {!showDispute ? (
                 <button type="button" className="linkbtn" onClick={() => setShowDispute(true)}>Report an issue with this auction</button>
               ) : (

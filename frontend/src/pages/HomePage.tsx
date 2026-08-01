@@ -6,9 +6,36 @@ import { formatCountdown, msUntil, eventStatus } from '../util'
 import TierCards from '../components/TierCards'
 import HeroVehicle from '../components/HeroVehicle'
 import CarSilhouette from '../components/CarSilhouette'
+import { EventTileGridSkeleton } from '../components/Skeleton'
 import { useReveal } from '../useReveal'
 
 const EVENT_STATUS_RANK: Record<string, number> = { LIVE: 0, UPCOMING: 1, CLOSED: 2 }
+const FEATURED_EVENT_COUNT = 5
+
+// Picking straight off the front of `sorted` tends to surface 5 events from the same category
+// (Bank Vehicles seeds first and has the most Live-zone events) — round-robin across categorySlug
+// instead so the featured row reads as "a bit of everything" rather than one category's back-catalog.
+function pickDiverseEvents(sorted: AuctionEvent[], count: number): AuctionEvent[] {
+  const byCategory = new Map<string, AuctionEvent[]>()
+  for (const e of sorted) {
+    const list = byCategory.get(e.categorySlug)
+    if (list) list.push(e); else byCategory.set(e.categorySlug, [e])
+  }
+  const categorySlugs = [...byCategory.keys()]
+  const picked: AuctionEvent[] = []
+  for (let round = 0; picked.length < count && round < sorted.length; round++) {
+    let addedThisRound = false
+    for (const slug of categorySlugs) {
+      const event = byCategory.get(slug)![round]
+      if (!event) continue
+      picked.push(event)
+      addedThisRound = true
+      if (picked.length === count) break
+    }
+    if (!addedThisRound) break
+  }
+  return picked
+}
 
 const CATEGORY_ICONS: Record<string, string> = {
   vehicles: '🚗', properties: '🏠', 'bank-vehicles': '🏛️', insurance: '🛡️',
@@ -37,6 +64,11 @@ export default function HomePage() {
 
   const [categories, setCategories] = useState<Category[]>([])
   const [events, setEvents] = useState<AuctionEvent[]>([])
+  // Without this, the whole "Featured auction events" section stays entirely absent — not even a
+  // placeholder — for however long GET /api/events takes, then pops in and shifts the layout. On a
+  // slow connection or a cold backend that gap is long enough that a user glancing at the page reads
+  // it as "the section is missing" rather than "still loading".
+  const [eventsLoading, setEventsLoading] = useState(true)
 
   useEffect(() => {
     if (!isAuthenticated) return
@@ -46,9 +78,9 @@ export default function HomePage() {
     getEvents().then((evs) => {
       const active = evs
         .filter((e) => eventStatus(e) !== 'CLOSED')
-        .sort((a, b) => EVENT_STATUS_RANK[eventStatus(a)] - EVENT_STATUS_RANK[eventStatus(b)])
-      setEvents(active.slice(0, 3))
-    }).catch(() => {})
+        .sort((a, b) => EVENT_STATUS_RANK[eventStatus(a)] - EVENT_STATUS_RANK[eventStatus(b)] || msUntil(a.closingTime) - msUntil(b.closingTime))
+      setEvents(pickDiverseEvents(active, FEATURED_EVENT_COUNT))
+    }).catch(() => {}).finally(() => setEventsLoading(false))
   }, [isAuthenticated])
 
   useReveal([categories, events])
@@ -148,7 +180,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {isAuthenticated && events.length > 0 && (
+      {isAuthenticated && (eventsLoading || events.length > 0) && (
         <section className="home-band band-events" id="events">
           <div className="road-strip" aria-hidden="true">
             <CarSilhouette className="road-car road-car-1" />
@@ -159,6 +191,7 @@ export default function HomePage() {
               <div className="section-head">
                 <h2>Featured auction events</h2>
               </div>
+              {eventsLoading ? <EventTileGridSkeleton count={FEATURED_EVENT_COUNT} /> : (
               <div className="event-tile-grid">
                 {events.map((e) => (
                   <Link key={e.id} to={`/auctions?eventId=${e.id}`} className="event-tile" data-reveal>
@@ -173,6 +206,7 @@ export default function HomePage() {
                   </Link>
                 ))}
               </div>
+              )}
             </div>
           </div>
         </section>

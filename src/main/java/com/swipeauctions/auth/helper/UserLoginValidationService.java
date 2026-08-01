@@ -2,6 +2,7 @@ package com.swipeauctions.auth.helper;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import com.swipeauctions.auth.config.MobileVerificationConfig;
 import com.swipeauctions.auth.service.UserLoginSecurityService;
 import com.swipeauctions.common.exception.BadRequestException;
 import com.swipeauctions.common.exception.UnauthorizedException;
@@ -15,6 +16,8 @@ public class UserLoginValidationService {
 
     private final UserLoginSecurityService userLoginSecurityService;
 
+    private final MobileVerificationConfig mobileVerificationConfig;
+
     public void validateVerificationStatus(User user)
     {
         if (!Boolean.TRUE.equals(user.getEmailVerified()))
@@ -22,7 +25,7 @@ public class UserLoginValidationService {
             throw new BadRequestException("Email verification pending");
         }
 
-        if (!Boolean.TRUE.equals(user.getMobileVerified()))
+        if (mobileVerificationConfig.isRequired() && !Boolean.TRUE.equals(user.getMobileVerified()))
         {
             throw new BadRequestException("Mobile verification pending");
         }

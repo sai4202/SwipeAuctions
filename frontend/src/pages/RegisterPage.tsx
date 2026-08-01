@@ -1,7 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate, useLocation, Link } from 'react-router-dom'
 import {
-  register, verifyEmailOtp, verifyMobileOtp, resendOtp, getRegistrationFee, login,
+  register, verifyEmailOtp, verifyMobileOtp, resendOtp, getRegistrationFee,
+  getMobileVerificationRequired, login,
   createRegistrationFeeOrder, verifyRegistrationFee, errorMessage, type OrderIntent,
 } from '../api'
 import { useAuth } from '../auth'
@@ -31,9 +32,16 @@ export default function RegisterPage() {
   const [unverifiedExisting, setUnverifiedExisting] = useState(false)
   const [registrationFee, setRegistrationFee] = useState<number | null>(null)
   const [feeOrder, setFeeOrder] = useState<OrderIntent | null>(null)
+  // Defaults to false (skip mobile-otp) to match the backend's own safe default — an unresolved
+  // fetch and a resolved-false fetch behave identically, so there's no wrong transient state.
+  const [mobileVerificationRequired, setMobileVerificationRequired] = useState(false)
 
   useEffect(() => {
     getRegistrationFee().then(setRegistrationFee).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    getMobileVerificationRequired().then(setMobileVerificationRequired).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -73,10 +81,37 @@ export default function RegisterPage() {
     } catch (err) { setError(errorMessage(err)) } finally { setResending(false) }
   }
 
+  // Shared tail of email and mobile OTP verification: signs the now-active account in immediately
+  // (so the final "pay the registration fee" step can call an authenticated endpoint, instead of
+  // making the user log in separately just to reach it), or falls back to the login page if this
+  // browser already has two other devices signed in.
+  const completeVerificationAndProceed = async (deviceLimitMessage: string) => {
+    const data = await login(email, password)
+    if (data.deviceLimitReached) {
+      setOk(deviceLimitMessage)
+      setTimeout(() => navigate('/login'), 1200)
+      return
+    }
+    signIn({
+      token: data.token, email: data.email, role: data.role, kycCompleted: data.kycCompleted,
+      registrationFeePaid: data.registrationFeePaid,
+      subscriptionTier: data.subscriptionTier, subscriptionExpiresAt: data.subscriptionExpiresAt,
+    })
+    setOk('')
+    setStep('pay-fee')
+  }
+
   const submitEmailOtp = async (e: FormEvent) => {
     e.preventDefault(); setError(''); setOk(''); setBusy(true)
     try {
       await verifyEmailOtp(email, otp)
+      if (!mobileVerificationRequired) {
+        // Mobile OTP is currently skipped (no SMS provider set up) — the account is already active
+        // from email verification alone, so proceed straight to the fee step instead of a mobile
+        // step the user could never actually complete.
+        await completeVerificationAndProceed('Email verified! Redirecting…')
+        return
+      }
       setOk('Email verified! Enter the OTP sent to your mobile number.')
       setOtp('')
       setResendIn(RESEND_COOLDOWN_SECONDS)
@@ -88,22 +123,7 @@ export default function RegisterPage() {
     e.preventDefault(); setError(''); setOk(''); setBusy(true)
     try {
       await verifyMobileOtp(email, otp)
-      // Sign in immediately (both OTPs are now verified, so the account is active) so the final
-      // "pay the registration fee" step can call an authenticated endpoint, instead of making the
-      // user log in separately just to reach it.
-      const data = await login(email, password)
-      if (data.deviceLimitReached) {
-        setOk('Mobile verified! Redirecting to sign in…')
-        setTimeout(() => navigate('/login'), 1200)
-        return
-      }
-      signIn({
-        token: data.token, email: data.email, role: data.role, kycCompleted: data.kycCompleted,
-        registrationFeePaid: data.registrationFeePaid,
-        subscriptionTier: data.subscriptionTier, subscriptionExpiresAt: data.subscriptionExpiresAt,
-      })
-      setOk('')
-      setStep('pay-fee')
+      await completeVerificationAndProceed('Mobile verified! Redirecting to sign in…')
     } catch (err) { setError(errorMessage(err)) } finally { setBusy(false) }
   }
 

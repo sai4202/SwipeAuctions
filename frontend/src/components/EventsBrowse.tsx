@@ -9,6 +9,8 @@ import { useCachedFetch } from '../useCachedFetch'
 import { SkeletonTableRows } from './Skeleton'
 import FilterModal, { CheckboxListBody } from './FilterModal'
 import VehicleDetailStrip from './VehicleDetailStrip'
+import SortableTh from './SortableTh'
+import { useSortableData } from '../useSort'
 
 const STATUS: EventStatus[] = ['LIVE', 'UPCOMING', 'CLOSED']
 const SLABEL: Record<EventStatus, string> = { LIVE: 'Live', UPCOMING: 'Upcoming', CLOSED: 'Closed' }
@@ -16,34 +18,28 @@ const ITEM_TABS = ['OPEN', 'SCHEDULED', 'CLOSED'] as const
 const ITEM_TAB_LABEL: Record<(typeof ITEM_TABS)[number], string> = { OPEN: 'Live', SCHEDULED: 'Upcoming', CLOSED: 'Closed' }
 const CLOSED_STATUSES = ['CLOSED', 'UNSOLD', 'CANCELLED']
 
-type EventSortKey = 'name' | 'start' | 'end' | 'location' | 'count'
-const EVENT_SORTERS: Record<EventSortKey, (e: AuctionEvent) => string | number> = {
-  name: (e) => e.name.toLowerCase(),
-  start: (e) => new Date(e.startTime).getTime(),
-  end: (e) => new Date(e.closingTime).getTime(),
-  location: (e) => (e.location ?? '').toLowerCase(),
-  count: (e) => e.itemCount,
+function getEventSortValue(e: AuctionEvent, key: string) {
+  switch (key) {
+    case 'name': return e.name?.toLowerCase()
+    case 'start': return e.startTime
+    case 'end': return e.closingTime
+    case 'location': return (e.location ?? '').toLowerCase()
+    case 'count': return e.itemCount
+    default: return null
+  }
 }
 
-/** Clickable column header with an up/down sort indicator, used by the events table. */
-function SortableTh({ label, sortKey, active, dir, onClick }: {
-  label: string; sortKey: EventSortKey; active: EventSortKey | null; dir: 'asc' | 'desc'; onClick: (k: EventSortKey) => void
-}) {
-  const isActive = active === sortKey
-  return (
-    <th>
-      <button
-        type="button"
-        onClick={() => onClick(sortKey)}
-        style={{
-          background: 'none', border: 'none', padding: 0, cursor: 'pointer', font: 'inherit',
-          color: isActive ? 'var(--text)' : 'inherit', display: 'inline-flex', alignItems: 'center', gap: 4,
-        }}
-      >
-        {label} <span style={{ opacity: isActive ? 1 : 0.4 }}>{isActive ? (dir === 'asc' ? '↑' : '↓') : '↕'}</span>
-      </button>
-    </th>
-  )
+function getItemSortValue(a: Auction, key: string) {
+  switch (key) {
+    case 'title': return a.title?.toLowerCase()
+    case 'startTime': return a.startTime
+    case 'endTime': return a.currentEndTime
+    case 'basePrice': return a.basePrice
+    case 'currentBid': return a.currentHighestBid ?? -1
+    case 'bids': return a.bidCount
+    case 'bidsLeft': return a.bidsRemaining ?? -1
+    default: return null
+  }
 }
 
 function fmt(dt: string): string {
@@ -73,12 +69,6 @@ export default function EventsBrowse({ categorySlug }: { categorySlug?: string }
   })
   const loading = auctionsLoading || eventsLoading
   const [multiIds, setMultiIds] = useState<string[]>(getMultiBidIds())
-  const [eventSort, setEventSort] = useState<EventSortKey | null>(null)
-  const [eventSortDir, setEventSortDir] = useState<'asc' | 'desc'>('asc')
-  const toggleEventSort = (k: EventSortKey) => {
-    if (eventSort === k) setEventSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
-    else { setEventSort(k); setEventSortDir('asc') }
-  }
 
   const eventId = params.get('event') || ''
   const q = params.get('q') || ''
@@ -143,15 +133,8 @@ export default function EventsBrowse({ categorySlug }: { categorySlug?: string }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [events, categorySlug, estatus, vt, q, auctionsByEvent])
 
-  const sortedEvents = useMemo(() => {
-    if (!eventSort) return filteredEvents
-    const getVal = EVENT_SORTERS[eventSort]
-    const sign = eventSortDir === 'asc' ? 1 : -1
-    return [...filteredEvents].sort((a, b) => {
-      const av = getVal(a), bv = getVal(b)
-      return av < bv ? -sign : av > bv ? sign : 0
-    })
-  }, [filteredEvents, eventSort, eventSortDir])
+  const { sorted: sortedEvents, sortKey: eventSort, sortDir: eventSortDir, toggleSort: toggleEventSort } =
+    useSortableData(filteredEvents, getEventSortValue)
 
   // ---- Item-level (inside one event) filters — live-fetched from the event's category, cached under
   // the same key format BrowsePage uses so the two share a cache entry for the same category. ----
@@ -183,6 +166,8 @@ export default function EventsBrowse({ categorySlug }: { categorySlug?: string }
       return true
     })
   }, [items, itemTab, vt, itemCatFilters, params, q])
+  const { sorted: sortedItems, sortKey: itemSort, sortDir: itemSortDir, toggleSort: toggleItemSort } =
+    useSortableData(filteredItems, getItemSortValue)
 
   if (error) return <div className="error">{error}</div>
 
@@ -247,13 +232,20 @@ export default function EventsBrowse({ categorySlug }: { categorySlug?: string }
                 </colgroup>
                 <thead>
                   <tr>
-                    <th>Image</th><th>Details</th><th>Start Time</th><th>End Time</th>
-                    <th>Base Price</th><th>Current Bid</th><th>Bids</th><th>Bids Left</th><th>Action</th>
+                    <th>Image</th>
+                    <SortableTh label="Details" sortKey="title" activeKey={itemSort} dir={itemSortDir} onSort={toggleItemSort} />
+                    <SortableTh label="Start Time" sortKey="startTime" activeKey={itemSort} dir={itemSortDir} onSort={toggleItemSort} />
+                    <SortableTh label="End Time" sortKey="endTime" activeKey={itemSort} dir={itemSortDir} onSort={toggleItemSort} />
+                    <SortableTh label="Base Price" sortKey="basePrice" activeKey={itemSort} dir={itemSortDir} onSort={toggleItemSort} />
+                    <SortableTh label="Current Bid" sortKey="currentBid" activeKey={itemSort} dir={itemSortDir} onSort={toggleItemSort} />
+                    <SortableTh label="Bids" sortKey="bids" activeKey={itemSort} dir={itemSortDir} onSort={toggleItemSort} />
+                    <SortableTh label="Bids Left" sortKey="bidsLeft" activeKey={itemSort} dir={itemSortDir} onSort={toggleItemSort} />
+                    <th>Action</th>
                   </tr>
                 </thead>
                 <tbody>
                   {loading && <SkeletonTableRows rows={5} cols={9} />}
-                  {filteredItems.map((a) => (
+                  {sortedItems.map((a) => (
                     <tr key={a.id}>
                       <td>
                         <Link to={`/auctions/${a.id}`}>
@@ -361,12 +353,12 @@ export default function EventsBrowse({ categorySlug }: { categorySlug?: string }
               <thead>
                 <tr>
                   <th>Event ID</th>
-                  <SortableTh label="Event Name" sortKey="name" active={eventSort} dir={eventSortDir} onClick={toggleEventSort} />
-                  <SortableTh label="Start Date & Time" sortKey="start" active={eventSort} dir={eventSortDir} onClick={toggleEventSort} />
-                  <SortableTh label="End Date & Time" sortKey="end" active={eventSort} dir={eventSortDir} onClick={toggleEventSort} />
-                  <SortableTh label="Location" sortKey="location" active={eventSort} dir={eventSortDir} onClick={toggleEventSort} />
+                  <SortableTh label="Event Name" sortKey="name" activeKey={eventSort} dir={eventSortDir} onSort={toggleEventSort} />
+                  <SortableTh label="Start Date & Time" sortKey="start" activeKey={eventSort} dir={eventSortDir} onSort={toggleEventSort} />
+                  <SortableTh label="End Date & Time" sortKey="end" activeKey={eventSort} dir={eventSortDir} onSort={toggleEventSort} />
+                  <SortableTh label="Location" sortKey="location" activeKey={eventSort} dir={eventSortDir} onSort={toggleEventSort} />
                   <th>Type</th>
-                  <SortableTh label="Auctions" sortKey="count" active={eventSort} dir={eventSortDir} onClick={toggleEventSort} />
+                  <SortableTh label="Auctions" sortKey="count" activeKey={eventSort} dir={eventSortDir} onSort={toggleEventSort} />
                   <th>Vehicle Type</th><th>Action</th>
                 </tr>
               </thead>

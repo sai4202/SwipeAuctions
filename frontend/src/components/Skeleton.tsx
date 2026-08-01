@@ -81,6 +81,22 @@ export function StatTilesSkeleton({ count = 4 }: { count?: number }) {
   )
 }
 
+/** Mirrors .event-tile's layout (HomePage's "Featured auction events") while GET /api/events loads. */
+export function EventTileGridSkeleton({ count = 5 }: { count?: number }) {
+  return (
+    <div className="event-tile-grid">
+      {Array.from({ length: count }).map((_, i) => (
+        <div className="event-tile" key={i}>
+          <Skeleton height={16} width="80%" style={{ marginBottom: 6 }} />
+          <Skeleton height={12} width="55%" style={{ marginBottom: 10 }} />
+          <Skeleton height={12} width="65%" style={{ marginBottom: 14 }} />
+          <Skeleton height={12} width={90} />
+        </div>
+      ))}
+    </div>
+  )
+}
+
 /** Mirrors AuctionDetailPage's two-column layout (gallery + buy box) while the auction loads. */
 export function AuctionDetailSkeleton() {
   return (

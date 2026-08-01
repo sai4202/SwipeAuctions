@@ -5,9 +5,21 @@ import { getMyTransactions, errorMessage, type WalletTransaction } from '../api'
 import { money } from '../util'
 import { useCachedFetch } from '../useCachedFetch'
 import { SkeletonTableRows } from '../components/Skeleton'
+import SortableTh from '../components/SortableTh'
+import { useSortableData } from '../useSort'
 
 function fmt(dt: string): string {
   return new Date(dt).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
+function getSortValue(t: WalletTransaction, key: string) {
+  switch (key) {
+    case 'date': return t.createdAt
+    case 'type': return t.type
+    case 'amount': return t.amount
+    case 'reference': return [t.referenceType, t.referenceId].filter(Boolean).join(' · ')
+    default: return null
+  }
 }
 
 export default function MyTransactionsPage() {
@@ -16,6 +28,7 @@ export default function MyTransactionsPage() {
   const { data: txns = [], loading } = useCachedFetch<WalletTransaction[]>(
     isAuthenticated ? 'my-transactions' : null, getMyTransactions, { onError: (e) => setError(errorMessage(e)) },
   )
+  const { sorted, sortKey, sortDir, toggleSort } = useSortableData(txns, getSortValue)
 
   if (!isAuthenticated) {
     return <div className="container"><div className="card" style={{ maxWidth: 460 }}>Please <Link to="/login">sign in</Link> to view your transactions.</div></div>
@@ -34,11 +47,16 @@ export default function MyTransactionsPage() {
           <div style={{ overflowX: 'auto', padding: 16 }}>
             <table className="admin-table">
               <thead>
-                <tr><th>Date</th><th>Type</th><th>Amount</th><th>Reference</th></tr>
+                <tr>
+                  <SortableTh label="Date" sortKey="date" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+                  <SortableTh label="Type" sortKey="type" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+                  <SortableTh label="Amount" sortKey="amount" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+                  <SortableTh label="Reference" sortKey="reference" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+                </tr>
               </thead>
               <tbody>
                 {loading && <SkeletonTableRows rows={5} cols={4} />}
-                {txns.map((t) => (
+                {sorted.map((t) => (
                   <tr key={t.id}>
                     <td>{fmt(t.createdAt)}</td>
                     <td><span className="badge OPEN">{t.type}</span></td>

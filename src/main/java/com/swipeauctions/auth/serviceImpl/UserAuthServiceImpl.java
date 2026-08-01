@@ -8,6 +8,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.swipeauctions.auth.config.MobileVerificationConfig;
 import com.swipeauctions.auth.dto.*;
 import com.swipeauctions.auth.helper.*;
 import com.swipeauctions.auth.service.UserAuthService;
@@ -86,6 +87,8 @@ public class UserAuthServiceImpl implements UserAuthService {
 
     private final LoginRateLimiterService loginRateLimiterService;
 
+    private final MobileVerificationConfig mobileVerificationConfig;
+
 
     @Value("${app.frontend.url}")
     private String frontendUrl;
@@ -109,13 +112,17 @@ public class UserAuthServiceImpl implements UserAuthService {
 
         String emailOtp = otpGenerator.generateOtp();
 
-        String mobileOtp = otpGenerator.generateOtp();
+        // Mobile OTP is skipped while mobile verification isn't required — LoggingSmsServiceImpl
+        // can't actually deliver it, so generating one would just be a dead end for the user.
+        String mobileOtp = mobileVerificationConfig.isRequired() ? otpGenerator.generateOtp() : null;
 
         registrationHelperService.saveOtpRecord(email, emailOtp, mobileOtp);
 
         emailNotificationService.sendEmailOtp(email, emailOtp);
 
-        emailNotificationService.sendMobileOtp(user.getMobileNumber(), mobileOtp);
+        if (mobileVerificationConfig.isRequired()) {
+            emailNotificationService.sendMobileOtp(user.getMobileNumber(), mobileOtp);
+        }
 
         return "Registration successful. OTP sent to email.";
     }
@@ -177,9 +184,34 @@ public class UserAuthServiceImpl implements UserAuthService {
 
         user.setEmailVerified(true);
 
-        userRepository.save(user);
+        activateIfFullyVerified(user, otp);
 
         return "Email verified successfully";
+    }
+
+    // Shared tail of email and mobile OTP verification: activates the account once every OTP this
+    // toggle state actually requires has been verified, deletes the now-spent OtpVerification row,
+    // and fires the welcome email exactly once (guarded by wasAlreadyActive so whichever of
+    // verifyEmailOtp/verifyMobileOtp finishes the job last doesn't double-send it).
+    private void activateIfFullyVerified(User user, OtpVerification otp) {
+
+        boolean wasAlreadyActive = Boolean.TRUE.equals(user.getActive());
+
+        boolean mobileSatisfied = !mobileVerificationConfig.isRequired() || Boolean.TRUE.equals(user.getMobileVerified());
+
+        if (Boolean.TRUE.equals(user.getEmailVerified()) && mobileSatisfied) {
+            user.setActive(true);
+        }
+
+        userRepository.save(user);
+
+        if (Boolean.TRUE.equals(user.getActive())) {
+            otpRepository.delete(otp);
+        }
+
+        if (!wasAlreadyActive && Boolean.TRUE.equals(user.getActive())) {
+            emailNotificationService.sendWelcomeEmail(user);
+        }
     }
 
     //verifies mobile otp and activates account
@@ -231,26 +263,9 @@ public class UserAuthServiceImpl implements UserAuthService {
 
         User user = authHelperService.getUserByEmail(email);
 
-        boolean wasAlreadyActive = Boolean.TRUE.equals(user.getActive());
-
         user.setMobileVerified(true);
 
-        if (Boolean.TRUE.equals(user.getEmailVerified()))
-        {
-            user.setActive(true);
-        }
-
-        userRepository.save(user);
-
-        if (Boolean.TRUE.equals(user.getEmailVerified()) && Boolean.TRUE.equals(user.getMobileVerified()) && Boolean.TRUE.equals(user.getActive()))
-        {
-            otpRepository.delete(otp);
-        }
-
-        if (!wasAlreadyActive && Boolean.TRUE.equals(user.getActive()))
-        {
-            emailNotificationService.sendWelcomeEmail(user);
-        }
+        activateIfFullyVerified(user, otp);
 
         return "Mobile verified successfully";
     }
@@ -283,7 +298,9 @@ public class UserAuthServiceImpl implements UserAuthService {
             throw new BadRequestException("Please wait 30 seconds before requesting another OTP");
         }
 
-        if (Boolean.TRUE.equals(user.getEmailVerified()) && Boolean.TRUE.equals(user.getMobileVerified()))
+        boolean mobileSatisfied = !mobileVerificationConfig.isRequired() || Boolean.TRUE.equals(user.getMobileVerified());
+
+        if (Boolean.TRUE.equals(user.getEmailVerified()) && mobileSatisfied)
         {
             throw new BadRequestException("User already verified");
         }
@@ -300,7 +317,7 @@ public class UserAuthServiceImpl implements UserAuthService {
             emailNotificationService.sendEmailOtp(user.getEmail(), emailOtp);
         }
 
-        if (!Boolean.TRUE.equals(user.getMobileVerified()))
+        if (mobileVerificationConfig.isRequired() && !Boolean.TRUE.equals(user.getMobileVerified()))
         {
             String mobileOtp = otpGenerator.generateOtp();
 

@@ -75,6 +75,10 @@ app:
 auth:
   # Max concurrent signed-in devices per user (user decision 2026-07-18: capped back down to 2).
   max-active-sessions: ${AUTH_MAX_ACTIVE_SESSIONS:2}
+  # Mobile/SMS OTP is a pure logging stub (LoggingSmsServiceImpl) until a real SMS provider is
+  # wired up — required=false skips mobile OTP entirely (email verification alone activates the
+  # account). Flip to true (or set AUTH_MOBILE_VERIFICATION_REQUIRED=true) once real SMS is live.
+  mobile-verification-required: ${AUTH_MOBILE_VERIFICATION_REQUIRED:false}
 
 # Dispute wallet-freeze: how long a seller's sale proceeds stay escrowed (held, not available)
 # before auto-release, absent an open dispute on that auction.

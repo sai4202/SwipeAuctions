@@ -16,6 +16,8 @@ import {
 } from '../api'
 import { money, moneyCompact, formatDateTimeShort, openUserDetails } from '../util'
 import { StatTilesSkeleton } from '../components/Skeleton'
+import SortableTh from '../components/SortableTh'
+import { useSortableData } from '../useSort'
 import { DETAIL_FIELDS, DETAIL_TABS, REQUIRED_FOR_USED_VEHICLES, requiresVehicleDetails, type DetailFieldDef } from '../detailFields'
 import { VEHICLE_TYPE_OPTIONS } from '../catalogFilters'
 import { EVENT_CATEGORIES } from '../eventCategories'
@@ -25,6 +27,56 @@ type Tab = 'overview' | 'users' | 'auctions' | 'disputes' | 'categories' | 'kyc'
 /** Categories that use the Vehicle Type filter (see catalogFilters.ts) — same set as the events
  *  browsing UI (EVENT_CATEGORIES), by lowercased category name for a simple string comparison here. */
 const VEHICLE_TYPE_CATEGORY_NAMES = new Set(Object.values(EVENT_CATEGORIES).map((c) => c.label.toLowerCase()))
+
+function getUserSortValue(u: AdminUser, key: string) {
+  switch (key) {
+    case 'email': return u.email?.toLowerCase()
+    case 'mobile': return u.mobileNumber
+    case 'role': return u.role
+    case 'tier': return u.subscriptionTier
+    case 'kyc': return u.kycStatus
+    case 'deposit': return u.walletAvailableBalance
+    case 'credit': return u.walletCreditLimit
+    case 'activeBids': return u.activeBidCount
+    case 'status': return u.active ? 1 : 0
+    default: return null
+  }
+}
+
+function getAuctionSortValue(a: AdminAuction, key: string) {
+  switch (key) {
+    case 'title': return a.title?.toLowerCase()
+    case 'seller': return a.sellerEmail?.toLowerCase()
+    case 'base': return a.basePrice
+    case 'highest': return a.currentHighestBid
+    case 'bids': return a.bidCount
+    case 'status': return a.status
+    default: return null
+  }
+}
+
+function getDisputeSortValue(d: Dispute, key: string) {
+  switch (key) {
+    case 'auction': return d.auctionTitle?.toLowerCase()
+    case 'raisedBy': return d.raisedByEmail?.toLowerCase()
+    case 'reason': return d.reason?.toLowerCase()
+    case 'status': return d.status
+    default: return null
+  }
+}
+
+function getKycSortValue(k: AdminKyc, key: string) {
+  switch (key) {
+    case 'email': return k.email?.toLowerCase()
+    case 'fullName': return k.fullName?.toLowerCase() ?? ''
+    case 'aadhaar': return k.aadhaarMasked ?? ''
+    case 'pan': return k.panNumberMasked ?? ''
+    case 'provider': return k.provider ?? ''
+    case 'status': return k.status
+    case 'submitted': return k.submittedAt ?? ''
+    default: return null
+  }
+}
 
 /** Counts up from 0 to `value` on mount/change, honoring prefers-reduced-motion. */
 function AnimatedNumber({ value, format }: { value: number; format: (n: number) => string }) {
@@ -138,6 +190,7 @@ function Users({ focusUserId, onFocusHandled }: { focusUserId: string | null; on
   const [error, setError] = useState('')
   const [busyId, setBusyId] = useState<string | null>(null)
   const [walletUser, setWalletUser] = useState<AdminUser | null>(null)
+  const { sorted: sortedUsers, sortKey, sortDir, toggleSort } = useSortableData(users, getUserSortValue)
 
   useEffect(() => {
     if (!focusUserId) return
@@ -188,9 +241,20 @@ function Users({ focusUserId, onFocusHandled }: { focusUserId: string | null; on
       {error && <div className="error">{error}</div>}
       <div style={{ overflowX: 'auto' }}>
         <table className="admin-table">
-          <thead><tr><th>Email</th><th>Mobile</th><th>Role</th><th>Tier</th><th>KYC</th><th>Deposit</th><th>Credit Limit</th><th>Active Bids</th><th>Status</th><th></th></tr></thead>
+          <thead><tr>
+            <SortableTh label="Email" sortKey="email" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+            <SortableTh label="Mobile" sortKey="mobile" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+            <SortableTh label="Role" sortKey="role" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+            <SortableTh label="Tier" sortKey="tier" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+            <SortableTh label="KYC" sortKey="kyc" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+            <SortableTh label="Deposit" sortKey="deposit" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+            <SortableTh label="Credit Limit" sortKey="credit" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+            <SortableTh label="Active Bids" sortKey="activeBids" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+            <SortableTh label="Status" sortKey="status" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+            <th></th>
+          </tr></thead>
           <tbody>
-            {users.map((u) => (
+            {sortedUsers.map((u) => (
               <tr key={u.id}>
                 {/* Opens the same User Details modal in place, not a new tab — unlike openUserDetails()
                     (used from the Auctions tab / catalogue cards), clicking a row already on this
@@ -386,6 +450,7 @@ function Auctions() {
   const [error, setError] = useState('')
   const [busyId, setBusyId] = useState<string | null>(null)
   const [editing, setEditing] = useState<AdminAuction | null>(null)
+  const { sorted: sortedAuctions, sortKey, sortDir, toggleSort } = useSortableData(auctions, getAuctionSortValue)
 
   const load = () => {
     getAdminAuctions(statusFilter || undefined, page).then((res) => { setAuctions(res.content); setTotalPages(res.totalPages) }).catch((e) => setError(errorMessage(e)))
@@ -420,9 +485,17 @@ function Auctions() {
       {error && <div className="error">{error}</div>}
       <div style={{ overflowX: 'auto' }}>
         <table className="admin-table">
-          <thead><tr><th>Title</th><th>Seller</th><th>Base</th><th>Highest bid</th><th>Bids</th><th>Status</th><th></th></tr></thead>
+          <thead><tr>
+            <SortableTh label="Title" sortKey="title" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+            <SortableTh label="Seller" sortKey="seller" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+            <SortableTh label="Base" sortKey="base" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+            <SortableTh label="Highest bid" sortKey="highest" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+            <SortableTh label="Bids" sortKey="bids" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+            <SortableTh label="Status" sortKey="status" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+            <th></th>
+          </tr></thead>
           <tbody>
-            {auctions.map((a) => (
+            {sortedAuctions.map((a) => (
               <tr key={a.id}>
                 <td>{a.title}</td>
                 <td>{a.sellerEmail}</td>
@@ -547,6 +620,7 @@ function Disputes() {
   const [notes, setNotes] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const { sorted: sortedDisputes, sortKey, sortDir, toggleSort } = useSortableData(disputes, getDisputeSortValue)
 
   const load = () => {
     getAdminDisputes(statusFilter || undefined, page).then((res) => { setDisputes(res.content); setTotalPages(res.totalPages) }).catch((e) => setError(errorMessage(e)))
@@ -580,9 +654,14 @@ function Disputes() {
       {error && <div className="error">{error}</div>}
       <div style={{ overflowX: 'auto' }}>
         <table className="admin-table">
-          <thead><tr><th>Auction</th><th>Raised by</th><th>Reason</th><th>Status</th></tr></thead>
+          <thead><tr>
+            <SortableTh label="Auction" sortKey="auction" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+            <SortableTh label="Raised by" sortKey="raisedBy" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+            <SortableTh label="Reason" sortKey="reason" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+            <SortableTh label="Status" sortKey="status" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+          </tr></thead>
           <tbody>
-            {disputes.map((d) => (
+            {sortedDisputes.map((d) => (
               <tr key={d.id} onClick={() => open(d)} style={{ cursor: 'pointer' }}>
                 <td>{d.auctionTitle}</td>
                 <td>{d.raisedByEmail}</td>
@@ -631,6 +710,7 @@ function Kyc() {
   const [remarks, setRemarks] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const { sorted: sortedRows, sortKey, sortDir, toggleSort } = useSortableData(rows, getKycSortValue)
 
   const load = () => {
     getAdminKycQueue(statusFilter || undefined, page).then((res) => { setRows(res.content); setTotalPages(res.totalPages) }).catch((e) => setError(errorMessage(e)))
@@ -665,9 +745,17 @@ function Kyc() {
       {error && <div className="error">{error}</div>}
       <div style={{ overflowX: 'auto' }}>
         <table className="admin-table">
-          <thead><tr><th>Email</th><th>Full name</th><th>Aadhaar</th><th>PAN</th><th>Provider</th><th>Status</th><th>Submitted</th></tr></thead>
+          <thead><tr>
+            <SortableTh label="Email" sortKey="email" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+            <SortableTh label="Full name" sortKey="fullName" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+            <SortableTh label="Aadhaar" sortKey="aadhaar" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+            <SortableTh label="PAN" sortKey="pan" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+            <SortableTh label="Provider" sortKey="provider" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+            <SortableTh label="Status" sortKey="status" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+            <SortableTh label="Submitted" sortKey="submitted" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+          </tr></thead>
           <tbody>
-            {rows.map((k) => (
+            {sortedRows.map((k) => (
               <tr key={k.userId} onClick={() => open(k)} style={{ cursor: 'pointer' }}>
                 <td>{k.email}</td>
                 <td>{k.fullName ?? '—'}</td>

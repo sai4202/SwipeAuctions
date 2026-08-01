@@ -6,12 +6,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SwipeAuctions</title>
     <script>
-      // Applied before first paint so a returning dark-theme visitor never sees a flash of the
-      // light theme while React boots up.
+      // Applied before first paint so a returning visitor never sees a flash of the wrong theme
+      // while React boots up. Dark is the default (user decision 2026-07-31) — only an explicit
+      // stored "light" preference (set from Profile, logged-in users only) overrides that.
       try {
         var t = localStorage.getItem('swipeauctions_theme')
-        document.documentElement.setAttribute('data-theme', t === 'dark' ? 'dark' : 'light')
-      } catch (e) { document.documentElement.setAttribute('data-theme', 'light') }
+        document.documentElement.setAttribute('data-theme', t === 'light' ? 'light' : 'dark')
+      } catch (e) { document.documentElement.setAttribute('data-theme', 'dark') }
     </script>
   </head>
   <body>
