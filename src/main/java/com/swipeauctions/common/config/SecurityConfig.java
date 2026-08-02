@@ -115,6 +115,7 @@ public class SecurityConfig {
                                 // admin can create another admin. Bootstrap the first admin via a trusted
                                 // out-of-band path (DB seed/migration), never a public endpoint.
                                 "/api/admin/auth/login",
+                                "/api/admin/auth/logout-device",
                                 "/api/admin/auth/forgot-password",
                                 "/api/admin/auth/reset-password",
 

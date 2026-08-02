@@ -8,6 +8,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import com.swipeauctions.admin.dtos.AdminLoginRequestDTO;
 import com.swipeauctions.admin.dtos.AdminLoginResponseDTO;
+import com.swipeauctions.admin.dtos.AdminLogoutDeviceRequestDTO;
 import com.swipeauctions.admin.dtos.AdminRegisterRequestDTO;
 import com.swipeauctions.admin.entity.Admin;
 import com.swipeauctions.admin.entity.AdminPasswordResetToken;
@@ -31,6 +32,7 @@ import com.swipeauctions.common.util.LoggedInUserUtil;
 import com.swipeauctions.email.dto.EmailRequestDTO;
 import com.swipeauctions.email.service.EmailService;
 import com.swipeauctions.email.service.EmailTemplateService;
+import com.swipeauctions.session.dtos.SessionResponseDTO;
 import com.swipeauctions.session.entity.AdminSessions;
 import com.swipeauctions.session.repository.AdminSessionRepository;
 import jakarta.servlet.http.HttpServletRequest;
@@ -136,8 +138,28 @@ public class AdminAuthServiceImpl implements AdminAuthService {
             // Track failed login attempts.
             loginValidationService.handleFailedLogin(admin);
         }
-        // Restrict admin to a single active session.
-        sessionManagementService.validateAdminSessionLimit(admin);
+
+        // Restrict admin to a single active session — surface the blocking device instead of
+        // throwing, so the login screen can offer to log it out (same UX as user login).
+        java.util.Optional<AdminSessions> blockingSession = sessionManagementService.findBlockingSession(admin);
+        if (blockingSession.isPresent())
+        {
+            AdminSessions session = blockingSession.get();
+            return AdminLoginResponseDTO.builder()
+                    .deviceLimitReached(true)
+                    .message("Admin already logged in on another device. Log out that device below to continue.")
+                    .activeSessions(java.util.List.of(
+                            SessionResponseDTO.builder()
+                                    .sessionId(session.getId())
+                                    .deviceId(session.getDeviceId())
+                                    .deviceName(session.getDeviceName())
+                                    .ipAddress(session.getIpAddress())
+                                    .loginTime(session.getLoginTime())
+                                    .lastActivityTime(session.getLastActivityTime())
+                                    .active(session.getActive())
+                                    .build()))
+                    .build();
+        }
 
         // Reset failed attempts after successful login.
         adminSecurityService.resetFailedLoginAttempts(admin);
@@ -393,5 +415,45 @@ public class AdminAuthServiceImpl implements AdminAuthService {
         adminSessionRepository.save(adminSession);
 
         return "Admin logged out successfully";
+    }
+
+    // Logs out the session blocking a login from the "device limit reached" prompt. The caller has
+    // no JWT yet, so identity is re-proved with credentials rather than a Bearer token — mirrors
+    // UserAuthServiceImpl#logoutDevice.
+    @Override
+    public String logoutDevice(AdminLogoutDeviceRequestDTO request)
+    {
+        String email = request.getEmail().trim().toLowerCase();
+
+        Admin admin = adminRepository.findByEmail(email)
+                .orElseThrow(() -> new UnauthorizedException("Invalid credentials."));
+
+        loginValidationService.validateAdminAccountStatus(admin);
+
+        if (!passwordEncoder.matches(request.getPassword(), admin.getPassword()))
+        {
+            loginValidationService.handleFailedLogin(admin);
+        }
+
+        adminSecurityService.resetFailedLoginAttempts(admin);
+
+        AdminSessions session = adminSessionRepository.findById(request.getSessionId())
+                .orElseThrow(() -> new ResourceNotFoundException("Session not found"));
+
+        if (!session.getAdmin().getId().equals(admin.getId()))
+        {
+            throw new BadRequestException("You cannot logout another admin's session");
+        }
+
+        if (!Boolean.TRUE.equals(session.getActive()))
+        {
+            throw new BadRequestException("Session is already logged out");
+        }
+
+        session.setActive(false);
+        session.setLogoutTime(LocalDateTime.now());
+        adminSessionRepository.save(session);
+
+        return "Device logged out. You can now sign in again.";
     }
 }

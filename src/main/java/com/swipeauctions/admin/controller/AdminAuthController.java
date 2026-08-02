@@ -7,6 +7,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import com.swipeauctions.admin.dtos.AdminLoginRequestDTO;
 import com.swipeauctions.admin.dtos.AdminLoginResponseDTO;
+import com.swipeauctions.admin.dtos.AdminLogoutDeviceRequestDTO;
 import com.swipeauctions.admin.dtos.AdminRegisterRequestDTO;
 import com.swipeauctions.admin.service.AdminAuthService;
 import com.swipeauctions.auth.dto.ChangePasswordRequestDTO;
@@ -89,6 +90,19 @@ public class AdminAuthController {
     public ResponseEntity<ApiResponse<String>> logout() {
 
         String response = adminAuthService.logout();
+
+        return ResponseEntity.ok(ApiResponse.success(response, null));
+    }
+
+    @PostMapping("/logout-device")
+    public ResponseEntity<ApiResponse<String>> logoutDevice(
+
+            @Valid
+            @RequestBody AdminLogoutDeviceRequestDTO request
+
+    ) {
+
+        String response = adminAuthService.logoutDevice(request);
 
         return ResponseEntity.ok(ApiResponse.success(response, null));
     }

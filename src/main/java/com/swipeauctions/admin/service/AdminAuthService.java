@@ -19,4 +19,6 @@ public interface AdminAuthService {
     String changePassword(ChangePasswordRequestDTO request);
 
     String logout();
+
+    String logoutDevice(AdminLogoutDeviceRequestDTO request);
 }

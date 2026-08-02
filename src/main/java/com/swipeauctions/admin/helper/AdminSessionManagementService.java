@@ -5,7 +5,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import com.swipeauctions.admin.entity.Admin;
-import com.swipeauctions.common.exception.BadRequestException;
 import com.swipeauctions.common.util.DeviceUtils;
 import com.swipeauctions.session.entity.AdminSessions;
 import com.swipeauctions.session.repository.AdminSessionRepository;
@@ -26,12 +25,16 @@ public class AdminSessionManagementService {
     @Value("${admin.jwt.expiration}")
     private long adminJwtExpirationMillis;
 
-    //Validates active admin session limit.
-    public void validateAdminSessionLimit(Admin admin)
+    // Returns the admin's existing active session, if any, after auto-clearing one that's already
+    // timed out (freeing the slot rather than blocking the login). A present result means the
+    // single-session cap is genuinely held by another device — the caller (login) surfaces it to
+    // the login screen instead of throwing, so the admin can see and log out that device, same UX
+    // as the user login flow's device-limit picker.
+    public Optional<AdminSessions> findBlockingSession(Admin admin)
     {
         Optional<AdminSessions> active = adminSessionRepository.findByAdminAndActiveTrue(admin);
         if (active.isEmpty()) {
-            return;
+            return Optional.empty();
         }
 
         AdminSessions session = active.get();
@@ -41,11 +44,10 @@ public class AdminSessionManagementService {
             session.setActive(false);
             session.setLogoutTime(LocalDateTime.now());
             adminSessionRepository.save(session);
-            return;
+            return Optional.empty();
         }
 
-        // Restrict admin to a single device login.
-        throw new BadRequestException("Admin already logged in on another device");
+        return Optional.of(session);
     }
 
     // Updates admin login audit information.

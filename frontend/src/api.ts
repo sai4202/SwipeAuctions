@@ -108,6 +108,9 @@ export interface AdminLoginData {
   role: string
   adminRole: AdminRole
   active: boolean
+  deviceLimitReached?: boolean
+  message?: string
+  activeSessions?: SessionInfo[]
 }
 export interface Auction {
   id: string
@@ -456,6 +459,10 @@ export async function adminLogout(): Promise<string> {
 }
 export async function logoutDevice(emailOrMobile: string, password: string, sessionId: string): Promise<string> {
   const res = await api.post<ApiEnvelope<string>>('/api/auth/logout-device', { emailOrMobile, password, sessionId })
+  return res.data.message
+}
+export async function adminLogoutDevice(email: string, password: string, sessionId: string): Promise<string> {
+  const res = await api.post<ApiEnvelope<string>>('/api/admin/auth/logout-device', { email, password, sessionId })
   return res.data.message
 }
 
