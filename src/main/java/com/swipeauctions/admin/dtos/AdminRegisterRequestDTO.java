@@ -1,5 +1,6 @@
 package com.swipeauctions.admin.dtos;
 
+import com.swipeauctions.admin.enums.AdminRole;
 import jakarta.validation.constraints.*;
 import lombok.*;
 
@@ -9,6 +10,9 @@ import lombok.*;
 @AllArgsConstructor
 @Builder
 public class AdminRegisterRequestDTO {
+
+    @NotNull(message = "Admin role is required")
+    private AdminRole adminRole;
 
     @NotBlank(message = "First name is required")
     private String firstName;

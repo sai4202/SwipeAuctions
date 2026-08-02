@@ -12,6 +12,9 @@ import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Set;
+import java.util.UUID;
+
 /** Real Razorpay payment for a subscription tier — order then verify, same pattern as wallet top-up. */
 @RestController
 @RequestMapping("/api/subscriptions")
@@ -31,7 +34,7 @@ public class SubscriptionController {
     @PostMapping("/order")
     public RazorpayPaymentService.OrderIntent createOrder(@Valid @RequestBody SubscribeRequest req) {
         User user = loggedInUserUtil.getCurrentUser();
-        return razorpayPaymentService.createSubscriptionOrder(user, req.tier(), req.billingCycle());
+        return razorpayPaymentService.createSubscriptionOrder(user, req.tier(), req.billingCycle(), req.addonBenefitIds());
     }
 
     @PostMapping("/verify")
@@ -42,7 +45,8 @@ public class SubscriptionController {
         return new SubscriptionResponse(updated.getSubscriptionTier(), updated.getSubscriptionExpiresAt());
     }
 
-    public record SubscribeRequest(@NotNull SubscriptionTier tier, @NotNull BillingCycle billingCycle) {}
+    public record SubscribeRequest(@NotNull SubscriptionTier tier, @NotNull BillingCycle billingCycle,
+                                    Set<UUID> addonBenefitIds) {}
 
     public record VerifyPaymentRequest(
             @NotBlank String orderId, @NotBlank String paymentId, @NotBlank String signature) {}

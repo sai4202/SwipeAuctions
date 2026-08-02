@@ -21,5 +21,7 @@ public class AdminLoginResponseDTO {
 
     private String role;
 
+    private String adminRole;
+
     private Boolean active;
 }

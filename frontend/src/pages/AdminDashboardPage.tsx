@@ -10,20 +10,22 @@ import {
   getAdminKycQueue, approveKyc, rejectKyc,
   getRegistrationFee, updateRegistrationFee, getSubscriptionPrices, updateSubscriptionPrices,
   getMembershipBenefits, createMembershipBenefit, updateMembershipBenefitTiers, deleteMembershipBenefit,
+  getAdminListings, updateListingRequiredTier, updateListingCategory, getAuditLog, createAdmin,
   type AdminStats, type AdminUser, type AdminAuction, type Dispute, type AdminHold, type ReleaseHoldResult,
-  type AdminUserBid,
+  type AdminUserBid, type AdminListing, type AuditLogEntry,
   type AdminCategory, type AdminCategoryAttribute, type BulkImportResult, type AdminKyc,
-  type SubscriptionPrice, type SubscriptionTier, type BillingCycle, type MembershipBenefit,
+  type SubscriptionPrice, type SubscriptionTier, type BillingCycle, type MembershipBenefit, type AdminRole,
 } from '../api'
 import { money, moneyCompact, formatDateTimeShort, openUserDetails } from '../util'
 import { StatTilesSkeleton } from '../components/Skeleton'
+import AdminAnalytics from '../components/AdminAnalytics'
 import SortableTh from '../components/SortableTh'
 import { useSortableData } from '../useSort'
 import { DETAIL_FIELDS, DETAIL_TABS, COLLAPSIBLE_TABS, REQUIRED_FOR_USED_VEHICLES, requiresVehicleDetails, parseDetailListText, type DetailFieldDef } from '../detailFields'
 import { VEHICLE_TYPE_OPTIONS } from '../catalogFilters'
 import { EVENT_CATEGORIES } from '../eventCategories'
 
-type Tab = 'overview' | 'users' | 'auctions' | 'disputes' | 'categories' | 'kyc' | 'settings'
+type Tab = 'overview' | 'users' | 'listings' | 'auctions' | 'disputes' | 'categories' | 'kyc' | 'auditlog' | 'settings'
 
 /** Categories that use the Vehicle Type filter (see catalogFilters.ts) — same set as the events
  *  browsing UI (EVENT_CATEGORIES), by lowercased category name for a simple string comparison here. */
@@ -40,6 +42,37 @@ function getUserSortValue(u: AdminUser, key: string) {
     case 'credit': return u.walletCreditLimit
     case 'activeBids': return u.activeBidCount
     case 'status': return u.active ? 1 : 0
+    default: return null
+  }
+}
+
+const AUDIT_ACTIONS = [
+  'USER_SUSPENDED', 'USER_REACTIVATED', 'HOLD_RELEASED', 'AUCTION_FORCE_CLOSED', 'AUCTION_MODIFIED',
+  'LISTING_REQUIRED_TIER_CHANGED', 'LISTING_CATEGORY_CHANGED', 'DISPUTE_RESOLVED', 'CATEGORY_CREATED',
+  'CATEGORY_ATTRIBUTE_ADDED', 'KYC_APPROVED', 'KYC_REJECTED', 'STOCK_LISTING_CREATED', 'STOCK_BULK_IMPORTED',
+  'REGISTRATION_FEE_UPDATED', 'SUBSCRIPTION_PRICES_UPDATED', 'MEMBERSHIP_BENEFIT_ADDED',
+  'MEMBERSHIP_BENEFIT_TIERS_UPDATED', 'MEMBERSHIP_BENEFIT_REMOVED', 'ADMIN_CREATED',
+]
+const auditActionLabel = (a: string) => a.split('_').map((w) => w[0] + w.slice(1).toLowerCase()).join(' ')
+
+function getAuditLogSortValue(e: AuditLogEntry, key: string) {
+  switch (key) {
+    case 'time': return e.createdAt
+    case 'admin': return e.adminEmail?.toLowerCase()
+    case 'action': return e.action
+    case 'target': return e.targetType
+    default: return null
+  }
+}
+
+function getListingSortValue(l: AdminListing, key: string) {
+  switch (key) {
+    case 'title': return l.title?.toLowerCase()
+    case 'seller': return l.sellerEmail?.toLowerCase()
+    case 'category': return l.categoryName?.toLowerCase()
+    case 'price': return l.reservePrice
+    case 'status': return l.status
+    case 'tier': return l.requiredTier
     default: return null
   }
 }
@@ -140,19 +173,21 @@ export default function AdminDashboardPage() {
       </div>
 
       <div className="tabs" style={{ margin: '18px 0' }}>
-        {(['overview', 'users', 'auctions', 'disputes', 'categories', 'kyc', 'settings'] as Tab[]).map((t) => (
+        {(['overview', 'users', 'listings', 'auctions', 'disputes', 'categories', 'kyc', 'auditlog', 'settings'] as Tab[]).map((t) => (
           <button key={t} type="button" className={'tab' + (tab === t ? ' active' : '')} onClick={() => setTab(t)}>
-            {t === 'kyc' ? 'KYC' : t[0].toUpperCase() + t.slice(1)}
+            {t === 'kyc' ? 'KYC' : t === 'auditlog' ? 'Audit Log' : t[0].toUpperCase() + t.slice(1)}
           </button>
         ))}
       </div>
 
       {tab === 'overview' && <Overview />}
       {tab === 'users' && <Users focusUserId={focusUserId} onFocusHandled={() => setFocusUserId(null)} />}
+      {tab === 'listings' && <Listings key={refreshTick} />}
       {tab === 'auctions' && <Auctions key={refreshTick} />}
       {tab === 'disputes' && <Disputes />}
       {tab === 'categories' && <Categories key={refreshTick} />}
       {tab === 'kyc' && <Kyc />}
+      {tab === 'auditlog' && <AuditLog />}
       {tab === 'settings' && <Settings />}
 
       {addStockOpen && (
@@ -172,11 +207,14 @@ function Overview() {
   if (!stats) return <StatTilesSkeleton />
 
   return (
-    <div className="stat-tiles">
-      <div className="stat-tile"><div className="k">Total users</div><div className="v">{stats.totalUsers}</div></div>
-      <div className="stat-tile"><div className="k">Open auctions</div><div className="v">{stats.openAuctions}</div></div>
-      <div className="stat-tile"><div className="k">GMV (captured)</div><div className="v">{money(stats.gmv)}</div></div>
-      <div className="stat-tile"><div className="k">Open disputes</div><div className="v">{stats.openDisputes}</div></div>
+    <div>
+      <div className="stat-tiles">
+        <div className="stat-tile"><div className="k">Total users</div><div className="v">{stats.totalUsers}</div></div>
+        <div className="stat-tile"><div className="k">Open auctions</div><div className="v">{stats.openAuctions}</div></div>
+        <div className="stat-tile"><div className="k">GMV (captured)</div><div className="v">{money(stats.gmv)}</div></div>
+        <div className="stat-tile"><div className="k">Open disputes</div><div className="v">{stats.openDisputes}</div></div>
+      </div>
+      <AdminAnalytics />
     </div>
   )
 }
@@ -439,6 +477,94 @@ function WalletModal({ user, onClose, onReleased }: {
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+function Listings() {
+  const [listings, setListings] = useState<AdminListing[]>([])
+  const [categories, setCategories] = useState<AdminCategory[]>([])
+  const [statusFilter, setStatusFilter] = useState('')
+  const [page, setPage] = useState(0)
+  const [totalPages, setTotalPages] = useState(0)
+  const [error, setError] = useState('')
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const { sorted: sortedListings, sortKey, sortDir, toggleSort } = useSortableData(listings, getListingSortValue)
+
+  const load = () => {
+    getAdminListings(statusFilter || undefined, page).then((res) => { setListings(res.content); setTotalPages(res.totalPages) }).catch((e) => setError(errorMessage(e)))
+  }
+
+  useEffect(() => { getAdminCategories().then(setCategories).catch(() => {}) }, [])
+  useEffect(() => setPage(0), [statusFilter])
+  useEffect(load, [statusFilter, page])
+
+  const changeTier = async (l: AdminListing, requiredTier: SubscriptionTier) => {
+    setBusyId(l.id); setError('')
+    try {
+      const updated = await updateListingRequiredTier(l.id, requiredTier)
+      setListings((prev) => prev.map((x) => (x.id === updated.id ? updated : x)))
+    } catch (e) { setError(errorMessage(e)) } finally { setBusyId(null) }
+  }
+
+  const changeCategory = async (l: AdminListing, categoryId: string) => {
+    setBusyId(l.id); setError('')
+    try {
+      const updated = await updateListingCategory(l.id, categoryId)
+      setListings((prev) => prev.map((x) => (x.id === updated.id ? updated : x)))
+    } catch (e) { setError(errorMessage(e)) } finally { setBusyId(null) }
+  }
+
+  return (
+    <div className="card">
+      <div className="admin-filters">
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+          <option value="">All statuses</option>
+          <option value="DRAFT">Draft</option>
+          <option value="PUBLISHED">Published</option>
+          <option value="WITHDRAWN">Withdrawn</option>
+        </select>
+      </div>
+      {error && <div className="error">{error}</div>}
+      <div style={{ overflowX: 'auto' }}>
+        <table className="admin-table">
+          <thead><tr>
+            <SortableTh label="Title" sortKey="title" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+            <SortableTh label="Seller" sortKey="seller" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+            <SortableTh label="Category" sortKey="category" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+            <SortableTh label="Base Price" sortKey="price" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+            <SortableTh label="Status" sortKey="status" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+            <SortableTh label="Required Tier" sortKey="tier" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+            <th></th>
+          </tr></thead>
+          <tbody>
+            {sortedListings.map((l) => (
+              <tr key={l.id}>
+                <td><a href={`/auctions/${l.id}`} target="_blank" rel="noreferrer">{l.title}</a></td>
+                <td>{l.sellerEmail}</td>
+                <td>
+                  <select value={l.categoryId} disabled={busyId === l.id} onChange={(e) => changeCategory(l, e.target.value)}>
+                    {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </td>
+                <td>{money(l.reservePrice)}</td>
+                <td><span className={`badge ${l.status}`}>{l.status}</span></td>
+                <td>
+                  <select value={l.requiredTier} disabled={busyId === l.id} onChange={(e) => changeTier(l, e.target.value as SubscriptionTier)}>
+                    <option value="NONE">None</option>
+                    <option value="SILVER">Silver</option>
+                    <option value="GOLD">Gold</option>
+                    <option value="DIAMOND">Diamond</option>
+                  </select>
+                </td>
+                <td>{busyId === l.id ? '…' : ''}</td>
+              </tr>
+            ))}
+            {listings.length === 0 && <tr><td colSpan={7} className="muted">No listings match.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+      <Pager page={page} totalPages={totalPages} onChange={setPage} />
     </div>
   )
 }
@@ -938,6 +1064,70 @@ function Categories() {
   )
 }
 
+function AuditLog() {
+  const [entries, setEntries] = useState<AuditLogEntry[]>([])
+  const [actionFilter, setActionFilter] = useState('')
+  const [fromDate, setFromDate] = useState('')
+  const [toDate, setToDate] = useState('')
+  const [page, setPage] = useState(0)
+  const [totalPages, setTotalPages] = useState(0)
+  const [error, setError] = useState('')
+  const { sorted: sortedEntries, sortKey, sortDir, toggleSort } = useSortableData(entries, getAuditLogSortValue)
+
+  const load = () => {
+    getAuditLog(actionFilter || undefined, fromDate || undefined, toDate || undefined, page)
+      .then((res) => { setEntries(res.content); setTotalPages(res.totalPages) })
+      .catch((e) => setError(errorMessage(e)))
+  }
+
+  useEffect(() => setPage(0), [actionFilter, fromDate, toDate])
+  useEffect(load, [actionFilter, fromDate, toDate, page])
+
+  return (
+    <div className="card">
+      <div className="admin-filters" style={{ flexWrap: 'wrap', gap: 10 }}>
+        <select value={actionFilter} onChange={(e) => setActionFilter(e.target.value)}>
+          <option value="">All actions</option>
+          {AUDIT_ACTIONS.map((a) => <option key={a} value={a}>{auditActionLabel(a)}</option>)}
+        </select>
+        <div className="fgroup" style={{ maxWidth: 160 }}>
+          <small>From</small>
+          <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+        </div>
+        <div className="fgroup" style={{ maxWidth: 160 }}>
+          <small>To</small>
+          <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+        </div>
+      </div>
+      {error && <div className="error">{error}</div>}
+      <div style={{ overflowX: 'auto' }}>
+        <table className="admin-table">
+          <thead><tr>
+            <SortableTh label="Time" sortKey="time" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+            <SortableTh label="Admin" sortKey="admin" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+            <SortableTh label="Action" sortKey="action" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+            <SortableTh label="Target" sortKey="target" activeKey={sortKey} dir={sortDir} onSort={toggleSort} />
+            <th>Summary</th>
+          </tr></thead>
+          <tbody>
+            {sortedEntries.map((e) => (
+              <tr key={e.id}>
+                <td style={{ whiteSpace: 'nowrap' }}>{formatDateTimeShort(e.createdAt)}</td>
+                <td>{e.adminEmail}</td>
+                <td>{auditActionLabel(e.action)}</td>
+                <td>{e.targetType}</td>
+                <td>{e.summary}</td>
+              </tr>
+            ))}
+            {entries.length === 0 && <tr><td colSpan={5} className="muted">No audit log entries match.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+      <Pager page={page} totalPages={totalPages} onChange={setPage} />
+    </div>
+  )
+}
+
 const TIERS: SubscriptionTier[] = ['SILVER', 'GOLD', 'DIAMOND']
 const CYCLES: { key: BillingCycle; label: string }[] = [
   { key: 'MONTHLY', label: 'Monthly' },
@@ -950,6 +1140,10 @@ const CYCLES: { key: BillingCycle; label: string }[] = [
  *  only for now — no payment is actually collected against either (see SubscriptionService /
  *  PlatformSettingsService javadoc). */
 function Settings() {
+  const { adminRole } = useAuth()
+  const [showCreateAdmin, setShowCreateAdmin] = useState(false)
+  const [createAdminMsg, setCreateAdminMsg] = useState('')
+
   const [fee, setFee] = useState('')
   const [feeSaving, setFeeSaving] = useState(false)
   const [feeMsg, setFeeMsg] = useState('')
@@ -965,6 +1159,10 @@ function Settings() {
   const [benefitsMsg, setBenefitsMsg] = useState('')
   const [benefitsError, setBenefitsError] = useState('')
   const [newBenefitName, setNewBenefitName] = useState('')
+  const [newBenefitPaid, setNewBenefitPaid] = useState(false)
+  const [newBenefitPrices, setNewBenefitPrices] = useState<Partial<Record<BillingCycle, string>>>({})
+  const [newBenefitMinDepositReq, setNewBenefitMinDepositReq] = useState(false)
+  const [newBenefitMinDeposit, setNewBenefitMinDeposit] = useState('')
   const [addingBenefit, setAddingBenefit] = useState(false)
   const [addBenefitError, setAddBenefitError] = useState('')
 
@@ -1023,13 +1221,40 @@ function Settings() {
     } catch (e2) { setBenefitsError(errorMessage(e2)) } finally { setBenefitsSaving(false) }
   }
 
+  /** Paid and min-deposit are mutually exclusive — a benefit is either free, requires extra
+   *  payment, or is unlocked by a minimum wallet deposit, never more than one of those at once. */
+  const checkPaid = (checked: boolean) => {
+    setNewBenefitPaid(checked)
+    if (checked) { setNewBenefitMinDepositReq(false); setNewBenefitMinDeposit('') }
+  }
+  const checkMinDeposit = (checked: boolean) => {
+    setNewBenefitMinDepositReq(checked)
+    if (checked) { setNewBenefitPaid(false); setNewBenefitPrices({}) }
+  }
+
   const submitNewBenefit = async (e: FormEvent) => {
     e.preventDefault()
+    if (newBenefitPaid && CYCLES.some((c) => !newBenefitPrices[c.key] || Number(newBenefitPrices[c.key]) <= 0)) {
+      setAddBenefitError('Enter an amount for every billing cycle.')
+      return
+    }
+    if (newBenefitMinDepositReq && !(Number(newBenefitMinDeposit) > 0)) {
+      setAddBenefitError('Enter a minimum deposit amount.')
+      return
+    }
     setAddingBenefit(true); setAddBenefitError('')
     try {
-      const created = await createMembershipBenefit(newBenefitName)
+      const prices: Partial<Record<BillingCycle, number>> = newBenefitPaid
+        ? Object.fromEntries(CYCLES.map((c) => [c.key, Number(newBenefitPrices[c.key])]))
+        : {}
+      const minDeposit = newBenefitMinDepositReq ? Number(newBenefitMinDeposit) : null
+      const created = await createMembershipBenefit(newBenefitName, newBenefitPaid, prices, minDeposit)
       setBenefits((prev) => [...prev, created])
       setNewBenefitName('')
+      setNewBenefitPaid(false)
+      setNewBenefitPrices({})
+      setNewBenefitMinDepositReq(false)
+      setNewBenefitMinDeposit('')
     } catch (e2) { setAddBenefitError(errorMessage(e2)) } finally { setAddingBenefit(false) }
   }
 
@@ -1044,6 +1269,26 @@ function Settings() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+      {adminRole === 'SUPER_ADMIN' && (
+        <div className="card">
+          <div className="section-head" style={{ marginBottom: 8 }}>
+            <h2 style={{ fontSize: 15, margin: 0 }}>Admin accounts</h2>
+            <button type="button" className="btn sm" onClick={() => setShowCreateAdmin(true)}>+ Create Admin</button>
+          </div>
+          <p className="muted" style={{ fontSize: 12.5, marginTop: 0 }}>
+            Only Super Admins can create new admin accounts. A Super Admin can create other Super
+            Admins or regular Admins; a regular Admin can't create anyone.
+          </p>
+          {createAdminMsg && <div className="ok">{createAdminMsg}</div>}
+        </div>
+      )}
+      {showCreateAdmin && (
+        <CreateAdminModal
+          onClose={() => setShowCreateAdmin(false)}
+          onCreated={(email) => setCreateAdminMsg(`Admin account "${email}" created.`)}
+        />
+      )}
+
       <div className="card">
         <h2 style={{ fontSize: 15, margin: '0 0 12px' }}>Registration fee</h2>
         <p className="muted" style={{ fontSize: 12.5, marginTop: 0 }}>
@@ -1116,6 +1361,7 @@ function Settings() {
                 <tr>
                   <th>Benefit</th>
                   {TIERS.map((tier) => <th key={tier}>{tier}</th>)}
+                  <th>Requirement</th>
                   <th></th>
                 </tr>
               </thead>
@@ -1132,6 +1378,13 @@ function Settings() {
                         />
                       </td>
                     ))}
+                    <td style={{ fontSize: 12 }}>
+                      {b.paid
+                        ? CYCLES.map((c) => `${c.label}: ${money(b.prices[c.key] ?? 0)}`).join(' · ')
+                        : b.minDeposit != null
+                        ? `Min. deposit ${money(b.minDeposit)}`
+                        : <span className="muted">Free</span>}
+                    </td>
                     <td>
                       <button type="button" className="btn ghost sm" onClick={() => removeBenefit(b.id)}>Remove</button>
                     </td>
@@ -1147,21 +1400,153 @@ function Settings() {
         {benefitsError && <div className="error">{benefitsError}</div>}
         {benefitsMsg && <div className="ok">{benefitsMsg}</div>}
 
-        <form onSubmit={submitNewBenefit} style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap', marginTop: 16 }}>
-          <div className="fgroup" style={{ maxWidth: 320, flex: 1 }}>
-            <small>New benefit</small>
-            <input
-              type="text"
-              placeholder="e.g. Priority customer support"
-              value={newBenefitName}
-              onChange={(e) => setNewBenefitName(e.target.value)}
-            />
+        <form onSubmit={submitNewBenefit} style={{ marginTop: 16 }}>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+            <div className="fgroup" style={{ maxWidth: 320, flex: 1 }}>
+              <small>New benefit</small>
+              <input
+                type="text"
+                placeholder="e.g. Priority customer support"
+                value={newBenefitName}
+                onChange={(e) => setNewBenefitName(e.target.value)}
+              />
+            </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, paddingBottom: 8 }}>
+              <input
+                type="checkbox"
+                checked={newBenefitPaid}
+                onChange={(e) => checkPaid(e.target.checked)}
+              />
+              Requires extra payment
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, paddingBottom: 8 }}>
+              <input
+                type="checkbox"
+                checked={newBenefitMinDepositReq}
+                onChange={(e) => checkMinDeposit(e.target.checked)}
+              />
+              Requires minimum wallet deposit
+            </label>
+            <button type="submit" className="btn sm" disabled={addingBenefit || !newBenefitName.trim()}>
+              {addingBenefit ? 'Adding…' : 'Add benefit'}
+            </button>
           </div>
-          <button type="submit" className="btn ghost sm" disabled={addingBenefit || !newBenefitName.trim()}>
-            {addingBenefit ? 'Adding…' : 'Add benefit'}
-          </button>
+          {newBenefitPaid && (
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 10 }}>
+              {CYCLES.map((c) => (
+                <div key={c.key} className="fgroup" style={{ maxWidth: 140 }}>
+                  <small>{c.label} (₹)</small>
+                  <input
+                    type="number"
+                    min={0}
+                    value={newBenefitPrices[c.key] ?? ''}
+                    onChange={(e) => setNewBenefitPrices((prev) => ({ ...prev, [c.key]: e.target.value }))}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+          {newBenefitMinDepositReq && (
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 10 }}>
+              <div className="fgroup" style={{ maxWidth: 200 }}>
+                <small>Minimum deposit (₹)</small>
+                <input
+                  type="number"
+                  min={0}
+                  placeholder="e.g. 50000"
+                  value={newBenefitMinDeposit}
+                  onChange={(e) => setNewBenefitMinDeposit(e.target.value)}
+                />
+              </div>
+            </div>
+          )}
         </form>
         {addBenefitError && <div className="error">{addBenefitError}</div>}
+      </div>
+    </div>
+  )
+}
+
+/** Only ever rendered for a Super Admin (see Settings) — the backend independently enforces the
+ *  same restriction in AdminAuthServiceImpl#register, so this is UX, not the actual guard. */
+function CreateAdminModal({ onClose, onCreated }: { onClose: () => void; onCreated: (email: string) => void }) {
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
+  const [email, setEmail] = useState('')
+  const [mobileNumber, setMobileNumber] = useState('')
+  const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [role, setRole] = useState<AdminRole>('ADMIN')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault()
+    setBusy(true); setError('')
+    try {
+      await createAdmin({ firstName, lastName, email, mobileNumber, password, confirmPassword, adminRole: role })
+      onCreated(email.trim().toLowerCase())
+      onClose()
+    } catch (e2) { setError(errorMessage(e2)) } finally { setBusy(false) }
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-card" style={{ maxWidth: 440 }} onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <h3>Create Admin</h3>
+          <button type="button" className="modal-close" onClick={onClose} aria-label="Close">✕</button>
+        </div>
+        <div className="modal-body">
+          <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <div className="fgroup" style={{ flex: 1 }}>
+                <small>First name</small>
+                <input value={firstName} onChange={(e) => setFirstName(e.target.value)} required />
+              </div>
+              <div className="fgroup" style={{ flex: 1 }}>
+                <small>Last name</small>
+                <input value={lastName} onChange={(e) => setLastName(e.target.value)} required />
+              </div>
+            </div>
+            <div className="fgroup">
+              <small>Email</small>
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+            </div>
+            <div className="fgroup">
+              <small>Mobile number</small>
+              <input value={mobileNumber} onChange={(e) => setMobileNumber(e.target.value)} placeholder="9876543210" required />
+            </div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <div className="fgroup" style={{ flex: 1 }}>
+                <small>Password</small>
+                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+              </div>
+              <div className="fgroup" style={{ flex: 1 }}>
+                <small>Confirm password</small>
+                <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required />
+              </div>
+            </div>
+            <div className="fgroup">
+              <small>Role</small>
+              <div style={{ display: 'flex', gap: 16, marginTop: 4 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+                  <input type="radio" name="createAdminRole" checked={role === 'ADMIN'} onChange={() => setRole('ADMIN')} />
+                  Admin
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+                  <input type="radio" name="createAdminRole" checked={role === 'SUPER_ADMIN'} onChange={() => setRole('SUPER_ADMIN')} />
+                  Super Admin
+                </label>
+              </div>
+              <p className="muted" style={{ fontSize: 11.5, marginTop: 4 }}>
+                Super Admins can create other admin accounts; regular Admins can't.
+              </p>
+            </div>
+            {error && <div className="error">{error}</div>}
+            <button type="submit" className="btn block" disabled={busy}>{busy ? 'Creating…' : 'Create Admin'}</button>
+          </form>
+        </div>
       </div>
     </div>
   )

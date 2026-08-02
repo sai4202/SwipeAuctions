@@ -11,11 +11,14 @@ import com.swipeauctions.admin.dtos.AdminLoginResponseDTO;
 import com.swipeauctions.admin.dtos.AdminRegisterRequestDTO;
 import com.swipeauctions.admin.entity.Admin;
 import com.swipeauctions.admin.entity.AdminPasswordResetToken;
+import com.swipeauctions.admin.enums.AdminRole;
+import com.swipeauctions.admin.enums.AuditAction;
 import com.swipeauctions.admin.helper.AdminLoginValidationService;
 import com.swipeauctions.admin.helper.AdminRegistrationHelperService;
 import com.swipeauctions.admin.helper.AdminSessionManagementService;
 import com.swipeauctions.admin.repository.AdminPasswordResetTokenRepository;
 import com.swipeauctions.admin.repository.AdminRepository;
+import com.swipeauctions.admin.service.AdminAuditLogService;
 import com.swipeauctions.admin.service.AdminAuthService;
 import com.swipeauctions.admin.service.AdminLoginSecurityService;
 import com.swipeauctions.auth.dto.ChangePasswordRequestDTO;
@@ -70,6 +73,8 @@ public class AdminAuthServiceImpl implements AdminAuthService {
 
     private final LoginRateLimiterService loginRateLimiterService;
 
+    private final AdminAuditLogService auditLogService;
+
     //reset password variable storing link
     @Value("${app.frontend.url}")
     private String frontendUrl;
@@ -82,6 +87,12 @@ public class AdminAuthServiceImpl implements AdminAuthService {
     @Override
     public String register(AdminRegisterRequestDTO request)
     {
+        // Only a Super Admin may create new admin accounts.
+        Admin currentAdmin = loggedInUserUtil.getCurrentAdmin();
+        if (currentAdmin.getAdminRole() != AdminRole.SUPER_ADMIN) {
+            throw new BadRequestException("Only a Super Admin can create new admin accounts");
+        }
+
         // Validate registration request.
         registrationHelperService.validateAdminRegistration(request);
 
@@ -90,6 +101,9 @@ public class AdminAuthServiceImpl implements AdminAuthService {
 
         // Persist admin.
         adminRepository.save(admin);
+
+        auditLogService.record(currentAdmin, AuditAction.ADMIN_CREATED, "Admin", admin.getId().toString(),
+                "Created admin \"" + admin.getEmail() + "\" (" + admin.getAdminRole() + ")");
 
         return "Admin registered successfully";
     }
@@ -160,6 +174,8 @@ public class AdminAuthServiceImpl implements AdminAuthService {
                 .tokenType("Bearer")
 
                 .role(admin.getRole().name())
+
+                .adminRole(admin.getAdminRole().name())
 
                 .active(admin.getActive())
 

@@ -97,6 +97,20 @@ export function EventTileGridSkeleton({ count = 5 }: { count?: number }) {
   )
 }
 
+/** Mirrors AdminAnalytics's 2x2 chart grid while GET /api/admin/analytics loads. */
+export function ChartGridSkeleton({ count = 4 }: { count?: number }) {
+  return (
+    <div className="chart-grid">
+      {Array.from({ length: count }).map((_, i) => (
+        <div className="card chart-card" key={i}>
+          <Skeleton height={11} width="40%" style={{ marginBottom: 14 }} />
+          <Skeleton height={160} radius={8} />
+        </div>
+      ))}
+    </div>
+  )
+}
+
 /** Mirrors AuctionDetailPage's two-column layout (gallery + buy box) while the auction loads. */
 export function AuctionDetailSkeleton() {
   return (

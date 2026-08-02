@@ -8,7 +8,9 @@ import com.razorpay.Utils;
 import com.swipeauctions.common.exception.BadRequestException;
 import com.swipeauctions.enums.BillingCycle;
 import com.swipeauctions.enums.SubscriptionTier;
+import com.swipeauctions.settings.entity.MembershipBenefit;
 import com.swipeauctions.settings.entity.SubscriptionPlanPrice;
+import com.swipeauctions.settings.repository.MembershipBenefitRepository;
 import com.swipeauctions.settings.repository.SubscriptionPlanPriceRepository;
 import com.swipeauctions.settings.service.PlatformSettingsService;
 import com.swipeauctions.settings.service.SubscriptionService;
@@ -34,6 +36,9 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.Base64;
+import java.util.Set;
+import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Everything that actually talks to Razorpay: order creation + payment verification for the three
@@ -55,6 +60,7 @@ public class RazorpayPaymentService {
     private final PlatformSettingsService platformSettingsService;
     private final SubscriptionService subscriptionService;
     private final SubscriptionPlanPriceRepository priceRepository;
+    private final MembershipBenefitRepository membershipBenefitRepository;
 
     private void requireEnabled() {
         if (!config.isEnabled()) {
@@ -124,11 +130,28 @@ public class RazorpayPaymentService {
         return createOrder(user, fee, PaymentPurpose.REGISTRATION_FEE, null);
     }
 
+    /** {@code addonBenefitIds} are paid {@link MembershipBenefit}s the buyer opted into on top of
+     *  the base tier price (see TierCards.tsx's per-benefit checkbox) — each must be paid, enabled
+     *  for {@code tier}, and priced for {@code cycle}, or the whole order is rejected. */
     @Transactional
-    public OrderIntent createSubscriptionOrder(User user, SubscriptionTier tier, BillingCycle cycle) {
+    public OrderIntent createSubscriptionOrder(User user, SubscriptionTier tier, BillingCycle cycle,
+                                                Set<UUID> addonBenefitIds) {
         SubscriptionPlanPrice priceRow = priceRepository.findByTierAndBillingCycle(tier, cycle)
                 .orElseThrow(() -> new BadRequestException("No price configured for " + tier + "/" + cycle));
-        return createOrder(user, priceRow.getPrice(), PaymentPurpose.SUBSCRIPTION, tier.name() + ":" + cycle.name());
+        BigDecimal total = priceRow.getPrice();
+        for (UUID benefitId : addonBenefitIds == null ? Set.<UUID>of() : addonBenefitIds) {
+            MembershipBenefit benefit = membershipBenefitRepository.findById(benefitId)
+                    .orElseThrow(() -> new BadRequestException("Unknown benefit: " + benefitId));
+            if (!benefit.isPaid() || !benefit.getEnabledTiers().contains(tier)) {
+                throw new BadRequestException("\"" + benefit.getName() + "\" is not a paid add-on for " + tier);
+            }
+            BigDecimal addonPrice = benefit.getPrices().get(cycle);
+            if (addonPrice == null) {
+                throw new BadRequestException("No " + cycle + " price configured for \"" + benefit.getName() + "\"");
+            }
+            total = total.add(addonPrice);
+        }
+        return createOrder(user, total, PaymentPurpose.SUBSCRIPTION, tier.name() + ":" + cycle.name());
     }
 
     // ---- Verification — the client-side fast path, right after Razorpay Checkout succeeds ----

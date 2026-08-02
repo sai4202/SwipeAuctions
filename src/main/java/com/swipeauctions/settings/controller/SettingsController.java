@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -59,8 +60,10 @@ public class SettingsController {
     }
 
     static MembershipBenefitResponse toResponse(MembershipBenefit b) {
-        return new MembershipBenefitResponse(b.getId(), b.getName(), b.getSortOrder(), b.getEnabledTiers());
+        return new MembershipBenefitResponse(b.getId(), b.getName(), b.getSortOrder(), b.getEnabledTiers(),
+                b.isPaid(), b.getPrices(), b.getMinDeposit());
     }
 
-    public record MembershipBenefitResponse(UUID id, String name, int sortOrder, Set<SubscriptionTier> enabledTiers) {}
+    public record MembershipBenefitResponse(UUID id, String name, int sortOrder, Set<SubscriptionTier> enabledTiers,
+                                              boolean paid, Map<BillingCycle, BigDecimal> prices, BigDecimal minDeposit) {}
 }

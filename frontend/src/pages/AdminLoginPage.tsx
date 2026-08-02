@@ -15,7 +15,7 @@ export default function AdminLoginPage() {
     e.preventDefault(); setError(''); setBusy(true)
     try {
       const data = await adminLogin(identifier, password)
-      signIn({ token: data.token, email: data.email, role: data.role })
+      signIn({ token: data.token, email: data.email, role: data.role, adminRole: data.adminRole })
       navigate('/admin')
     } catch (err) {
       setError(errorMessage(err))

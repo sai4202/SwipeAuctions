@@ -1,6 +1,8 @@
 package com.swipeauctions.settings.service;
 
+import com.swipeauctions.common.exception.BadRequestException;
 import com.swipeauctions.common.exception.ResourceNotFoundException;
+import com.swipeauctions.enums.BillingCycle;
 import com.swipeauctions.enums.SubscriptionTier;
 import com.swipeauctions.settings.entity.MembershipBenefit;
 import com.swipeauctions.settings.repository.MembershipBenefitRepository;
@@ -8,8 +10,11 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -31,11 +36,31 @@ public class MembershipBenefitService {
     }
 
     @Transactional
-    public MembershipBenefit addBenefit(String name) {
+    public MembershipBenefit addBenefit(String name, boolean paid, Map<BillingCycle, BigDecimal> prices,
+                                         BigDecimal minDeposit) {
+        if (paid && minDeposit != null) {
+            throw new BadRequestException("A benefit can't require both payment and a minimum deposit — pick one.");
+        }
+        Map<BillingCycle, BigDecimal> resolvedPrices = new HashMap<>();
+        if (paid) {
+            for (BillingCycle cycle : BillingCycle.values()) {
+                BigDecimal price = prices == null ? null : prices.get(cycle);
+                if (price == null || price.signum() <= 0) {
+                    throw new BadRequestException("A price for every billing cycle is required for a paid benefit");
+                }
+                resolvedPrices.put(cycle, price);
+            }
+        }
+        if (minDeposit != null && minDeposit.signum() <= 0) {
+            throw new BadRequestException("Minimum deposit must be positive");
+        }
         MembershipBenefit benefit = MembershipBenefit.builder()
                 .name(name)
                 .sortOrder((int) benefitRepository.count())
                 .enabledTiers(new HashSet<>())
+                .paid(paid)
+                .prices(resolvedPrices)
+                .minDeposit(minDeposit)
                 .build();
         return benefitRepository.save(benefit);
     }

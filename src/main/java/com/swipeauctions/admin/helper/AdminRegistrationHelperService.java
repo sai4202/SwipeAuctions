@@ -83,6 +83,9 @@ public class AdminRegistrationHelperService {
                 // Assign admin role.
                 .role(Role.ADMIN)
 
+                // Permission tier chosen by the creating (Super Admin) user.
+                .adminRole(request.getAdminRole())
+
                 // Enable admin account by default.
                 .active(true)
 

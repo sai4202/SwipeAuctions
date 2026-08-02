@@ -1,5 +1,8 @@
 package com.swipeauctions.admin.controller;
 
+import com.swipeauctions.admin.entity.Admin;
+import com.swipeauctions.admin.enums.AuditAction;
+import com.swipeauctions.admin.service.AdminAuditLogService;
 import com.swipeauctions.admin.service.AdminUserService;
 import com.swipeauctions.auction.entity.Auction;
 import com.swipeauctions.auction.enums.AuctionStatus;
@@ -17,6 +20,7 @@ import com.swipeauctions.catalog.service.CatalogService;
 import com.swipeauctions.common.exception.BadRequestException;
 import com.swipeauctions.common.exception.ResourceNotFoundException;
 import com.swipeauctions.common.response.PageResponse;
+import com.swipeauctions.common.util.LoggedInUserUtil;
 import com.swipeauctions.dispute.controller.DisputeController;
 import com.swipeauctions.dispute.entity.Dispute;
 import com.swipeauctions.dispute.enums.DisputeStatus;
@@ -42,7 +46,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
-import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
@@ -70,6 +73,8 @@ public class AdminController {
     private final KycService kycService;
     private final WalletService walletService;
     private final BidEligibilityHoldRepository holdRepository;
+    private final LoggedInUserUtil loggedInUserUtil;
+    private final AdminAuditLogService auditLogService;
 
     // ---- Users ----
 
@@ -90,12 +95,20 @@ public class AdminController {
 
     @PostMapping("/users/{id}/suspend")
     public UserResponse suspend(@PathVariable UUID id) {
-        return toUser(adminUserService.suspend(id));
+        Admin admin = loggedInUserUtil.getCurrentAdmin();
+        User user = adminUserService.suspend(id);
+        auditLogService.record(admin, AuditAction.USER_SUSPENDED, "User", user.getId().toString(),
+                "Suspended user " + user.getEmail());
+        return toUser(user);
     }
 
     @PostMapping("/users/{id}/reactivate")
     public UserResponse reactivate(@PathVariable UUID id) {
-        return toUser(adminUserService.reactivate(id));
+        Admin admin = loggedInUserUtil.getCurrentAdmin();
+        User user = adminUserService.reactivate(id);
+        auditLogService.record(admin, AuditAction.USER_REACTIVATED, "User", user.getId().toString(),
+                "Reactivated user " + user.getEmail());
+        return toUser(user);
     }
 
     /** Active (unresolved) EMD holds for a user — the "locked" amounts an admin can refund/release. */
@@ -136,6 +149,8 @@ public class AdminController {
         }
         walletService.releaseHold(hold.getAuction(), hold.getBidder());
         Wallet w = walletService.getWallet(hold.getBidder());
+        auditLogService.record(loggedInUserUtil.getCurrentAdmin(), AuditAction.HOLD_RELEASED, "Hold", holdId.toString(),
+                "Released EMD hold for " + hold.getBidder().getEmail() + " on \"" + hold.getAuction().getListing().getTitle() + "\"");
         return new ReleaseHoldResponse(w.getAvailableBalance(), w.getHeldBalance(), walletService.creditLimitFor(w.getAvailableBalance()));
     }
 
@@ -161,20 +176,52 @@ public class AdminController {
 
     @PostMapping("/auctions/{id}/force-close")
     public AuctionResponse forceClose(@PathVariable UUID id) {
-        return toAuction(auctionService.forceClose(id));
+        Admin admin = loggedInUserUtil.getCurrentAdmin();
+        Auction a = auctionService.forceClose(id);
+        auditLogService.record(admin, AuditAction.AUCTION_FORCE_CLOSED, "Auction", a.getId().toString(),
+                "Force-closed \"" + a.getListing().getTitle() + "\"");
+        return toAuction(a);
     }
 
     @PatchMapping("/auctions/{id}")
     public AuctionResponse updateAuction(@PathVariable UUID id, @Valid @RequestBody UpdateAuctionRequest req) {
-        return toAuction(auctionService.adminUpdate(id, req.title(), req.basePrice(), req.startTime(), req.endTime()));
+        Admin admin = loggedInUserUtil.getCurrentAdmin();
+        Auction a = auctionService.adminUpdate(id, req.title(), req.basePrice(), req.startTime(), req.endTime());
+        auditLogService.record(admin, AuditAction.AUCTION_MODIFIED, "Auction", a.getId().toString(),
+                "Modified auction \"" + a.getListing().getTitle() + "\" (title/base price/timing)");
+        return toAuction(a);
     }
 
     @PatchMapping("/listings/{id}/required-tier")
     public ListingResponse updateRequiredTier(@PathVariable UUID id, @Valid @RequestBody UpdateRequiredTierRequest req) {
+        Admin admin = loggedInUserUtil.getCurrentAdmin();
         Listing listing = listingRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Listing not found"));
         listing.setRequiredTier(req.requiredTier());
-        return toListing(listingRepository.save(listing));
+        Listing saved = listingRepository.save(listing);
+        auditLogService.record(admin, AuditAction.LISTING_REQUIRED_TIER_CHANGED, "Listing", saved.getId().toString(),
+                "Set required tier of \"" + saved.getTitle() + "\" to " + req.requiredTier());
+        return toListing(saved);
+    }
+
+    /** Admin correction tool, not part of the creation flow — deliberately doesn't re-run
+     *  requireVehicleDetails-style validation. Existing ListingAttribute rows are left as-is; if
+     *  they no longer fit the new category, DetailTabs/ItemDetailStrip already render unrecognized
+     *  keys gracefully via their existing fallback paths rather than breaking. */
+    @PatchMapping("/listings/{id}/category")
+    public ListingResponse updateListingCategory(@PathVariable UUID id, @Valid @RequestBody UpdateListingCategoryRequest req) {
+        Admin admin = loggedInUserUtil.getCurrentAdmin();
+        Listing listing = listingRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Listing not found"));
+        Category category = catalogService.listCategories().stream()
+                .filter(c -> c.getId().equals(req.categoryId())).findFirst()
+                .orElseThrow(() -> new BadRequestException("Category not found"));
+        String oldCategoryName = listing.getCategory().getName();
+        listing.setCategory(category);
+        Listing saved = listingRepository.save(listing);
+        auditLogService.record(admin, AuditAction.LISTING_CATEGORY_CHANGED, "Listing", saved.getId().toString(),
+                "Recategorized \"" + saved.getTitle() + "\" from " + oldCategoryName + " to " + category.getName());
+        return toListing(saved);
     }
 
     // ---- Disputes ----
@@ -194,8 +241,13 @@ public class AdminController {
     @PostMapping("/disputes/{id}/resolve")
     public DisputeController.DisputeResponse resolveDispute(@PathVariable UUID id,
                                                               @Valid @RequestBody ResolveDisputeRequest req) {
+        Admin admin = loggedInUserUtil.getCurrentAdmin();
         boolean refundBuyer = Boolean.TRUE.equals(req.refundBuyer());
-        return DisputeController.toResponse(disputeService.resolve(id, req.adminNotes(), refundBuyer));
+        Dispute d = disputeService.resolve(id, req.adminNotes(), refundBuyer);
+        auditLogService.record(admin, AuditAction.DISPUTE_RESOLVED, "Dispute", d.getId().toString(),
+                "Resolved dispute on \"" + d.getAuction().getListing().getTitle() + "\" — "
+                        + (refundBuyer ? "refunded buyer" : "released to seller"));
+        return DisputeController.toResponse(d);
     }
 
     // ---- Categories ----
@@ -209,7 +261,11 @@ public class AdminController {
 
     @PostMapping("/categories")
     public CategoryResponse createCategory(@Valid @RequestBody CreateCategoryRequest req) {
-        return toCategory(catalogService.createCategory(req.name(), req.slug(), req.parentId()));
+        Admin admin = loggedInUserUtil.getCurrentAdmin();
+        Category c = catalogService.createCategory(req.name(), req.slug(), req.parentId());
+        auditLogService.record(admin, AuditAction.CATEGORY_CREATED, "Category", c.getId().toString(),
+                "Created category \"" + c.getName() + "\"");
+        return toCategory(c);
     }
 
     @GetMapping("/categories/{id}/attributes")
@@ -220,8 +276,11 @@ public class AdminController {
     @PostMapping("/categories/{id}/attributes")
     public CategoryAttributeResponse addCategoryAttribute(@PathVariable UUID id,
                                                            @Valid @RequestBody CreateCategoryAttributeRequest req) {
+        Admin admin = loggedInUserUtil.getCurrentAdmin();
         CategoryAttributeDef def = catalogService.addCategoryAttribute(id, req.key(), req.label(),
                 req.valueType(), req.filterable() == null || req.filterable(), req.sortOrder() != null ? req.sortOrder() : 0);
+        auditLogService.record(admin, AuditAction.CATEGORY_ATTRIBUTE_ADDED, "Category", id.toString(),
+                "Added attribute \"" + def.getLabel() + "\" to category");
         return toCategoryAttribute(def);
     }
 
@@ -241,17 +300,23 @@ public class AdminController {
 
     @PostMapping("/kyc/{userId}/approve")
     public AdminKycResponse approveKyc(@PathVariable UUID userId,
-                                        @RequestBody(required = false) KycReviewRequest req,
-                                        Authentication authentication) {
+                                        @RequestBody(required = false) KycReviewRequest req) {
+        Admin admin = loggedInUserUtil.getCurrentAdmin();
         String remarks = req != null ? req.remarks() : null;
-        return toKyc(kycService.approve(userId, remarks, authentication.getName()));
+        KycVerification k = kycService.approve(userId, remarks, admin.getEmail());
+        auditLogService.record(admin, AuditAction.KYC_APPROVED, "Kyc", userId.toString(),
+                "Approved KYC for " + k.getUser().getEmail());
+        return toKyc(k);
     }
 
     @PostMapping("/kyc/{userId}/reject")
     public AdminKycResponse rejectKyc(@PathVariable UUID userId,
-                                       @Valid @RequestBody KycReviewRequest req,
-                                       Authentication authentication) {
-        return toKyc(kycService.reject(userId, req.remarks(), authentication.getName()));
+                                       @Valid @RequestBody KycReviewRequest req) {
+        Admin admin = loggedInUserUtil.getCurrentAdmin();
+        KycVerification k = kycService.reject(userId, req.remarks(), admin.getEmail());
+        auditLogService.record(admin, AuditAction.KYC_REJECTED, "Kyc", userId.toString(),
+                "Rejected KYC for " + k.getUser().getEmail() + " — " + req.remarks());
+        return toKyc(k);
     }
 
     // ---- Stats ----
@@ -267,6 +332,82 @@ public class AdminController {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         return new StatsResponse(totalUsers, openAuctions, gmv, openDisputes);
     }
+
+    // ---- Analytics ----
+
+    /** Time-bucketed counts/sums for the Overview dashboard's graphs — last {@link #BUCKET_COUNT}
+     *  buckets of whichever granularity is requested. Deliberately in-memory scan + bucket, same
+     *  style as {@link #stats()} above (no native SQL / date-truncation query anywhere in this
+     *  codebase yet) — perfectly adequate at this app's data volume. */
+    @GetMapping("/analytics")
+    public AnalyticsResponse analytics(@RequestParam(defaultValue = "MONTHLY") Granularity granularity) {
+        int currentIndex = bucketIndex(LocalDateTime.now(), granularity);
+        List<Point> newUsers = bucketCount(
+                userRepository.findAll().stream().map(User::getCreatedAt).toList(), granularity, currentIndex);
+        List<Point> stockListed = bucketCount(
+                listingRepository.findAll().stream().map(Listing::getCreatedAt).toList(), granularity, currentIndex);
+        List<Point> stockSold = bucketCount(
+                auctionRepository.findByStatus(AuctionStatus.CLOSED).stream().map(Auction::getCurrentEndTime).toList(),
+                granularity, currentIndex);
+        List<Point> gmv = bucketSum(walletTransactionRepository.findByType(WalletTxnType.CAPTURE), granularity, currentIndex);
+        return new AnalyticsResponse(newUsers, stockListed, stockSold, gmv);
+    }
+
+    private static final int BUCKET_COUNT = 12;
+
+    public enum Granularity { MONTHLY, QUARTERLY, YEARLY }
+
+    private static int bucketIndex(LocalDateTime dt, Granularity g) {
+        return switch (g) {
+            case MONTHLY -> dt.getYear() * 12 + (dt.getMonthValue() - 1);
+            case QUARTERLY -> dt.getYear() * 4 + (dt.getMonthValue() - 1) / 3;
+            case YEARLY -> dt.getYear();
+        };
+    }
+
+    private static String bucketLabel(int index, Granularity g) {
+        return switch (g) {
+            case MONTHLY -> {
+                int year = Math.floorDiv(index, 12);
+                int month = Math.floorMod(index, 12) + 1;
+                yield java.time.Month.of(month).getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.ENGLISH) + " " + year;
+            }
+            case QUARTERLY -> "Q" + (Math.floorMod(index, 4) + 1) + " " + Math.floorDiv(index, 4);
+            case YEARLY -> String.valueOf(index);
+        };
+    }
+
+    private static List<Point> bucketCount(List<LocalDateTime> timestamps, Granularity g, int currentIndex) {
+        java.util.Map<Integer, Long> counts = new java.util.HashMap<>();
+        for (LocalDateTime dt : timestamps) {
+            int idx = bucketIndex(dt, g);
+            if (idx > currentIndex || idx <= currentIndex - BUCKET_COUNT) continue;
+            counts.merge(idx, 1L, Long::sum);
+        }
+        List<Point> points = new java.util.ArrayList<>();
+        for (int i = currentIndex - BUCKET_COUNT + 1; i <= currentIndex; i++) {
+            points.add(new Point(bucketLabel(i, g), BigDecimal.valueOf(counts.getOrDefault(i, 0L))));
+        }
+        return points;
+    }
+
+    private static List<Point> bucketSum(List<com.swipeauctions.wallet.entity.WalletTransaction> txns, Granularity g, int currentIndex) {
+        java.util.Map<Integer, BigDecimal> sums = new java.util.HashMap<>();
+        for (var t : txns) {
+            int idx = bucketIndex(t.getCreatedAt(), g);
+            if (idx > currentIndex || idx <= currentIndex - BUCKET_COUNT) continue;
+            sums.merge(idx, t.getAmount(), BigDecimal::add);
+        }
+        List<Point> points = new java.util.ArrayList<>();
+        for (int i = currentIndex - BUCKET_COUNT + 1; i <= currentIndex; i++) {
+            points.add(new Point(bucketLabel(i, g), sums.getOrDefault(i, BigDecimal.ZERO)));
+        }
+        return points;
+    }
+
+    public record Point(String label, BigDecimal value) {}
+
+    public record AnalyticsResponse(List<Point> newUsers, List<Point> stockListed, List<Point> stockSold, List<Point> gmv) {}
 
     // ---- paging / mapping helpers ----
 
@@ -296,7 +437,7 @@ public class AdminController {
     }
 
     static ListingResponse toListing(Listing l) {
-        return new ListingResponse(l.getId(), l.getTitle(), l.getSeller().getEmail(),
+        return new ListingResponse(l.getId(), l.getTitle(), l.getSeller().getEmail(), l.getCategory().getId(),
                 l.getCategory().getName(), l.getStatus(), l.getReservePrice(), l.getCreatedAt(), l.getRequiredTier());
     }
 
@@ -343,11 +484,13 @@ public class AdminController {
 
     public record ReleaseHoldResponse(BigDecimal availableBalance, BigDecimal heldBalance, BigDecimal creditLimit) {}
 
-    public record ListingResponse(UUID id, String title, String sellerEmail, String categoryName,
+    public record ListingResponse(UUID id, String title, String sellerEmail, UUID categoryId, String categoryName,
                                   ListingStatus status, BigDecimal reservePrice, LocalDateTime createdAt,
                                   SubscriptionTier requiredTier) {}
 
     public record UpdateRequiredTierRequest(@jakarta.validation.constraints.NotNull SubscriptionTier requiredTier) {}
+
+    public record UpdateListingCategoryRequest(@jakarta.validation.constraints.NotNull UUID categoryId) {}
 
     public record AuctionResponse(UUID id, UUID listingId, String title, String sellerEmail,
                                   BigDecimal basePrice, BigDecimal currentHighestBid, AuctionStatus status,

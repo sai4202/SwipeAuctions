@@ -1,6 +1,7 @@
 package com.swipeauctions.common.dev;
 
 import com.swipeauctions.admin.entity.Admin;
+import com.swipeauctions.admin.enums.AdminRole;
 import com.swipeauctions.admin.repository.AdminRepository;
 import com.swipeauctions.auction.repository.AuctionRepository;
 import com.swipeauctions.auction.service.AuctionService;
@@ -598,7 +599,8 @@ public class DevDataSeeder implements CommandLineRunner {
     private void getOrCreateAdmin() {
         Admin admin = adminRepository.findByEmail(ADMIN_EMAIL).orElseGet(() -> adminRepository.save(Admin.builder()
                 .firstName("Swipe").lastName("Admin").email(ADMIN_EMAIL).mobileNumber("9000000099")
-                .password(passwordEncoder.encode(DEMO_PASSWORD)).role(Role.ADMIN).active(true).build()));
+                .password(passwordEncoder.encode(DEMO_PASSWORD)).role(Role.ADMIN)
+                .adminRole(AdminRole.SUPER_ADMIN).active(true).build()));
 
         // Dev convenience: the admin auth stack allows only one active session at a time (no
         // configurable limit like the user side) — clear any left over from a prior test run so

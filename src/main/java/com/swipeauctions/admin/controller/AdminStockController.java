@@ -1,5 +1,8 @@
 package com.swipeauctions.admin.controller;
 
+import com.swipeauctions.admin.entity.Admin;
+import com.swipeauctions.admin.enums.AuditAction;
+import com.swipeauctions.admin.service.AdminAuditLogService;
 import com.swipeauctions.auction.entity.Auction;
 import com.swipeauctions.auction.service.AuctionService;
 import com.swipeauctions.catalog.controller.CatalogController;
@@ -12,6 +15,7 @@ import com.swipeauctions.enums.SubscriptionTier;
 import com.swipeauctions.storage.service.StorageProvider;
 import com.swipeauctions.common.exception.BadRequestException;
 import com.swipeauctions.common.platform.PlatformAccountService;
+import com.swipeauctions.common.util.LoggedInUserUtil;
 import com.swipeauctions.user.entity.User;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -114,6 +118,8 @@ public class AdminStockController {
     private final AuctionService auctionService;
     private final StorageProvider storageProvider;
     private final PlatformAccountService platformAccountService;
+    private final LoggedInUserUtil loggedInUserUtil;
+    private final AdminAuditLogService auditLogService;
 
     /**
      * Category names (case-insensitive) treated as "vehicles" for {@link #requireVehicleDetails} —
@@ -142,6 +148,7 @@ public class AdminStockController {
 
     @PostMapping("/listings")
     public StockListingResponse createListing(@Valid @RequestBody CreateStockListingRequest req) {
+        Admin admin = loggedInUserUtil.getCurrentAdmin();
         User seller = platformAccountService.getOrCreateSwipeStockSeller();
         Category category = resolveCategory(req.categoryId(), req.categoryName());
         requireVehicleDetails(category, req.condition(), req.attributes());
@@ -150,6 +157,8 @@ public class AdminStockController {
                 req.brand(), req.condition(), req.city(), req.state(), req.zip(), req.reservePrice(),
                 req.attributes(), Boolean.TRUE.equals(req.swipeStock()),
                 req.requiredTier() != null ? req.requiredTier() : SubscriptionTier.NONE);
+        auditLogService.record(admin, AuditAction.STOCK_LISTING_CREATED, "Listing", listing.getId().toString(),
+                "Created stock listing \"" + listing.getTitle() + "\"");
         return toStockListing(listing);
     }
 
@@ -188,6 +197,7 @@ public class AdminStockController {
     @PostMapping(value = "/bulk", consumes = "multipart/form-data")
     public BulkImportResponse bulkImport(@RequestParam MultipartFile file,
                                           @RequestParam(defaultValue = "false") boolean swipeStock) {
+        Admin admin = loggedInUserUtil.getCurrentAdmin();
         User seller = platformAccountService.getOrCreateSwipeStockSeller();
         List<RowError> errors = new ArrayList<>();
         int created = 0;
@@ -263,6 +273,8 @@ public class AdminStockController {
             throw new BadRequestException("Could not read the uploaded file — is it a valid .xlsx/.xls?");
         }
 
+        auditLogService.record(admin, AuditAction.STOCK_BULK_IMPORTED, "Stock", null,
+                "Bulk-imported stock: " + created + " of " + totalRows + " rows created" + (errors.isEmpty() ? "" : ", " + errors.size() + " error(s)"));
         return new BulkImportResponse(totalRows, created, errors);
     }
 

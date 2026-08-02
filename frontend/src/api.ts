@@ -88,6 +88,9 @@ export interface MembershipBenefit {
   name: string
   sortOrder: number
   enabledTiers: SubscriptionTier[]
+  paid: boolean
+  prices: Partial<Record<BillingCycle, number>>
+  minDeposit: number | null
 }
 export interface KycStatusResult {
   kycCompleted: boolean
@@ -97,11 +100,13 @@ export interface KycStatusResult {
   verifiedAt?: string
   remarks?: string
 }
+export type AdminRole = 'SUPER_ADMIN' | 'ADMIN'
 export interface AdminLoginData {
   adminId: string
   email: string
   token: string
   role: string
+  adminRole: AdminRole
   active: boolean
 }
 export interface Auction {
@@ -229,6 +234,7 @@ export interface AdminListing {
   id: string
   title: string
   sellerEmail: string
+  categoryId: string
   categoryName: string
   status: string
   reservePrice: number
@@ -379,6 +385,13 @@ export async function login(emailOrMobile: string, password: string, clientDevic
 export async function adminLogin(email: string, password: string): Promise<AdminLoginData> {
   const res = await api.post<ApiEnvelope<AdminLoginData>>('/api/admin/auth/login', { email, password })
   return res.data.data
+}
+export async function createAdmin(body: {
+  firstName: string; lastName: string; email: string; mobileNumber: string
+  password: string; confirmPassword: string; adminRole: AdminRole
+}): Promise<string> {
+  const res = await api.post<ApiEnvelope<string>>('/api/admin/auth/register', body)
+  return res.data.message
 }
 export async function register(body: {
   email: string; mobileNumber: string; password: string; confirmPassword: string; role?: 'USER' | 'DEALER'
@@ -612,6 +625,36 @@ export async function getAdminListings(status?: string, page = 0, size = 20): Pr
   const res = await api.get<PageResponse<AdminListing>>('/api/admin/listings', { params: { ...(status ? { status } : {}), page, size } })
   return res.data
 }
+export interface AuditLogEntry {
+  id: string
+  adminEmail: string
+  action: string
+  targetType: string
+  targetId: string | null
+  summary: string
+  createdAt: string
+}
+export async function getAuditLog(action?: string, from?: string, to?: string, page = 0, size = 20): Promise<PageResponse<AuditLogEntry>> {
+  const res = await api.get<PageResponse<AuditLogEntry>>('/api/admin/audit-log', {
+    params: { ...(action ? { action } : {}), ...(from ? { from } : {}), ...(to ? { to } : {}), page, size },
+  })
+  return res.data
+}
+export type AnalyticsGranularity = 'MONTHLY' | 'QUARTERLY' | 'YEARLY'
+export interface AnalyticsPoint {
+  label: string
+  value: number
+}
+export interface AdminAnalyticsData {
+  newUsers: AnalyticsPoint[]
+  stockListed: AnalyticsPoint[]
+  stockSold: AnalyticsPoint[]
+  gmv: AnalyticsPoint[]
+}
+export async function getAdminAnalytics(granularity: AnalyticsGranularity): Promise<AdminAnalyticsData> {
+  const res = await api.get<AdminAnalyticsData>('/api/admin/analytics', { params: { granularity } })
+  return res.data
+}
 export async function getAdminAuctions(status?: string, page = 0, size = 20): Promise<PageResponse<AdminAuction>> {
   const res = await api.get<PageResponse<AdminAuction>>('/api/admin/auctions', { params: { ...(status ? { status } : {}), page, size } })
   return res.data
@@ -732,8 +775,12 @@ export async function updateSubscriptionPrices(prices: SubscriptionPrice[]): Pro
   const res = await api.put<SubscriptionPrice[]>('/api/admin/settings/subscription-prices', { prices })
   return res.data
 }
-export async function createMembershipBenefit(name: string): Promise<MembershipBenefit> {
-  const res = await api.post<MembershipBenefit>('/api/admin/settings/membership-benefits', { name })
+export async function createMembershipBenefit(
+  name: string, paid: boolean, prices: Partial<Record<BillingCycle, number>>, minDeposit: number | null,
+): Promise<MembershipBenefit> {
+  const res = await api.post<MembershipBenefit>(
+    '/api/admin/settings/membership-benefits', { name, paid, prices, minDeposit },
+  )
   return res.data
 }
 export async function updateMembershipBenefitTiers(
@@ -749,14 +796,20 @@ export async function updateListingRequiredTier(listingId: string, requiredTier:
   const res = await api.patch<AdminListing>(`/api/admin/listings/${listingId}/required-tier`, { requiredTier })
   return res.data
 }
+export async function updateListingCategory(listingId: string, categoryId: string): Promise<AdminListing> {
+  const res = await api.patch<AdminListing>(`/api/admin/listings/${listingId}/category`, { categoryId })
+  return res.data
+}
 
 // ---- Subscriptions — real Razorpay payment, order then verify ----
 export async function getMySubscription(): Promise<MySubscription> {
   const res = await api.get<MySubscription>('/api/subscriptions/me')
   return res.data
 }
-export async function createSubscriptionOrder(tier: SubscriptionTier, billingCycle: BillingCycle): Promise<OrderIntent> {
-  const res = await api.post<OrderIntent>('/api/subscriptions/order', { tier, billingCycle })
+export async function createSubscriptionOrder(
+  tier: SubscriptionTier, billingCycle: BillingCycle, addonBenefitIds: string[] = [],
+): Promise<OrderIntent> {
+  const res = await api.post<OrderIntent>('/api/subscriptions/order', { tier, billingCycle, addonBenefitIds })
   return res.data
 }
 export async function verifySubscription(orderId: string, paymentId: string, signature: string): Promise<MySubscription> {

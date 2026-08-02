@@ -1,10 +1,13 @@
 package com.swipeauctions.common.exception;
 
+import com.fasterxml.jackson.databind.exc.InvalidFormatException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import com.swipeauctions.common.response.ApiResponse;
 
 import java.util.HashMap;
@@ -60,6 +63,32 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.TOO_MANY_REQUESTS)
                 .body(ApiResponse.error(exception.getMessage()));
+    }
+
+    // Malformed JSON body — most commonly an invalid enum literal (e.g. billingCycle: "WEEKLY").
+    // Without this handler it falls through to the generic 500 below instead of a clear 400.
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ApiResponse<Object>> handleHttpMessageNotReadableException(HttpMessageNotReadableException exception)
+    {
+        // Records deserialize via their canonical constructor, so Jackson wraps an enum failure in
+        // a ValueInstantiationException rather than surfacing InvalidFormatException directly as
+        // getCause() — walk the whole chain instead of checking only the immediate cause.
+        for (Throwable cause = exception.getCause(); cause != null; cause = cause.getCause()) {
+            if (cause instanceof InvalidFormatException invalidFormatException && !invalidFormatException.getPath().isEmpty()) {
+                String field = invalidFormatException.getPath().get(invalidFormatException.getPath().size() - 1).getFieldName();
+                String message = "Invalid value \"" + invalidFormatException.getValue() + "\" for field \"" + field + "\"";
+                return ResponseEntity.badRequest().body(ApiResponse.error(message));
+            }
+        }
+        return ResponseEntity.badRequest().body(ApiResponse.error("Malformed request body"));
+    }
+
+    // Invalid query/path parameter (e.g. ?granularity=BOGUS) — same "clear 400 instead of the
+    // catch-all 500" reasoning as the handler above.
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiResponse<Object>> handleMethodArgumentTypeMismatchException(MethodArgumentTypeMismatchException exception)
+    {
+        return ResponseEntity.badRequest().body(ApiResponse.error("Invalid value for parameter \"" + exception.getName() + "\""));
     }
 
     @ExceptionHandler(EmailConfigurationException.class)

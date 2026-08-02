@@ -2,6 +2,7 @@ package com.swipeauctions.admin.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import com.swipeauctions.admin.enums.AdminRole;
 import com.swipeauctions.common.entity.BaseEntity;
 import com.swipeauctions.enums.Role;
 
@@ -45,6 +46,12 @@ public class Admin extends BaseEntity {
     @Column(nullable = false)
     @Builder.Default
     private Role role = Role.ADMIN;
+
+    // Permission tier within admin accounts — see AdminRole's javadoc.
+    @Enumerated(EnumType.STRING)
+    @Column(name = "admin_role", nullable = false)
+    @Builder.Default
+    private AdminRole adminRole = AdminRole.ADMIN;
 
     @Builder.Default
     private Boolean active = true;

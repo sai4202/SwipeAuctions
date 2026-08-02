@@ -3,11 +3,13 @@ import { useNavigate } from 'react-router-dom'
 import { setSessionExpiredHandler } from './api'
 
 /** localStorage keys this provider owns — used to detect relevant cross-tab `storage` events. */
-const AUTH_STORAGE_KEYS = ['token', 'email', 'role', 'lastRole', 'kycCompleted', 'registrationFeePaid', 'subscriptionTier', 'subscriptionExpiresAt']
+const AUTH_STORAGE_KEYS = ['token', 'email', 'role', 'lastRole', 'adminRole', 'kycCompleted', 'registrationFeePaid', 'subscriptionTier', 'subscriptionExpiresAt']
 
 interface SignInData {
   token: string; email: string; role: string; kycCompleted?: boolean; registrationFeePaid?: boolean
   subscriptionTier?: string; subscriptionExpiresAt?: string | null
+  /** Admin permission tier ('SUPER_ADMIN' | 'ADMIN') — only present when role === 'ADMIN'. */
+  adminRole?: string
 }
 
 interface AuthState {
@@ -17,6 +19,8 @@ interface AuthState {
   /** Role of the most recent signed-in session, kept even after signOut/expiry — lets logged-out UI
    *  (e.g. the header's Login link) send an ex-admin back to admin login instead of the customer one. */
   lastRole: string | null
+  /** Admin permission tier, only meaningful when role === 'ADMIN' — gates the Create Admin form. */
+  adminRole: string | null
   kycCompleted: boolean
   registrationFeePaid: boolean
   subscriptionTier: string
@@ -36,6 +40,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [email, setEmail] = useState<string | null>(() => localStorage.getItem('email'))
   const [role, setRole] = useState<string | null>(() => localStorage.getItem('role'))
   const [lastRole, setLastRole] = useState<string | null>(() => localStorage.getItem('lastRole'))
+  const [adminRole, setAdminRole] = useState<string | null>(() => localStorage.getItem('adminRole'))
   const [kycCompleted, setKycCompleted] = useState<boolean>(() => localStorage.getItem('kycCompleted') === 'true')
   const [registrationFeePaid, setRegistrationFeePaid] = useState<boolean>(() => localStorage.getItem('registrationFeePaid') === 'true')
   const [subscriptionTier, setSubscriptionTier] = useState<string>(() => localStorage.getItem('subscriptionTier') || 'NONE')
@@ -46,6 +51,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem('email', data.email)
     localStorage.setItem('role', data.role)
     localStorage.setItem('lastRole', data.role)
+    if (data.adminRole) localStorage.setItem('adminRole', data.adminRole)
+    else localStorage.removeItem('adminRole')
     localStorage.setItem('kycCompleted', String(!!data.kycCompleted))
     localStorage.setItem('registrationFeePaid', String(!!data.registrationFeePaid))
     localStorage.setItem('subscriptionTier', data.subscriptionTier || 'NONE')
@@ -55,6 +62,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setEmail(data.email)
     setRole(data.role)
     setLastRole(data.role)
+    setAdminRole(data.adminRole || null)
     setKycCompleted(!!data.kycCompleted)
     setRegistrationFeePaid(!!data.registrationFeePaid)
     setSubscriptionTier(data.subscriptionTier || 'NONE')
@@ -64,6 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem('token')
     localStorage.removeItem('email')
     localStorage.removeItem('role')
+    localStorage.removeItem('adminRole')
     localStorage.removeItem('kycCompleted')
     localStorage.removeItem('registrationFeePaid')
     localStorage.removeItem('subscriptionTier')
@@ -71,6 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(null)
     setEmail(null)
     setRole(null)
+    setAdminRole(null)
     setKycCompleted(false)
     setRegistrationFeePaid(false)
     setSubscriptionTier('NONE')
@@ -136,6 +146,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setEmail(localStorage.getItem('email'))
       setRole(localStorage.getItem('role'))
       setLastRole(localStorage.getItem('lastRole'))
+      setAdminRole(localStorage.getItem('adminRole'))
       setKycCompleted(localStorage.getItem('kycCompleted') === 'true')
       setRegistrationFeePaid(localStorage.getItem('registrationFeePaid') === 'true')
       setSubscriptionTier(localStorage.getItem('subscriptionTier') || 'NONE')
@@ -146,7 +157,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   return (
-    <AuthContext.Provider value={{ token, email, role, lastRole, kycCompleted, registrationFeePaid, subscriptionTier, subscriptionExpiresAt, signIn, signOut, markKycCompleted, markRegistrationFeePaid, setSubscription, isAuthenticated: !!token }}>
+    <AuthContext.Provider value={{ token, email, role, lastRole, adminRole, kycCompleted, registrationFeePaid, subscriptionTier, subscriptionExpiresAt, signIn, signOut, markKycCompleted, markRegistrationFeePaid, setSubscription, isAuthenticated: !!token }}>
       {children}
       {sessionExpired && (
         <div className="modal-backdrop">
