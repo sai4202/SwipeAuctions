@@ -50,7 +50,13 @@ public class WalletController {
     private WalletResponse toResponse(Wallet w, User user) {
         BigDecimal creditLimit = walletService.creditLimitFor(w.getAvailableBalance());
         BigDecimal available = creditLimit.subtract(walletService.committedCredit(user.getId()));
-        return new WalletResponse(w.getAvailableBalance(), w.getHeldBalance(), creditLimit, available);
+        BigDecimal creditHeld = walletService.creditHeldAmount(user);
+        BigDecimal withdrawable = w.getAvailableBalance().subtract(creditHeld);
+        if (withdrawable.signum() < 0) {
+            withdrawable = BigDecimal.ZERO;
+        }
+        return new WalletResponse(w.getAvailableBalance(), w.getHeldBalance(), creditLimit, available,
+                creditHeld, withdrawable);
     }
 
     private WalletTransactionResponse toResponse(WalletTransaction t) {
@@ -89,7 +95,8 @@ public class WalletController {
             @NotBlank String orderId, @NotBlank String paymentId, @NotBlank String signature) {}
 
     public record WalletResponse(BigDecimal availableBalance, BigDecimal heldBalance, BigDecimal creditLimit,
-                                  BigDecimal availableCreditLimit) {}
+                                  BigDecimal availableCreditLimit, BigDecimal creditHeldAmount,
+                                  BigDecimal withdrawableBalance) {}
 
     public record WithdrawResponse(String status, BigDecimal availableBalance) {}
 

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import {
   createTopUpOrder, verifyTopUp, withdraw, getSellerPayoutStatus, saveSellerPayoutAccount,
   errorMessage, type SellerPayoutStatus, type OrderIntent,
@@ -67,7 +67,16 @@ function useChangeFlash(value: number | null | undefined): boolean {
 export default function WalletPage() {
   const { isAuthenticated } = useAuth()
   const { wallet, refreshWallet } = useWallet()
+  const location = useLocation()
   useReveal()
+
+  // Deep-linked from the header's Credit Limit dropdown (Top Up / Withdraw buttons) — jump straight
+  // to the relevant section instead of leaving the visitor to scroll and find it themselves.
+  useEffect(() => {
+    if (!location.hash) return
+    const el = document.querySelector(location.hash)
+    el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [location.hash])
 
   // Real Razorpay top-up.
   const [payAmount, setPayAmount] = useState('1000')
@@ -153,7 +162,7 @@ export default function WalletPage() {
             </div>
             <div className="wallet-stats">
               <div className={`stat-tile ${availableFlash ? 'flash' : ''}`}>
-                <div className="k">Available</div>
+                <div className="k">Your Deposit</div>
                 <div className="v">{money(displayAvailable)}</div>
               </div>
               <div className={`stat-tile ${heldFlash ? 'flash' : ''}`}>
@@ -177,7 +186,7 @@ export default function WalletPage() {
             </div>
           </div>
 
-          <div className="card" data-reveal>
+          <div className="card" data-reveal id="topup">
             <span className="eyebrow">Add Funds</span>
             <div className="wallet-subsection">
               <label>Add funds with card / UPI / netbanking</label>
@@ -230,10 +239,17 @@ export default function WalletPage() {
               </>
             )}
 
-            <div className="wallet-subsection">
+            <div className="wallet-subsection" id="withdraw">
+              {wallet && wallet.creditHeldAmount > 0 && (
+                <p className="muted" style={{ fontSize: 12.5, marginBottom: 8 }}>
+                  {money(wallet.creditHeldAmount)} of your deposit is held against currently committed bidding
+                  credit — {money(wallet.withdrawableBalance)} is available to withdraw right now.
+                </p>
+              )}
               <form onSubmit={submitWithdraw}>
                 <label>Withdraw amount</label>
-                <input style={{ width: '100%' }} type="number" value={withdrawAmount} onChange={(e) => setWithdrawAmount(e.target.value)} min="1" />
+                <input style={{ width: '100%' }} type="number" value={withdrawAmount} onChange={(e) => setWithdrawAmount(e.target.value)} min="1"
+                  max={wallet?.withdrawableBalance} />
                 <div style={{ marginTop: 10 }}>
                   <button className="btn" disabled={withdrawBusy || !payoutStatus?.payoutsEnabled}>{withdrawBusy ? 'Withdrawing…' : 'Withdraw'}</button>
                 </div>

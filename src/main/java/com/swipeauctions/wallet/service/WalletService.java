@@ -85,6 +85,35 @@ public class WalletService {
     }
 
     /**
+     * Real-money deposit locked up in proportion to how much of the leveraged credit limit is
+     * currently committed to open bids — same 5,000-per-2.5-crore ratio used to grant the credit
+     * limit in the first place, just inverted. E.g. a ₹10,000 deposit grants ₹5 crore of credit; if
+     * ₹2.5 crore of that is committed to open bids (half the limit), half the deposit — ₹5,000 — is
+     * held back from withdrawal. Computed live from {@link #committedCredit}, so it shrinks the
+     * moment a bid's auction closes without a bid loses or an admin refunds one — no separate
+     * release step needed, unlike the real {@link BidEligibilityHold} EMD mechanism.
+     */
+    @Transactional(readOnly = true)
+    public BigDecimal creditHeldAmount(User user) {
+        BigDecimal committed = committedCredit(user.getId());
+        if (committed.signum() <= 0) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal leverage = CREDIT_LIMIT_PER_UNIT.divide(CREDIT_LIMIT_DEPOSIT_UNIT);
+        // Rounds up — never let the computed hold undershoot what's actually backing the bidder's
+        // open exposure, which would let more than the safe amount be withdrawn.
+        return committed.divide(leverage, 2, java.math.RoundingMode.CEILING);
+    }
+
+    /** What's actually free to withdraw right now: available balance minus whatever's held back by
+     *  {@link #creditHeldAmount}. */
+    @Transactional(readOnly = true)
+    public BigDecimal withdrawableBalance(User user) {
+        BigDecimal withdrawable = getWallet(user).getAvailableBalance().subtract(creditHeldAmount(user));
+        return withdrawable.signum() < 0 ? BigDecimal.ZERO : withdrawable;
+    }
+
+    /**
      * Row-locks the bidder's wallet for the rest of the caller's transaction, serializing
      * concurrent bid placements by the same bidder even across different auctions. Without this,
      * two simultaneous bids on two different open auctions each read {@link #committedCredit}
@@ -230,9 +259,19 @@ public class WalletService {
     public WalletWithdrawal initiateWithdrawal(User user, BigDecimal amount) {
         requirePositive(amount);
         getOrCreateWallet(user);
+        // Locks the wallet row before reading committedCredit (via creditHeldAmount) — the same row
+        // BidService.placeBid locks via lockForBidding before its own committedCredit read, so a
+        // concurrent bid and withdrawal serialize against each other instead of each reading a
+        // pre-the-other's-change snapshot of what's committed.
         Wallet w = lockWallet(user.getId());
-        if (w.getAvailableBalance().compareTo(amount) < 0) {
-            throw new BadRequestException("Insufficient available balance to withdraw " + amount);
+        BigDecimal withdrawable = w.getAvailableBalance().subtract(creditHeldAmount(user));
+        if (withdrawable.signum() < 0) {
+            withdrawable = BigDecimal.ZERO;
+        }
+        if (withdrawable.compareTo(amount) < 0) {
+            throw new BadRequestException(
+                    "Only " + withdrawable + " is available for withdrawal — the rest of your deposit is held "
+                            + "against your currently committed bidding credit.");
         }
         w.setAvailableBalance(w.getAvailableBalance().subtract(amount));
         walletRepository.save(w);

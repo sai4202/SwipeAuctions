@@ -4,14 +4,14 @@ import { useAuth } from '../auth'
 import {
   getAdminStats, getAdminUsers, getAdminUser, suspendUser, reactivateUser, getAdminUserHolds, releaseAdminHold,
   getAdminUserBids,
-  getAdminAuctions, forceCloseAuction, updateAuction, getAdminDisputes, resolveDispute, errorMessage,
+  getAdminAuctions, getAdminAuctionBidders, forceCloseAuction, updateAuction, getAdminDisputes, resolveDispute, errorMessage,
   getAdminCategories, createAdminCategory, getAdminCategoryAttributes, createAdminCategoryAttribute,
   createStockListing, uploadStockImage, createStockAuction, bulkImportStock, downloadStockTemplate,
   getAdminKycQueue, approveKyc, rejectKyc,
   getRegistrationFee, updateRegistrationFee, getSubscriptionPrices, updateSubscriptionPrices,
   getMembershipBenefits, createMembershipBenefit, updateMembershipBenefitTiers, deleteMembershipBenefit,
   getAdminListings, updateListingRequiredTier, updateListingCategory, getAuditLog, createAdmin,
-  type AdminStats, type AdminUser, type AdminAuction, type Dispute, type AdminHold, type ReleaseHoldResult,
+  type AdminStats, type AdminUser, type AdminAuction, type AuctionBidder, type Dispute, type AdminHold, type ReleaseHoldResult,
   type AdminUserBid, type AdminListing, type AuditLogEntry,
   type AdminCategory, type AdminCategoryAttribute, type BulkImportResult, type AdminKyc,
   type SubscriptionPrice, type SubscriptionTier, type BillingCycle, type MembershipBenefit, type AdminRole,
@@ -577,6 +577,7 @@ function Auctions() {
   const [error, setError] = useState('')
   const [busyId, setBusyId] = useState<string | null>(null)
   const [editing, setEditing] = useState<AdminAuction | null>(null)
+  const [biddersFor, setBiddersFor] = useState<AdminAuction | null>(null)
   const { sorted: sortedAuctions, sortKey, sortDir, toggleSort } = useSortableData(auctions, getAuctionSortValue)
 
   const load = () => {
@@ -646,6 +647,9 @@ function Auctions() {
                       {busyId === a.id ? '…' : 'Force close'}
                     </button>
                   )}
+                  {a.bidCount > 0 && (
+                    <button type="button" className="btn ghost sm" onClick={() => setBiddersFor(a)}>See Bidders</button>
+                  )}
                 </td>
               </tr>
             ))}
@@ -665,6 +669,64 @@ function Auctions() {
           }}
         />
       )}
+
+      {biddersFor && <BiddersModal auction={biddersFor} onClose={() => setBiddersFor(null)} />}
+    </div>
+  )
+}
+
+/** Every bidder currently on an auction, one row per bidder (their own best bid), ranked
+ *  highest-first — reached only via "See Bidders" (per auction) rather than shown inline for
+ *  every row, since that would be unreadably dense on a list with many items. */
+function BiddersModal({ auction, onClose }: { auction: AdminAuction; onClose: () => void }) {
+  const [bidders, setBidders] = useState<AuctionBidder[] | null>(null)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    getAdminAuctionBidders(auction.id).then(setBidders).catch((e) => setError(errorMessage(e)))
+  }, [auction.id])
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-card" style={{ maxWidth: 560 }} onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <h3>Bidders — {auction.title}</h3>
+          <button type="button" className="modal-close" onClick={onClose} aria-label="Close">✕</button>
+        </div>
+        <div className="modal-body">
+          {error && <div className="error">{error}</div>}
+          {!error && !bidders && <p className="muted">Loading…</p>}
+          {bidders && bidders.length === 0 && <p className="muted">No bidders on this auction yet.</p>}
+          {bidders && bidders.length > 0 && (
+            <div style={{ overflowX: 'auto' }}>
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>Bidder</th>
+                    <th>Best bid</th>
+                    <th>Bids placed</th>
+                    <th>Last bid</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {bidders.map((b) => (
+                    <tr key={b.bidderId}>
+                      <td>
+                        <button type="button" className="linkbtn" onClick={() => openUserDetails(b.bidderId)}>{b.email}</button>
+                      </td>
+                      <td>{money(b.amount)}</td>
+                      <td>{b.bidCount}</td>
+                      <td>{formatDateTimeShort(b.lastBidAt)}</td>
+                      <td>{b.leading ? <span className="badge OPEN">Leading</span> : <span className="badge UNSOLD">Outbid</span>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }

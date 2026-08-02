@@ -104,19 +104,19 @@ button { font-family: inherit; }
   /* auto auto 1fr (not 1fr auto 1fr) — user decision 2026-07-31: nav sits right next to the logo
      instead of floating centered, since it now carries more items (My Wins, Wishlist) and reads
      better as a left-aligned nav bar with actions pinned to the right. */
-  display: grid; grid-template-columns: auto auto 1fr; align-items: center; column-gap: 24px; row-gap: 10px;
+  display: grid; grid-template-columns: auto auto 1fr; align-items: center; column-gap: 16px; row-gap: 10px;
   padding: 16px 28px; position: sticky; top: 0; z-index: 20;
   background: rgba(255,255,255,.82); backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--border);
 }
 [data-theme="dark"] .header { background: rgba(10,10,12,.82); }
-.brand { grid-column: 1; justify-self: start; display: flex; align-items: center; gap: 12px; margin-right: 48px;
-  padding-right: 24px; border-right: 1px solid var(--border); }
+.brand { grid-column: 1; justify-self: start; display: flex; align-items: center; gap: 12px; margin-right: 20px;
+  padding-right: 14px; border-right: 1px solid var(--border); }
 .brand .mark { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center;
   background: linear-gradient(135deg, var(--red), #b91c1c); color: #fff; font-weight: 800; box-shadow: 0 6px 18px rgba(239,61,46,.35); }
 .brand .name { font-weight: 800; letter-spacing: .14em; font-size: 15px; }
 .brand .name span { color: var(--red); }
-.mainnav { grid-column: 2; justify-self: start; display: flex; align-items: center; gap: 22px; font-size: 13px; font-weight: 700; letter-spacing: .08em; flex-wrap: wrap; }
+.mainnav { grid-column: 2; justify-self: start; display: flex; align-items: center; gap: 14px; font-size: 13px; font-weight: 700; letter-spacing: .08em; flex-wrap: wrap; }
 .mainnav a { color: var(--muted); text-transform: uppercase; white-space: nowrap; }
 .mainnav a:hover, .mainnav a.active { color: var(--text); }
 .add-tab-btn { display: flex; align-items: center; gap: 4px; background: transparent; border: 1px dashed var(--border);
@@ -125,24 +125,20 @@ button { font-family: inherit; }
   transition: border-color var(--transition-fast), background-color var(--transition-fast); }
 .add-tab-btn:hover:not(:disabled) { border-color: var(--red); border-style: solid; background: rgba(239,61,46,.08); }
 .add-tab-btn:disabled { color: var(--dim); cursor: not-allowed; opacity: .6; }
-.header-right { grid-column: 3; justify-self: end; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; justify-content: flex-end; }
+.header-right { grid-column: 3; justify-self: end; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
 .header-right > * { white-space: nowrap; }
 /* Base width trimmed 160px->130px (2026-08-01: My Wins/Wishlist moved here from .mainnav) to make
    room for .header-quicklinks alongside it without pushing the wrap threshold even lower — see the
    wrap-fragility note below, which is now under more pressure than when it was written. */
 .header-search { display: flex; align-items: center; gap: 8px; background: var(--panel); border: 1px solid var(--border);
-  border-radius: var(--radius-full); padding: 7px 14px; flex: 0 1 130px; min-width: 80px;
+  border-radius: var(--radius-full); padding: 7px 14px; flex: 0 1 150px; min-width: 90px;
   transition: border-color var(--transition-fast), flex-basis var(--transition-fast); }
-/* Kept modest on purpose: at some desktop widths this row (search + quicklinks + theme toggle +
-   credit-limit chip + account menu) sits only ~10-20px under the header's third grid column before
-   wrapping the whole row down onto its own line (a taller-than-expected header) — a wider expansion
-   here eats into that margin and makes the wrap trigger at even more common widths. */
-.header-search:focus-within { flex-basis: 160px; }
+.header-search:focus-within { flex-basis: 190px; }
 .header-search:focus-within { border-color: var(--red); }
 .header-search-icon { color: var(--dim); font-size: 12.5px; flex: none; }
 .header-search input { flex: 1; min-width: 0; background: transparent; border: none; outline: none; color: var(--text); font-size: 13px; }
 .header-search input::placeholder { color: var(--dim); }
-.header-quicklinks { display: flex; align-items: center; gap: 18px; font-size: 13px; font-weight: 700; letter-spacing: .08em; }
+.header-quicklinks { display: flex; align-items: center; gap: 12px; font-size: 13px; font-weight: 700; letter-spacing: .08em; }
 .header-quicklinks a { color: var(--muted); text-transform: uppercase; white-space: nowrap; }
 .header-quicklinks a:hover, .header-quicklinks a.active { color: var(--text); }
 .wishlist-pulse { display: inline-block; color: var(--red); margin-right: 3px; animation: wishlist-heartbeat 1.6s ease-in-out infinite; }
@@ -156,12 +152,24 @@ button { font-family: inherit; }
 .mobile-search { padding: 12px 16px; border-bottom: 1px solid var(--border); }
 .mobile-search input { width: 100%; padding: 10px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border);
   background: var(--panel); color: var(--text); font-size: 13.5px; }
-.credit { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; color: var(--green);
-  border: 1px solid var(--green); border-radius: var(--radius-full); padding: 6px 14px;
+.credit { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: var(--green);
+  border: 1px solid var(--green); border-radius: var(--radius-full); padding: 6px 10px; cursor: pointer;
   background: color-mix(in srgb, var(--green) 12%, var(--panel));
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 10%, transparent);
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast); }
 .credit:hover { box-shadow: 0 0 0 5px color-mix(in srgb, var(--green) 16%, transparent); }
+.credit .caret { font-size: 10px; color: var(--green); }
+.credit-wrap { position: relative; }
+.credit-popup { display: flex; position: absolute; top: calc(100% + 8px); right: 0; min-width: 230px; z-index: 30;
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 12px 14px;
+  box-shadow: var(--shadow-md); flex-direction: column; gap: 8px; animation: pop-in .16s var(--ease); }
+.credit-popup-actions { display: flex; gap: 8px; padding-top: 4px; }
+.credit-popup-actions .btn { flex: 1; padding: 8px 10px; font-size: 11.5px; text-align: center; }
+.credit-popup-row { display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  font-size: 12.5px; color: var(--muted); white-space: nowrap; }
+.credit-popup-row b { color: var(--text); font-size: 13px; }
+.credit-popup-total { padding-top: 8px; border-top: 1px solid var(--border); }
+.credit-popup-total b { color: var(--green); }
 .credit .gdot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green);
   animation: credit-dot-pulse 1.8s ease-in-out infinite; }
 .credit b { color: var(--text); font-size: 13px; }
@@ -204,7 +212,7 @@ button { font-family: inherit; }
 
 .mobile-menu { display: none; }
 
-@media (max-width: 900px) {
+@media (max-width: 1080px) {
   .mainnav, .header-right { display: none; }
   .hamburger-btn { display: flex; }
   .mobile-menu {

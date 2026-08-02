@@ -40,6 +40,8 @@ export default function Header() {
   const loginPath = lastRole === 'ADMIN' ? '/admin-login' : '/login'
   const [profileOpen, setProfileOpen] = useState(false)
   const profileRef = useRef<HTMLDivElement>(null)
+  const [creditOpen, setCreditOpen] = useState(false)
+  const creditRef = useRef<HTMLDivElement>(null)
   const [mobileOpen, setMobileOpen] = useState(false)
   const closeMobile = () => setMobileOpen(false)
   const tabsFull = tabCount >= maxTabs
@@ -58,13 +60,14 @@ export default function Header() {
   useEffect(() => {
     function onClickOutside(e: MouseEvent) {
       if (profileRef.current && !profileRef.current.contains(e.target as Node)) setProfileOpen(false)
+      if (creditRef.current && !creditRef.current.contains(e.target as Node)) setCreditOpen(false)
     }
     document.addEventListener('mousedown', onClickOutside)
     return () => document.removeEventListener('mousedown', onClickOutside)
   }, [])
 
   useEffect(() => {
-    function onResize() { if (window.innerWidth > 900) setMobileOpen(false) }
+    function onResize() { if (window.innerWidth > 1080) setMobileOpen(false) }
     function onKey(e: KeyboardEvent) { if (e.key === 'Escape') setMobileOpen(false) }
     window.addEventListener('resize', onResize)
     window.addEventListener('keydown', onKey)
@@ -124,7 +127,22 @@ export default function Header() {
             <Link to="/kyc" className="link-login" style={{ color: 'var(--orange, #d97706)', whiteSpace: 'nowrap' }}>Complete KYC</Link>
           )}
           {isAuthenticated && credit != null && (
-            <Link to="/wallet" className="credit"><span className="gdot" />Credit Limit <b>{money(credit)}</b></Link>
+            <div className="credit-wrap" ref={creditRef}>
+              <button type="button" className="credit" onClick={() => setCreditOpen((o) => !o)} aria-expanded={creditOpen}>
+                <span className="gdot" />Credit Limit <b>{money(credit)}</b><span className="caret">▾</span>
+              </button>
+              {creditOpen && (
+                <div className="credit-popup">
+                  <div className="credit-popup-row"><span>Credit Limit</span><b>{money(credit)}</b></div>
+                  <div className="credit-popup-row"><span>Your Deposit</span><b>{money(wallet?.availableBalance ?? 0)}</b></div>
+                  <div className="credit-popup-row"><span>Held (active bids)</span><b>{money(wallet?.creditHeldAmount ?? 0)}</b></div>
+                  <div className="credit-popup-row credit-popup-total"><span>Available to withdraw</span><b>{money(wallet?.withdrawableBalance ?? 0)}</b></div>
+                  <div className="credit-popup-actions">
+                    <button type="button" className="btn sm" onClick={() => { setCreditOpen(false); navigate('/wallet#topup') }}>Top Up</button>
+                  </div>
+                </div>
+              )}
+            </div>
           )}
           {isAuthenticated && !isAdmin && (
             <div className="account-menu" ref={profileRef}>

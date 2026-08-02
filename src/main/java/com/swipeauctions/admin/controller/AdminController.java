@@ -174,6 +174,31 @@ public class AdminController {
         return PageResponse.of(result, this::toAuction);
     }
 
+    /** All bidders currently on this auction, one row per bidder (their own best bid), ranked by
+     *  that bid amount — the "See Bidders" button on the Auctions tab, since showing this inline
+     *  for every row at once would be unreadably dense. */
+    @GetMapping("/auctions/{id}/bidders")
+    public List<AuctionBidderResponse> auctionBidders(@PathVariable UUID id) {
+        Auction auction = auctionRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Auction not found"));
+        java.util.Map<UUID, Bid> bestPerBidder = new java.util.LinkedHashMap<>();
+        java.util.Map<UUID, Long> countPerBidder = new java.util.HashMap<>();
+        for (Bid b : bidRepository.findByAuction_IdOrderByAmountDesc(id)) {
+            UUID bidderId = b.getBidder().getId();
+            bestPerBidder.merge(bidderId, b,
+                    (existing, candidate) -> candidate.getAmount().compareTo(existing.getAmount()) > 0 ? candidate : existing);
+            countPerBidder.merge(bidderId, 1L, Long::sum);
+        }
+        User winner = auction.getCurrentWinner();
+        return bestPerBidder.values().stream()
+                .sorted(java.util.Comparator.comparing(Bid::getAmount).reversed())
+                .map(b -> new AuctionBidderResponse(
+                        b.getBidder().getId(), b.getBidder().getEmail(), b.getAmount(),
+                        countPerBidder.get(b.getBidder().getId()), b.getPlacedAt(),
+                        winner != null && winner.getId().equals(b.getBidder().getId())))
+                .toList();
+    }
+
     @PostMapping("/auctions/{id}/force-close")
     public AuctionResponse forceClose(@PathVariable UUID id) {
         Admin admin = loggedInUserUtil.getCurrentAdmin();
@@ -496,6 +521,11 @@ public class AdminController {
                                   BigDecimal basePrice, BigDecimal currentHighestBid, AuctionStatus status,
                                   LocalDateTime startTime, LocalDateTime currentEndTime, long bidCount,
                                   UUID currentWinnerId, String currentWinnerEmail) {}
+
+    /** One row per bidder on an auction — their own current-best bid, how many bids they've placed,
+     *  and whether they're presently leading. */
+    public record AuctionBidderResponse(UUID bidderId, String email, BigDecimal amount, long bidCount,
+                                        LocalDateTime lastBidAt, boolean leading) {}
 
     public record UpdateAuctionRequest(@NotBlank String title,
                                        @jakarta.validation.constraints.NotNull @jakarta.validation.constraints.Positive BigDecimal basePrice,

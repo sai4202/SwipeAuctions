@@ -184,6 +184,12 @@ export interface WalletBalance {
   /** creditLimit minus whatever's already committed to this user's other open bids — what they can
    *  actually still bid up to right now, across every auction at once. */
   availableCreditLimit: number
+  /** Real-money deposit locked back from withdrawal, in proportion to how much of the leveraged
+   *  credit limit is currently committed to open bids (same ratio that granted the limit). Shrinks
+   *  automatically as bids lose/refund. */
+  creditHeldAmount: number
+  /** availableBalance minus creditHeldAmount — what's actually free to withdraw right now. */
+  withdrawableBalance: number
 }
 export interface RegisterResult {
   message: string
@@ -254,6 +260,14 @@ export interface AdminAuction {
   bidCount: number
   currentWinnerId: string | null
   currentWinnerEmail: string | null
+}
+export interface AuctionBidder {
+  bidderId: string
+  email: string
+  amount: number
+  bidCount: number
+  lastBidAt: string
+  leading: boolean
 }
 export interface Dispute {
   id: string
@@ -657,6 +671,10 @@ export async function getAdminAnalytics(granularity: AnalyticsGranularity): Prom
 }
 export async function getAdminAuctions(status?: string, page = 0, size = 20): Promise<PageResponse<AdminAuction>> {
   const res = await api.get<PageResponse<AdminAuction>>('/api/admin/auctions', { params: { ...(status ? { status } : {}), page, size } })
+  return res.data
+}
+export async function getAdminAuctionBidders(auctionId: string): Promise<AuctionBidder[]> {
+  const res = await api.get<AuctionBidder[]>(`/api/admin/auctions/${auctionId}/bidders`)
   return res.data
 }
 export async function forceCloseAuction(id: string): Promise<AdminAuction> {

@@ -34,7 +34,13 @@ public class DevPaymentController {
         Wallet w = walletService.topUp(user, req.amount());
         BigDecimal creditLimit = walletService.creditLimitFor(w.getAvailableBalance());
         BigDecimal available = creditLimit.subtract(walletService.committedCredit(user.getId()));
-        return new WalletController.WalletResponse(w.getAvailableBalance(), w.getHeldBalance(), creditLimit, available);
+        BigDecimal creditHeld = walletService.creditHeldAmount(user);
+        BigDecimal withdrawable = w.getAvailableBalance().subtract(creditHeld);
+        if (withdrawable.signum() < 0) {
+            withdrawable = BigDecimal.ZERO;
+        }
+        return new WalletController.WalletResponse(w.getAvailableBalance(), w.getHeldBalance(), creditLimit,
+                available, creditHeld, withdrawable);
     }
 
     public record TopUpRequest(@NotNull BigDecimal amount) {}
