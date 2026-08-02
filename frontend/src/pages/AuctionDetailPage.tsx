@@ -14,6 +14,7 @@ import { AuctionDetailSkeleton } from '../components/Skeleton'
 import TermsModal from '../components/TermsModal'
 import DetailTabs from '../components/DetailTabs'
 import RazorpayCheckout from '../components/RazorpayCheckout'
+import ShareMenu from '../components/ShareMenu'
 
 // Matches the backend's default auction.min-increment (BidService) — the smallest amount a bid must
 // clear the current highest by, and the step size for the +/- bid stepper below.
@@ -289,7 +290,11 @@ export default function AuctionDetailPage() {
               <span className="countdown"><span className="live-dot" />{formatCountdown(msUntil(auction.currentEndTime))}</span>
             )}
           </div>
-          <h1>{auction.title}</h1>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+            <h1 style={{ margin: 0 }}>{auction.title}</h1>
+            <ShareMenu url={`/auctions/${auction.id}`} text={`Check out "${auction.title}" on SwipeAuctions:`}
+                       emailSubject={auction.title} triggerClassName="btn ghost sm" />
+          </div>
           <div className="row"><span className="cat">{auction.categoryName}</span><span className="cond">{auction.condition.replace('_', ' ')}</span></div>
           <div className="loc">◍ {[auction.city, auction.state].filter(Boolean).join(', ') || '—'}{auction.brand ? ` · ${auction.brand}` : ''}</div>
 

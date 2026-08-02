@@ -41,7 +41,7 @@ export function formatCountdown(ms: number): string {
  *  see a bidder's identity (admin dashboard tables, the current-bid link on a catalogue card) so
  *  jumping to that person's profile never loses the page the admin was already on. */
 export function openUserDetails(userId: string) {
-  window.open(`/admin?tab=users&userId=${userId}`, '_blank', 'noopener,noreferrer')
+  window.open(`/admin/users?userId=${userId}`, '_blank', 'noopener,noreferrer')
 }
 
 export function money(n: number | null | undefined): string {

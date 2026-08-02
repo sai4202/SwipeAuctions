@@ -1,8 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { useNavigate, useLocation, Link } from 'react-router-dom'
+import { useNavigate, useLocation, Link, Navigate } from 'react-router-dom'
 import {
   register, verifyEmailOtp, verifyMobileOtp, resendOtp, getRegistrationFee,
-  getMobileVerificationRequired, login,
+  getMobileVerificationRequired, login, captureReferral,
   createRegistrationFeeOrder, verifyRegistrationFee, errorMessage, type OrderIntent,
 } from '../api'
 import { useAuth } from '../auth'
@@ -14,7 +14,7 @@ const RESEND_COOLDOWN_SECONDS = 30
 export default function RegisterPage() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { signIn, markRegistrationFeePaid } = useAuth()
+  const { isAuthenticated, registrationFeePaid, signIn, markRegistrationFeePaid } = useAuth()
   // Anonymous visitors bounced here from an auction detail page (RequireAuth redirectTo="/register")
   // carry the page they were headed to — send them back there once the fee is paid.
   const returnTo = (location.state as { from?: string } | null)?.from
@@ -35,6 +35,10 @@ export default function RegisterPage() {
   // Defaults to false (skip mobile-otp) to match the backend's own safe default — an unresolved
   // fetch and a resolved-false fetch behave identically, so there's no wrong transient state.
   const [mobileVerificationRequired, setMobileVerificationRequired] = useState(false)
+  // Captured once on first load ("/register?ref=<referrer user id>") and carried through every step
+  // of this multi-step flow — read via useState(() => ...) rather than an effect, so a step change
+  // (email-otp → mobile-otp → pay-fee) never re-reads a since-stripped query string.
+  const [referrerId] = useState(() => new URLSearchParams(location.search).get('ref'))
 
   useEffect(() => {
     getRegistrationFee().then(setRegistrationFee).catch(() => {})
@@ -97,6 +101,11 @@ export default function RegisterPage() {
       registrationFeePaid: data.registrationFeePaid,
       subscriptionTier: data.subscriptionTier, subscriptionExpiresAt: data.subscriptionExpiresAt,
     })
+    // Best-effort — an invite link is a growth nicety, never something that should block or error
+    // out an otherwise-successful registration if it fails for any reason.
+    if (referrerId) {
+      captureReferral(referrerId).catch(() => {})
+    }
     setOk('')
     setStep('pay-fee')
   }
@@ -152,6 +161,16 @@ export default function RegisterPage() {
       setOk(msg)
       setResendIn(RESEND_COOLDOWN_SECONDS)
     } catch (err) { setError(errorMessage(err)) } finally { setResending(false) }
+  }
+
+  // A referral link (or anyone) pointing at /register is only meaningful for someone who isn't a
+  // member yet. If it's clicked by someone already fully registered — most likely an existing user
+  // opening a friend's invite link — showing them a "Create account" form makes no sense; send them
+  // straight into the app instead. (Mid-flow here, isAuthenticated only ever becomes true once
+  // step is already 'pay-fee' — see completeVerificationAndProceed — and registrationFeePaid only
+  // flips true right before this component navigates away, so this can only fire on a fresh load.)
+  if (isAuthenticated && registrationFeePaid) {
+    return <Navigate to={returnTo || '/'} replace />
   }
 
   return (

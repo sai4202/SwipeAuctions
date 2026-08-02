@@ -12,11 +12,14 @@ import com.swipeauctions.bidding.entity.Bid;
 import com.swipeauctions.bidding.repository.BidRepository;
 import com.swipeauctions.catalog.entity.Category;
 import com.swipeauctions.catalog.entity.CategoryAttributeDef;
+import com.swipeauctions.catalog.entity.CategoryBanner;
 import com.swipeauctions.catalog.entity.Listing;
 import com.swipeauctions.catalog.enums.AttributeValueType;
 import com.swipeauctions.catalog.enums.ListingStatus;
+import com.swipeauctions.catalog.repository.CategoryBannerRepository;
 import com.swipeauctions.catalog.repository.ListingRepository;
 import com.swipeauctions.catalog.service.CatalogService;
+import com.swipeauctions.storage.service.StorageProvider;
 import com.swipeauctions.common.exception.BadRequestException;
 import com.swipeauctions.common.exception.ResourceNotFoundException;
 import com.swipeauctions.common.response.PageResponse;
@@ -33,12 +36,22 @@ import com.swipeauctions.user.entity.KycVerification;
 import com.swipeauctions.user.entity.User;
 import com.swipeauctions.user.repository.UserRepository;
 import com.swipeauctions.user.service.KycService;
+import com.swipeauctions.payment.RazorpayConfig;
+import com.swipeauctions.referral.entity.Referral;
+import com.swipeauctions.referral.repository.ReferralRepository;
 import com.swipeauctions.wallet.entity.BidEligibilityHold;
+import com.swipeauctions.wallet.entity.PaymentOrder;
 import com.swipeauctions.wallet.entity.Wallet;
+import com.swipeauctions.wallet.entity.WalletTransaction;
+import com.swipeauctions.wallet.entity.WalletWithdrawal;
 import com.swipeauctions.wallet.enums.HoldStatus;
+import com.swipeauctions.wallet.enums.TopUpStatus;
 import com.swipeauctions.wallet.enums.WalletTxnType;
+import com.swipeauctions.wallet.enums.WithdrawalStatus;
 import com.swipeauctions.wallet.repository.BidEligibilityHoldRepository;
+import com.swipeauctions.wallet.repository.PaymentOrderRepository;
 import com.swipeauctions.wallet.repository.WalletTransactionRepository;
+import com.swipeauctions.wallet.repository.WalletWithdrawalRepository;
 import com.swipeauctions.wallet.service.WalletService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -47,6 +60,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -73,6 +87,12 @@ public class AdminController {
     private final KycService kycService;
     private final WalletService walletService;
     private final BidEligibilityHoldRepository holdRepository;
+    private final WalletWithdrawalRepository walletWithdrawalRepository;
+    private final PaymentOrderRepository paymentOrderRepository;
+    private final RazorpayConfig razorpayConfig;
+    private final CategoryBannerRepository categoryBannerRepository;
+    private final StorageProvider storageProvider;
+    private final ReferralRepository referralRepository;
     private final LoggedInUserUtil loggedInUserUtil;
     private final AdminAuditLogService auditLogService;
 
@@ -152,6 +172,61 @@ public class AdminController {
         auditLogService.record(loggedInUserUtil.getCurrentAdmin(), AuditAction.HOLD_RELEASED, "Hold", holdId.toString(),
                 "Released EMD hold for " + hold.getBidder().getEmail() + " on \"" + hold.getAuction().getListing().getTitle() + "\"");
         return new ReleaseHoldResponse(w.getAvailableBalance(), w.getHeldBalance(), walletService.creditLimitFor(w.getAvailableBalance()));
+    }
+
+    // ---- Wallet: credit/holds overview, payments (top-ups), withdrawals, transactions ----
+    // Adapted from the reference admin panel's Investments/Payments/Withdrawals/Transactions
+    // sections onto SwipeAuctions' actual wallet model — there's no fixed-return investment
+    // product here, just the real EMD-hold / Razorpay top-up / Razorpay payout machinery that
+    // already powers bidding and the wallet page.
+
+    /** Admin-wide view of every currently-locked EMD hold — "Credit & Holds Overview". */
+    @GetMapping("/holds")
+    public PageResponse<AdminHoldResponse> allHolds(@RequestParam(defaultValue = "0") int page,
+                                                      @RequestParam(defaultValue = "20") int size) {
+        return PageResponse.of(holdRepository.findByStatus(HoldStatus.ACTIVE, pageable(page, size, "createdAt")),
+                AdminController::toAdminHold);
+    }
+
+    /** Wallet top-up (Razorpay Order) queue — the "Payments" section, real deposit orders only. */
+    @GetMapping("/payments")
+    public PageResponse<PaymentOrderResponse> payments(@RequestParam(required = false) TopUpStatus status,
+                                                          @RequestParam(defaultValue = "0") int page,
+                                                          @RequestParam(defaultValue = "20") int size) {
+        var pageable = pageable(page, size, "createdAt");
+        var result = status != null ? paymentOrderRepository.findByStatus(status, pageable) : paymentOrderRepository.findAll(pageable);
+        return PageResponse.of(result, AdminController::toPaymentOrder);
+    }
+
+    /** Whether Razorpay Payments/Payouts are actually configured — shown instead of a fake "manage
+     *  settlement bank account" form, since payouts settle from the single RazorpayX account set via
+     *  env var, not from anything admin-editable in this app. */
+    @GetMapping("/payments/settlement-status")
+    public SettlementStatusResponse settlementStatus() {
+        return new SettlementStatusResponse(razorpayConfig.isEnabled(), razorpayConfig.payoutsEnabled());
+    }
+
+    /** Seller payout (Razorpay Payout) monitoring queue — the "Withdrawals" section. Payouts are
+     *  submitted to Razorpay synchronously when the seller requests one (see WalletController#withdraw);
+     *  there is no admin-approval step in the real money flow, so this is read-only status, not an
+     *  approve/reject queue. */
+    @GetMapping("/withdrawals")
+    public PageResponse<WithdrawalResponse> withdrawals(@RequestParam(required = false) WithdrawalStatus status,
+                                                          @RequestParam(defaultValue = "0") int page,
+                                                          @RequestParam(defaultValue = "20") int size) {
+        var pageable = pageable(page, size, "createdAt");
+        var result = status != null ? walletWithdrawalRepository.findByStatus(status, pageable) : walletWithdrawalRepository.findAll(pageable);
+        return PageResponse.of(result, AdminController::toWithdrawal);
+    }
+
+    /** Admin-wide wallet ledger (every user, not just one) — the "Transactions" section. */
+    @GetMapping("/transactions")
+    public PageResponse<AdminTransactionResponse> transactions(@RequestParam(required = false) WalletTxnType type,
+                                                                  @RequestParam(defaultValue = "0") int page,
+                                                                  @RequestParam(defaultValue = "20") int size) {
+        var pageable = pageable(page, size, "createdAt");
+        var result = type != null ? walletTransactionRepository.findByType(type, pageable) : walletTransactionRepository.findAll(pageable);
+        return PageResponse.of(result, AdminController::toAdminTransaction);
     }
 
     // ---- Listings / auctions ----
@@ -309,6 +384,85 @@ public class AdminController {
         return toCategoryAttribute(def);
     }
 
+    // ---- Banners ----
+
+    @GetMapping("/banners")
+    public List<AdminBannerResponse> banners() {
+        return categoryBannerRepository.findAllByOrderBySortOrderAsc().stream()
+                .map(AdminController::toAdminBanner).toList();
+    }
+
+    @PostMapping(value = "/banners", consumes = "multipart/form-data")
+    public AdminBannerResponse createBanner(@RequestParam MultipartFile image,
+                                             @RequestParam(required = false) UUID categoryId,
+                                             @RequestParam(required = false) String linkUrl,
+                                             @RequestParam(required = false) String title,
+                                             @RequestParam(defaultValue = "0") int sortOrder) {
+        Admin admin = loggedInUserUtil.getCurrentAdmin();
+        String url = storageProvider.store(image, "banners");
+        Category category = categoryId != null ? catalogService.listCategories().stream()
+                .filter(c -> c.getId().equals(categoryId)).findFirst()
+                .orElseThrow(() -> new BadRequestException("Category not found")) : null;
+        CategoryBanner banner = categoryBannerRepository.save(CategoryBanner.builder()
+                .category(category).imageUrl(url).linkUrl(linkUrl).title(title).sortOrder(sortOrder).active(true).build());
+        auditLogService.record(admin, AuditAction.BANNER_CREATED, "Banner", banner.getId().toString(),
+                "Added banner" + (category != null ? " for category \"" + category.getName() + "\"" : " (platform-wide)"));
+        return toAdminBanner(banner);
+    }
+
+    @PatchMapping("/banners/{id}/active")
+    public AdminBannerResponse toggleBannerActive(@PathVariable UUID id, @RequestBody ToggleActiveRequest req) {
+        CategoryBanner banner = categoryBannerRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Banner not found"));
+        banner.setActive(req.active());
+        return toAdminBanner(categoryBannerRepository.save(banner));
+    }
+
+    @DeleteMapping("/banners/{id}")
+    public void deleteBanner(@PathVariable UUID id) {
+        Admin admin = loggedInUserUtil.getCurrentAdmin();
+        CategoryBanner banner = categoryBannerRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Banner not found"));
+        categoryBannerRepository.delete(banner);
+        auditLogService.record(admin, AuditAction.BANNER_REMOVED, "Banner", id.toString(), "Removed banner");
+    }
+
+    static AdminBannerResponse toAdminBanner(CategoryBanner b) {
+        return new AdminBannerResponse(b.getId(), b.getCategory() != null ? b.getCategory().getId() : null,
+                b.getCategory() != null ? b.getCategory().getName() : null, b.getImageUrl(), b.getLinkUrl(),
+                b.getTitle(), b.getSortOrder(), b.isActive(), b.getCreatedAt(), b.getUpdatedAt());
+    }
+
+    public record AdminBannerResponse(UUID id, UUID categoryId, String categoryName, String imageUrl, String linkUrl,
+                                      String title, int sortOrder, boolean active, LocalDateTime createdAt, LocalDateTime updatedAt) {}
+
+    public record ToggleActiveRequest(boolean active) {}
+
+    // ---- Referrals ----
+
+    /** Reference site's "Referral Dashboard" — who's referring whom, via the real (non-monetary)
+     *  invite-link mechanism in ReferralController, admin-wide. */
+    @GetMapping("/referrals")
+    public ReferralDashboardResponse referrals() {
+        List<Referral> all = referralRepository.findAllByOrderByCreatedAtDesc();
+        java.util.Map<UUID, Long> countByReferrer = all.stream()
+                .collect(java.util.stream.Collectors.groupingBy(r -> r.getReferrer().getId(), java.util.LinkedHashMap::new, java.util.stream.Collectors.counting()));
+        java.util.Map<UUID, User> referrerById = all.stream()
+                .collect(java.util.stream.Collectors.toMap(r -> r.getReferrer().getId(), Referral::getReferrer, (a, b) -> a));
+
+        List<ReferrerRow> rows = countByReferrer.entrySet().stream()
+                .sorted(java.util.Map.Entry.<UUID, Long>comparingByValue().reversed())
+                .map(e -> new ReferrerRow(e.getKey(), referrerById.get(e.getKey()).getEmail(), e.getValue()))
+                .toList();
+
+        String topReferrerEmail = rows.isEmpty() ? null : rows.get(0).email();
+        return new ReferralDashboardResponse(userRepository.count(), all.size(), topReferrerEmail, rows);
+    }
+
+    public record ReferrerRow(UUID userId, String email, long totalReferrals) {}
+
+    public record ReferralDashboardResponse(long totalUsers, long totalReferralsMade, String topReferrerEmail, List<ReferrerRow> referrers) {}
+
     // ---- KYC ----
 
     @GetMapping("/kyc")
@@ -379,11 +533,19 @@ public class AdminController {
     }
 
     private static final int BUCKET_COUNT = 12;
+    /** DAILY uses its own window — "last 30 days" is the natural unit for a daily chart, unlike the
+     *  other granularities' 12-bucket window. */
+    private static final int DAILY_BUCKET_COUNT = 30;
 
-    public enum Granularity { MONTHLY, QUARTERLY, YEARLY }
+    public enum Granularity { DAILY, MONTHLY, QUARTERLY, YEARLY }
+
+    private static int bucketCountFor(Granularity g) {
+        return g == Granularity.DAILY ? DAILY_BUCKET_COUNT : BUCKET_COUNT;
+    }
 
     private static int bucketIndex(LocalDateTime dt, Granularity g) {
         return switch (g) {
+            case DAILY -> (int) dt.toLocalDate().toEpochDay();
             case MONTHLY -> dt.getYear() * 12 + (dt.getMonthValue() - 1);
             case QUARTERLY -> dt.getYear() * 4 + (dt.getMonthValue() - 1) / 3;
             case YEARLY -> dt.getYear();
@@ -392,6 +554,10 @@ public class AdminController {
 
     private static String bucketLabel(int index, Granularity g) {
         return switch (g) {
+            case DAILY -> {
+                java.time.LocalDate d = java.time.LocalDate.ofEpochDay(index);
+                yield d.getDayOfMonth() + " " + d.getMonth().getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.ENGLISH);
+            }
             case MONTHLY -> {
                 int year = Math.floorDiv(index, 12);
                 int month = Math.floorMod(index, 12) + 1;
@@ -403,28 +569,30 @@ public class AdminController {
     }
 
     private static List<Point> bucketCount(List<LocalDateTime> timestamps, Granularity g, int currentIndex) {
+        int bucketCount = bucketCountFor(g);
         java.util.Map<Integer, Long> counts = new java.util.HashMap<>();
         for (LocalDateTime dt : timestamps) {
             int idx = bucketIndex(dt, g);
-            if (idx > currentIndex || idx <= currentIndex - BUCKET_COUNT) continue;
+            if (idx > currentIndex || idx <= currentIndex - bucketCount) continue;
             counts.merge(idx, 1L, Long::sum);
         }
         List<Point> points = new java.util.ArrayList<>();
-        for (int i = currentIndex - BUCKET_COUNT + 1; i <= currentIndex; i++) {
+        for (int i = currentIndex - bucketCount + 1; i <= currentIndex; i++) {
             points.add(new Point(bucketLabel(i, g), BigDecimal.valueOf(counts.getOrDefault(i, 0L))));
         }
         return points;
     }
 
     private static List<Point> bucketSum(List<com.swipeauctions.wallet.entity.WalletTransaction> txns, Granularity g, int currentIndex) {
+        int bucketCount = bucketCountFor(g);
         java.util.Map<Integer, BigDecimal> sums = new java.util.HashMap<>();
         for (var t : txns) {
             int idx = bucketIndex(t.getCreatedAt(), g);
-            if (idx > currentIndex || idx <= currentIndex - BUCKET_COUNT) continue;
+            if (idx > currentIndex || idx <= currentIndex - bucketCount) continue;
             sums.merge(idx, t.getAmount(), BigDecimal::add);
         }
         List<Point> points = new java.util.ArrayList<>();
-        for (int i = currentIndex - BUCKET_COUNT + 1; i <= currentIndex; i++) {
+        for (int i = currentIndex - bucketCount + 1; i <= currentIndex; i++) {
             points.add(new Point(bucketLabel(i, g), sums.getOrDefault(i, BigDecimal.ZERO)));
         }
         return points;
@@ -459,6 +627,26 @@ public class AdminController {
     static HoldResponse toHold(BidEligibilityHold h) {
         return new HoldResponse(h.getId(), h.getAuction().getId(), h.getAuction().getListing().getTitle(),
                 h.getAmount(), h.getCreatedAt());
+    }
+
+    static AdminHoldResponse toAdminHold(BidEligibilityHold h) {
+        return new AdminHoldResponse(h.getId(), h.getBidder().getId(), h.getBidder().getEmail(),
+                h.getAuction().getId(), h.getAuction().getListing().getTitle(), h.getAmount(), h.getCreatedAt());
+    }
+
+    static PaymentOrderResponse toPaymentOrder(PaymentOrder o) {
+        return new PaymentOrderResponse(o.getId(), o.getUser().getEmail(), o.getAmount(), o.getPurpose(),
+                o.getStatus(), o.getCreatedAt(), o.getCompletedAt());
+    }
+
+    static WithdrawalResponse toWithdrawal(WalletWithdrawal w) {
+        return new WithdrawalResponse(w.getId(), w.getWallet().getUser().getEmail(), w.getAmount(),
+                w.getStatus(), w.getRazorpayPayoutId(), w.getCreatedAt(), w.getCompletedAt());
+    }
+
+    static AdminTransactionResponse toAdminTransaction(WalletTransaction t) {
+        return new AdminTransactionResponse(t.getId(), t.getWallet().getUser().getEmail(), t.getType(),
+                t.getAmount(), t.getReferenceType(), t.getReferenceId(), t.getCreatedAt());
     }
 
     static ListingResponse toListing(Listing l) {
@@ -500,6 +688,23 @@ public class AdminController {
                                long activeBidCount) {}
 
     public record HoldResponse(UUID id, UUID auctionId, String listingTitle, BigDecimal amount, LocalDateTime createdAt) {}
+
+    /** Same shape as {@link HoldResponse} plus who the hold belongs to — the admin-wide overview
+     *  needs the bidder identity that the per-user endpoint doesn't (it's already scoped to one). */
+    public record AdminHoldResponse(UUID id, UUID bidderId, String bidderEmail, UUID auctionId,
+                                    String listingTitle, BigDecimal amount, LocalDateTime createdAt) {}
+
+    public record PaymentOrderResponse(UUID id, String userEmail, BigDecimal amount,
+                                       com.swipeauctions.wallet.enums.PaymentPurpose purpose,
+                                       TopUpStatus status, LocalDateTime createdAt, LocalDateTime completedAt) {}
+
+    public record SettlementStatusResponse(boolean paymentsEnabled, boolean payoutsEnabled) {}
+
+    public record WithdrawalResponse(UUID id, String userEmail, BigDecimal amount, WithdrawalStatus status,
+                                     String razorpayPayoutId, LocalDateTime createdAt, LocalDateTime completedAt) {}
+
+    public record AdminTransactionResponse(UUID id, String userEmail, WalletTxnType type, BigDecimal amount,
+                                           String referenceType, String referenceId, LocalDateTime createdAt) {}
 
     /** One row per auction this user has bid on — their own best bid vs. the auction's real current
      *  highest, so the admin can tell "accepted but trailing" from "actually winning" at a glance. */

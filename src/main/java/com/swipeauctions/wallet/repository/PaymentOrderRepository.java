@@ -1,7 +1,10 @@
 package com.swipeauctions.wallet.repository;
 
 import com.swipeauctions.wallet.entity.PaymentOrder;
+import com.swipeauctions.wallet.enums.TopUpStatus;
 import jakarta.persistence.LockModeType;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -13,6 +16,9 @@ import java.util.UUID;
 public interface PaymentOrderRepository extends JpaRepository<PaymentOrder, UUID> {
 
     Optional<PaymentOrder> findByRazorpayOrderId(String razorpayOrderId);
+
+    /** Admin-wide wallet top-up queue, optionally filtered by status. */
+    Page<PaymentOrder> findByStatus(TopUpStatus status, Pageable pageable);
 
     /**
      * Pessimistic row lock for settlement — both the client-side verify call and Razorpay's webhook

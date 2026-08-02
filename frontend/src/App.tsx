@@ -1,6 +1,8 @@
 import { Routes, Route, Link } from 'react-router-dom'
 import Header from './components/Header'
 import Footer from './components/Footer'
+import ChatWidget from './components/ChatWidget'
+import { useAuth } from './auth'
 import HomePage from './pages/HomePage'
 import BrowsePage from './pages/BrowsePage'
 import AuctionDetailPage from './pages/AuctionDetailPage'
@@ -14,7 +16,24 @@ import MyBidsPage from './pages/MyBidsPage'
 import MyTransactionsPage from './pages/MyTransactionsPage'
 import ProfilePage from './pages/ProfilePage'
 import SubscriptionPage from './pages/SubscriptionPage'
-import AdminDashboardPage from './pages/AdminDashboardPage'
+import AdminLayout from './components/AdminLayout'
+import AdminOverviewPage from './pages/admin/AdminOverviewPage'
+import AdminUsersPage from './pages/admin/AdminUsersPage'
+import AdminListingsPage from './pages/admin/AdminListingsPage'
+import AdminAuctionsPage from './pages/admin/AdminAuctionsPage'
+import AdminPlansPage from './pages/admin/AdminPlansPage'
+import AdminHoldsPage from './pages/admin/AdminHoldsPage'
+import AdminPaymentsPage from './pages/admin/AdminPaymentsPage'
+import AdminWithdrawalsPage from './pages/admin/AdminWithdrawalsPage'
+import AdminTransactionsPage from './pages/admin/AdminTransactionsPage'
+import AdminBannersPage from './pages/admin/AdminBannersPage'
+import AdminReferralsPage from './pages/admin/AdminReferralsPage'
+import AdminChatPage from './pages/admin/AdminChatPage'
+import AdminDisputesPage from './pages/admin/AdminDisputesPage'
+import AdminCategoriesPage from './pages/admin/AdminCategoriesPage'
+import AdminKycPage from './pages/admin/AdminKycPage'
+import AdminAuditLogPage from './pages/admin/AdminAuditLogPage'
+import AdminSettingsPage from './pages/admin/AdminSettingsPage'
 import AboutPage from './pages/AboutPage'
 import ContactPage from './pages/ContactPage'
 import PrivacyPage from './pages/PrivacyPage'
@@ -23,6 +42,7 @@ import KycPage from './pages/KycPage'
 import RequireAuth from './components/RequireAuth'
 
 export default function App() {
+  const { isAuthenticated, role } = useAuth()
   return (
     <div>
       <Header />
@@ -42,7 +62,25 @@ export default function App() {
         <Route path="/profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
         <Route path="/subscription" element={<RequireAuth><SubscriptionPage /></RequireAuth>} />
         <Route path="/kyc" element={<RequireAuth><KycPage /></RequireAuth>} />
-        <Route path="/admin" element={<AdminDashboardPage />} />
+        <Route path="/admin" element={<AdminLayout />}>
+          <Route index element={<AdminOverviewPage />} />
+          <Route path="users" element={<AdminUsersPage />} />
+          <Route path="listings" element={<AdminListingsPage />} />
+          <Route path="auctions" element={<AdminAuctionsPage />} />
+          <Route path="plans" element={<AdminPlansPage />} />
+          <Route path="holds" element={<AdminHoldsPage />} />
+          <Route path="payments" element={<AdminPaymentsPage />} />
+          <Route path="withdrawals" element={<AdminWithdrawalsPage />} />
+          <Route path="transactions" element={<AdminTransactionsPage />} />
+          <Route path="referrals" element={<AdminReferralsPage />} />
+          <Route path="chat" element={<AdminChatPage />} />
+          <Route path="disputes" element={<AdminDisputesPage />} />
+          <Route path="banners" element={<AdminBannersPage />} />
+          <Route path="categories" element={<AdminCategoriesPage />} />
+          <Route path="kyc" element={<AdminKycPage />} />
+          <Route path="audit-log" element={<AdminAuditLogPage />} />
+          <Route path="settings" element={<AdminSettingsPage />} />
+        </Route>
         <Route path="/about" element={<AboutPage />} />
         <Route path="/contact" element={<ContactPage />} />
         <Route path="/privacy" element={<PrivacyPage />} />
@@ -58,6 +96,7 @@ export default function App() {
         } />
       </Routes>
       <Footer />
+      {isAuthenticated && (role === 'USER' || role === 'DEALER') && <ChatWidget />}
     </div>
   )
 }

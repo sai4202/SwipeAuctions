@@ -4,6 +4,7 @@ import { money, cardImage, downloadValuation, formatDateTimeShort } from '../uti
 import { useAuctionBid } from '../useAuctionBid'
 import BidModals from './BidModals'
 import ItemDetailStrip from './ItemDetailStrip'
+import ShareMenu from './ShareMenu'
 
 interface Props {
   auction: Auction
@@ -71,11 +72,15 @@ export default function AuctionListRow({ auction: a, inTray, onToggleTray }: Pro
               <button type="button" className="btn sm" onClick={clickBidNow}>Bid</button>
             </div>
           )}
-          {inTray ? (
-            <button type="button" className="btn light sm" onClick={() => onToggleTray(auction.id)}>♥ In wishlist</button>
-          ) : (
-            <button type="button" className="btn ghost sm" onClick={() => onToggleTray(auction.id)}>♡ Wishlist</button>
-          )}
+          <div style={{ display: 'flex', gap: 6 }}>
+            {inTray ? (
+              <button type="button" className="btn light sm" onClick={() => onToggleTray(auction.id)}>♥ In wishlist</button>
+            ) : (
+              <button type="button" className="btn ghost sm" onClick={() => onToggleTray(auction.id)}>♡ Wishlist</button>
+            )}
+            <ShareMenu url={`/auctions/${auction.id}`} text={`Check out "${auction.title}" on SwipeAuctions:`}
+                       emailSubject={auction.title} triggerClassName="btn ghost sm" />
+          </div>
         </div>
       </td>
 

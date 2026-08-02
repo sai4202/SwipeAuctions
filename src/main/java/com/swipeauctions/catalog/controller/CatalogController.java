@@ -1,11 +1,13 @@
 package com.swipeauctions.catalog.controller;
 
 import com.swipeauctions.catalog.entity.Category;
+import com.swipeauctions.catalog.entity.CategoryBanner;
 import com.swipeauctions.catalog.entity.Listing;
 import com.swipeauctions.catalog.entity.ListingImage;
 import com.swipeauctions.catalog.enums.AttributeValueType;
 import com.swipeauctions.catalog.enums.ItemCondition;
 import com.swipeauctions.catalog.enums.ListingStatus;
+import com.swipeauctions.catalog.repository.CategoryBannerRepository;
 import com.swipeauctions.catalog.service.CatalogService;
 import com.swipeauctions.storage.service.StorageProvider;
 import com.swipeauctions.common.exception.BadRequestException;
@@ -31,11 +33,26 @@ public class CatalogController {
     private final CatalogService catalogService;
     private final StorageProvider storageProvider;
     private final LoggedInUserUtil loggedInUserUtil;
+    private final CategoryBannerRepository categoryBannerRepository;
 
     @GetMapping("/api/categories")
     public List<CategoryResponse> categories() {
         return catalogService.listCategories().stream().map(CatalogController::toCategory).toList();
     }
+
+    /** Public promotional banner strip — active only, in the admin-configured display order. */
+    @GetMapping("/api/banners")
+    public List<BannerResponse> banners() {
+        return categoryBannerRepository.findByActiveTrueOrderBySortOrderAsc().stream()
+                .map(CatalogController::toBanner).toList();
+    }
+
+    static BannerResponse toBanner(CategoryBanner b) {
+        return new BannerResponse(b.getId(), b.getCategory() != null ? b.getCategory().getId() : null,
+                b.getCategory() != null ? b.getCategory().getName() : null, b.getImageUrl(), b.getLinkUrl(), b.getTitle());
+    }
+
+    public record BannerResponse(UUID id, UUID categoryId, String categoryName, String imageUrl, String linkUrl, String title) {}
 
     /** Live browse-page filters for a category — defs + the real distinct values seen for each. */
     @GetMapping("/api/categories/{id}/filters")

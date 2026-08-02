@@ -6,6 +6,7 @@ import { formatCountdown, msUntil, eventStatus } from '../util'
 import TierCards from '../components/TierCards'
 import HeroVehicle from '../components/HeroVehicle'
 import CarSilhouette from '../components/CarSilhouette'
+import BannerStrip from '../components/BannerStrip'
 import { EventTileGridSkeleton } from '../components/Skeleton'
 import { useReveal } from '../useReveal'
 
@@ -182,6 +183,10 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+
+      <div className="container">
+        <BannerStrip />
+      </div>
 
       {(eventsLoading || events.length > 0) && (
         <section className="home-band band-events" id="events">

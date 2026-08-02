@@ -155,10 +155,19 @@ public class SecurityConfig {
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/events")
                         .permitAll()
 
+                        // Promotional banners are a public teaser too, same rationale as events above.
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/banners")
+                        .permitAll()
+
                         // User Session APIs — DEALER included so dealers can self-manage/logout their
                         // own devices too, not just USER (fails closed before this fix: DEALER got a
                         // blanket 403). See Findings_pendings.md (Low/Informational).
                         .requestMatchers("/api/sessions/**")
+                        .hasAnyRole("USER", "DEALER")
+
+                        // Support chat — a signed-in customer/dealer's own thread only (scoped to
+                        // the caller in ChatController); the admin side lives under /api/admin/chat/**.
+                        .requestMatchers("/api/chat/**")
                         .hasAnyRole("USER", "DEALER")
 
                         // Admin Protected APIs

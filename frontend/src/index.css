@@ -766,6 +766,39 @@ button { font-family: inherit; }
 .wishlist-btn:hover { border-color: var(--red); transform: scale(1.08); }
 .wishlist-btn.active { background: var(--red); border-color: var(--red); }
 
+/* Share button — same solid-circle treatment as the wishlist heart, pinned just to its left so the
+   two sit as a pair regardless of card width. The wrap itself (not the button) carries the overlay
+   position, so the trigger's own size doesn't have to be guessed — it just fills its wrapper. */
+.share-menu-wrap { position: relative; display: inline-block; }
+.thumb-wrap .share-menu-wrap { position: absolute; top: 10px; right: 50px; }
+.share-menu-trigger {
+  width: 32px; height: 32px; border-radius: 50%;
+  background: rgba(10,10,12,.6); border: 1px solid rgba(255,255,255,.14); color: #fff; font-size: 14px;
+  display: grid; place-items: center; cursor: pointer; backdrop-filter: blur(2px);
+  transition: border-color var(--transition-fast), background-color var(--transition-fast), transform .12s;
+}
+.share-menu-trigger:hover { border-color: var(--red); transform: scale(1.08); }
+.share-menu-popover, .share-menu-inline {
+  display: flex; flex-direction: column; gap: 2px; background: var(--panel); border: 1px solid var(--border);
+  border-radius: var(--radius-md); padding: 6px; min-width: 200px; box-shadow: var(--shadow-lg);
+}
+.share-menu-inline { flex-direction: row; flex-wrap: wrap; box-shadow: none; border: none; background: none; padding: 0; min-width: 0; }
+.share-menu-option {
+  display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 8px; border: none;
+  background: transparent; color: var(--text); font-size: 13px; font-weight: 600; text-align: left;
+  cursor: pointer; text-decoration: none; white-space: nowrap;
+  transition: background-color var(--transition-fast);
+}
+.share-menu-inline .share-menu-option { background: var(--panel-2); border: 1px solid var(--border); }
+.share-menu-option:hover { background: var(--panel-2); }
+.share-menu-inline .share-menu-option:hover { border-color: var(--red); }
+.share-menu-icon { display: inline-flex; flex-shrink: 0; }
+.share-menu-icon svg { display: block; }
+@media (max-width: 480px) {
+  .thumb-wrap .share-menu-wrap { top: 6px; right: 38px; }
+  .share-menu-trigger { width: 26px; height: 26px; font-size: 11px; }
+}
+
 /* Same solid-circle treatment as the wishlist heart (rather than a plain text ribbon, which has no
    background of its own and disappears against a bright photo) so the tier-lock icon always reads
    regardless of what's behind it. */
@@ -836,7 +869,10 @@ button { font-family: inherit; }
 .badge.OPEN { background: rgba(52,211,153,.14); color: var(--green); }
 .badge.SCHEDULED { background: rgba(251,191,36,.14); color: var(--amber); }
 .badge.CLOSED { background: rgba(156,163,175,.16); color: var(--muted); }
-.badge.UNSOLD, .badge.CANCELLED { background: rgba(239,61,46,.16); color: var(--red-2); }
+.badge.UNSOLD, .badge.CANCELLED, .badge.FAILED, .badge.REJECTED { background: rgba(239,61,46,.16); color: var(--red-2); }
+.badge.SUCCEEDED, .badge.PUBLISHED, .badge.APPROVED, .badge.ACTIVE { background: rgba(52,211,153,.14); color: var(--green); }
+.badge.PENDING, .badge.DRAFT { background: rgba(251,191,36,.14); color: var(--amber); }
+.badge.WITHDRAWN { background: rgba(156,163,175,.16); color: var(--muted); }
 .countdown { font-variant-numeric: tabular-nums; font-weight: 800; color: var(--orange); font-size: 13px; }
 .live-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); margin-right: 6px; }
 
@@ -1206,6 +1242,39 @@ label { display: block; font-size: 12.5px; color: var(--muted); margin: 14px 0 6
 .stat-tile { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
 .stat-tile .k { font-size: 11px; text-transform: uppercase; color: var(--muted); letter-spacing: .06em; }
 .stat-tile .v { font-size: 22px; font-weight: 800; margin-top: 4px; }
+.stat-tile-head { display: flex; align-items: flex-start; justify-content: space-between; }
+.stat-tile-icon { width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center;
+  font-size: 16px; flex-shrink: 0; }
+.stat-tile-icon.blue { background: rgba(37,99,235,.12); color: #2563eb; }
+.stat-tile-icon.green { background: rgba(5,150,105,.12); color: var(--green); }
+.stat-tile-icon.purple { background: rgba(124,58,237,.12); color: #7c3aed; }
+.stat-tile-icon.amber { background: rgba(180,83,9,.12); color: var(--amber); }
+.stat-tile-icon.red { background: rgba(239,61,46,.12); color: var(--red); }
+.stat-tile .hint { font-size: 11.5px; color: var(--muted); margin-top: 6px; }
+.stat-tile .hint b { color: var(--text); }
+
+/* ---------- Admin shell: sidebar nav + routed page content (frontend/src/components/AdminLayout.tsx) ---------- */
+.admin-shell { display: flex; align-items: flex-start; }
+.admin-sidebar { width: 228px; flex-shrink: 0; border-right: 1px solid var(--border); padding: 22px 12px;
+  position: sticky; top: 84px; height: calc(100vh - 84px); overflow-y: auto; }
+.admin-sidebar-section { margin-bottom: 20px; }
+.admin-sidebar-label { font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .09em;
+  color: var(--muted); padding: 0 10px; margin: 0 0 6px; }
+.admin-nav-link { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 10px;
+  color: var(--muted); font-size: 13.5px; font-weight: 600; text-decoration: none; margin-bottom: 2px;
+  transition: background-color var(--transition-fast), color var(--transition-fast); }
+.admin-nav-link:hover { background: var(--panel-2); color: var(--text); }
+.admin-nav-link.active { background: rgba(239,61,46,.1); color: var(--red); }
+.admin-nav-link .icon { font-size: 15px; width: 18px; text-align: center; flex-shrink: 0; }
+.admin-main { flex: 1; min-width: 0; padding: 24px 28px 64px; }
+.admin-breadcrumb { font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .1em;
+  color: var(--muted); margin-bottom: 10px; }
+.count-chip { font-size: 11.5px; font-weight: 700; color: var(--muted); background: var(--panel-2);
+  border-radius: var(--radius-full); padding: 3px 10px; }
+@media (max-width: 900px) {
+  .admin-sidebar { display: none; }
+  .admin-main { padding: 18px 16px 44px; }
+}
 
 .chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
 .chart-card { padding: 16px; }

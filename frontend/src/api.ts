@@ -635,6 +635,71 @@ export async function releaseAdminHold(holdId: string): Promise<ReleaseHoldResul
   const res = await api.post<ReleaseHoldResult>(`/api/admin/holds/${holdId}/release`)
   return res.data
 }
+
+// ---- Admin: wallet-wide views (Credit & Holds / Payments / Withdrawals / Transactions) ----
+export interface AdminHoldFull {
+  id: string
+  bidderId: string
+  bidderEmail: string
+  auctionId: string
+  listingTitle: string
+  amount: number
+  createdAt: string
+}
+export async function getAdminHolds(page = 0, size = 20): Promise<PageResponse<AdminHoldFull>> {
+  const res = await api.get<PageResponse<AdminHoldFull>>('/api/admin/holds', { params: { page, size } })
+  return res.data
+}
+
+export interface AdminPaymentOrder {
+  id: string
+  userEmail: string
+  amount: number
+  purpose: string
+  status: 'PENDING' | 'SUCCEEDED' | 'FAILED'
+  createdAt: string
+  completedAt: string | null
+}
+export async function getAdminPayments(status?: string, page = 0, size = 20): Promise<PageResponse<AdminPaymentOrder>> {
+  const res = await api.get<PageResponse<AdminPaymentOrder>>('/api/admin/payments', { params: { ...(status ? { status } : {}), page, size } })
+  return res.data
+}
+export interface SettlementStatus {
+  paymentsEnabled: boolean
+  payoutsEnabled: boolean
+}
+export async function getSettlementStatus(): Promise<SettlementStatus> {
+  const res = await api.get<SettlementStatus>('/api/admin/payments/settlement-status')
+  return res.data
+}
+
+export interface AdminWithdrawal {
+  id: string
+  userEmail: string
+  amount: number
+  status: 'PENDING' | 'SUCCEEDED' | 'FAILED'
+  razorpayPayoutId: string | null
+  createdAt: string
+  completedAt: string | null
+}
+export async function getAdminWithdrawals(status?: string, page = 0, size = 20): Promise<PageResponse<AdminWithdrawal>> {
+  const res = await api.get<PageResponse<AdminWithdrawal>>('/api/admin/withdrawals', { params: { ...(status ? { status } : {}), page, size } })
+  return res.data
+}
+
+export interface AdminTransaction {
+  id: string
+  userEmail: string
+  type: string
+  amount: number
+  referenceType: string | null
+  referenceId: string | null
+  createdAt: string
+}
+export async function getAdminTransactions(type?: string, page = 0, size = 20): Promise<PageResponse<AdminTransaction>> {
+  const res = await api.get<PageResponse<AdminTransaction>>('/api/admin/transactions', { params: { ...(type ? { type } : {}), page, size } })
+  return res.data
+}
 export async function getAdminListings(status?: string, page = 0, size = 20): Promise<PageResponse<AdminListing>> {
   const res = await api.get<PageResponse<AdminListing>>('/api/admin/listings', { params: { ...(status ? { status } : {}), page, size } })
   return res.data
@@ -654,7 +719,7 @@ export async function getAuditLog(action?: string, from?: string, to?: string, p
   })
   return res.data
 }
-export type AnalyticsGranularity = 'MONTHLY' | 'QUARTERLY' | 'YEARLY'
+export type AnalyticsGranularity = 'DAILY' | 'MONTHLY' | 'QUARTERLY' | 'YEARLY'
 export interface AnalyticsPoint {
   label: string
   value: number
@@ -724,6 +789,158 @@ export async function createAdminCategoryAttribute(categoryId: string, body: {
 }): Promise<AdminCategoryAttribute> {
   const res = await api.post<AdminCategoryAttribute>(`/api/admin/categories/${categoryId}/attributes`, body)
   return res.data
+}
+
+// ---- Admin dashboard (Overview page widgets) ----
+export interface DashboardSummary {
+  totalUsers: number
+  openAuctions: number
+  gmv: number
+  openDisputes: number
+  transactionsToday: number
+  transactionsAmountToday: number
+  pendingApprovals: number
+  kycRejected: number
+  kycVerified: number
+  kycPending: number
+  pendingPayments: number
+  totalPlans: number
+  paymentsGatewayConfigured: boolean
+  payoutsGatewayConfigured: boolean
+}
+export async function getDashboardSummary(): Promise<DashboardSummary> {
+  const res = await api.get<DashboardSummary>('/api/admin/dashboard/summary')
+  return res.data
+}
+export type CashFlowRange = 'TODAY' | 'YESTERDAY' | 'LAST_7_DAYS' | 'LAST_30_DAYS'
+export interface CashFlowPoint {
+  label: string
+  deposits: number
+  withdrawals: number
+}
+export async function getCashFlow(range: CashFlowRange): Promise<CashFlowPoint[]> {
+  const res = await api.get<CashFlowPoint[]>('/api/admin/dashboard/cash-flow', { params: { range } })
+  return res.data
+}
+export interface GeoRow {
+  name: string
+  count: number
+}
+export interface GeoBreakdown {
+  byState: GeoRow[]
+  byDistrict: GeoRow[]
+}
+export async function getGeoBreakdown(): Promise<GeoBreakdown> {
+  const res = await api.get<GeoBreakdown>('/api/admin/dashboard/geo')
+  return res.data
+}
+
+// ---- Support chat ----
+export interface ChatMsg {
+  id: string
+  sender: 'USER' | 'ADMIN'
+  body: string
+  createdAt: string
+}
+export async function getMyChatMessages(): Promise<ChatMsg[]> {
+  const res = await api.get<ChatMsg[]>('/api/chat/messages')
+  return res.data
+}
+export async function sendChatMessage(body: string): Promise<ChatMsg> {
+  const res = await api.post<ChatMsg>('/api/chat/messages', { body })
+  return res.data
+}
+export interface AdminChatConversation {
+  userId: string
+  userEmail: string
+  lastMessage: string
+  lastSender: 'USER' | 'ADMIN'
+  lastMessageAt: string
+  messageCount: number
+}
+export async function getAdminChatConversations(): Promise<AdminChatConversation[]> {
+  const res = await api.get<AdminChatConversation[]>('/api/admin/chat/conversations')
+  return res.data
+}
+export async function getAdminChatMessages(userId: string): Promise<ChatMsg[]> {
+  const res = await api.get<ChatMsg[]>(`/api/admin/chat/conversations/${userId}/messages`)
+  return res.data
+}
+export async function sendAdminChatReply(userId: string, body: string): Promise<ChatMsg> {
+  const res = await api.post<ChatMsg>(`/api/admin/chat/conversations/${userId}/messages`, { body })
+  return res.data
+}
+
+// ---- Referrals ----
+export async function captureReferral(referrerId: string): Promise<{ recorded: boolean; message: string }> {
+  const res = await api.post<{ recorded: boolean; message: string }>('/api/referrals/capture', { referrerId })
+  return res.data
+}
+export interface MyReferrals {
+  referralCode: string
+  totalReferred: number
+}
+export async function getMyReferrals(): Promise<MyReferrals> {
+  const res = await api.get<MyReferrals>('/api/referrals/mine')
+  return res.data
+}
+export interface AdminReferrerRow {
+  userId: string
+  email: string
+  totalReferrals: number
+}
+export interface AdminReferralDashboard {
+  totalUsers: number
+  totalReferralsMade: number
+  topReferrerEmail: string | null
+  referrers: AdminReferrerRow[]
+}
+export async function getAdminReferrals(): Promise<AdminReferralDashboard> {
+  const res = await api.get<AdminReferralDashboard>('/api/admin/referrals')
+  return res.data
+}
+
+// ---- Banners (public teaser + admin CRUD) ----
+export interface PublicBanner {
+  id: string
+  categoryId: string | null
+  categoryName: string | null
+  imageUrl: string
+  linkUrl: string | null
+  title: string | null
+}
+export async function getBanners(): Promise<PublicBanner[]> {
+  const res = await api.get<PublicBanner[]>('/api/banners')
+  return res.data
+}
+export interface AdminBanner extends PublicBanner {
+  sortOrder: number
+  active: boolean
+  createdAt: string
+  updatedAt: string
+}
+export async function getAdminBanners(): Promise<AdminBanner[]> {
+  const res = await api.get<AdminBanner[]>('/api/admin/banners')
+  return res.data
+}
+export async function createBanner(body: {
+  image: File; categoryId?: string; linkUrl?: string; title?: string; sortOrder?: number
+}): Promise<AdminBanner> {
+  const form = new FormData()
+  form.append('image', body.image)
+  if (body.categoryId) form.append('categoryId', body.categoryId)
+  if (body.linkUrl) form.append('linkUrl', body.linkUrl)
+  if (body.title) form.append('title', body.title)
+  if (body.sortOrder != null) form.append('sortOrder', String(body.sortOrder))
+  const res = await api.post<AdminBanner>('/api/admin/banners', form)
+  return res.data
+}
+export async function toggleBannerActive(id: string, active: boolean): Promise<AdminBanner> {
+  const res = await api.patch<AdminBanner>(`/api/admin/banners/${id}/active`, { active })
+  return res.data
+}
+export async function deleteBanner(id: string): Promise<void> {
+  await api.delete(`/api/admin/banners/${id}`)
 }
 
 // ---- Admin: Add Stock (single item + bulk Excel import) ----

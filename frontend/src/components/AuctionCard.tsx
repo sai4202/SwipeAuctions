@@ -4,6 +4,7 @@ import { type Auction } from '../api'
 import { moneyCompact, money, formatDateTimeShort, cardImage, openUserDetails } from '../util'
 import { useAuctionBid } from '../useAuctionBid'
 import BidModals from './BidModals'
+import ShareMenu from './ShareMenu'
 
 const SLABEL: Record<string, string> = {
   OPEN: 'Live', SCHEDULED: 'Upcoming', CLOSED: 'Closed', UNSOLD: 'Unsold', CANCELLED: 'Cancelled',
@@ -82,6 +83,7 @@ export default function AuctionCard({ auction: a, inTray, onToggleTray }: Props)
         >
           {inTray ? '♥' : '♡'}
         </button>
+        <ShareMenu url={`/auctions/${auction.id}`} text={`Check out "${auction.title}" on SwipeAuctions:`} emailSubject={auction.title} />
       </div>
       <div className="row"><span className="cat">{auction.categoryName}</span><span className="cond">{auction.condition.replace('_', ' ')}</span></div>
       <Link to={`/auctions/${auction.id}`}><h3 className="acard-title">{auction.title}</h3></Link>

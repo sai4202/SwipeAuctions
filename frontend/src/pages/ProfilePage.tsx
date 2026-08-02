@@ -1,17 +1,22 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../auth'
-import { getKycStatus, errorMessage, type KycStatusResult } from '../api'
+import { getKycStatus, getMyReferrals, errorMessage, type KycStatusResult, type MyReferrals } from '../api'
+import ShareMenu from '../components/ShareMenu'
 
 export default function ProfilePage() {
   const { isAuthenticated, email, role, kycCompleted } = useAuth()
   const [kyc, setKyc] = useState<KycStatusResult | null>(null)
   const [error, setError] = useState('')
+  const [referrals, setReferrals] = useState<MyReferrals | null>(null)
 
   useEffect(() => {
     if (!isAuthenticated) return
     getKycStatus().then(setKyc).catch((e) => setError(errorMessage(e)))
+    getMyReferrals().then(setReferrals).catch(() => {})
   }, [isAuthenticated])
+
+  const inviteLink = referrals ? `/register?ref=${referrals.referralCode}` : ''
 
   if (!isAuthenticated) {
     return <div className="container"><div className="card" style={{ maxWidth: 460 }}>Please <Link to="/login">sign in</Link> to view your profile.</div></div>
@@ -48,6 +53,21 @@ export default function ProfilePage() {
           </div>
         </div>
       </div>
+
+      {referrals && (
+        <div className="card" style={{ maxWidth: 480, marginTop: 18 }}>
+          <h2 style={{ fontSize: 15, margin: '0 0 6px' }}>Invite friends</h2>
+          <p className="muted" style={{ fontSize: 12.5, marginTop: 0 }}>
+            {referrals.totalReferred} friend{referrals.totalReferred === 1 ? '' : 's'} have joined through your link so far. Pick where to share it:
+          </p>
+          <ShareMenu
+            variant="inline"
+            url={inviteLink}
+            text="Join me on SwipeAuctions — India's premium auction marketplace for vehicles, properties, bank vehicles & insurance salvage!"
+            emailSubject="Join me on SwipeAuctions"
+          />
+        </div>
+      )}
     </div>
   )
 }

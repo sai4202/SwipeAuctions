@@ -3,6 +3,8 @@ package com.swipeauctions.wallet.repository;
 import com.swipeauctions.wallet.entity.BidEligibilityHold;
 import com.swipeauctions.wallet.enums.HoldStatus;
 import jakarta.persistence.LockModeType;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -15,6 +17,9 @@ import java.util.UUID;
 public interface BidEligibilityHoldRepository extends JpaRepository<BidEligibilityHold, UUID> {
 
     Optional<BidEligibilityHold> findByAuction_IdAndBidder_Id(UUID auctionId, UUID bidderId);
+
+    /** Admin-wide "Credit & Holds Overview" — every currently-locked EMD hold across all bidders. */
+    Page<BidEligibilityHold> findByStatus(HoldStatus status, Pageable pageable);
 
     /**
      * Pessimistic row lock for release/capture — the hold row itself must be locked before its
