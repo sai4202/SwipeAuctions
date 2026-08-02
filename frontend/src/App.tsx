@@ -10,6 +10,7 @@ import AdminLoginPage from './pages/AdminLoginPage'
 import RegisterPage from './pages/RegisterPage'
 import WalletPage from './pages/WalletPage'
 import MyWinsPage from './pages/MyWinsPage'
+import MyBidsPage from './pages/MyBidsPage'
 import MyTransactionsPage from './pages/MyTransactionsPage'
 import ProfilePage from './pages/ProfilePage'
 import SubscriptionPage from './pages/SubscriptionPage'
@@ -36,6 +37,7 @@ export default function App() {
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/wallet" element={<RequireAuth><WalletPage /></RequireAuth>} />
         <Route path="/my-wins" element={<RequireAuth><MyWinsPage /></RequireAuth>} />
+        <Route path="/my-bids" element={<RequireAuth><MyBidsPage /></RequireAuth>} />
         <Route path="/my-transactions" element={<RequireAuth><MyTransactionsPage /></RequireAuth>} />
         <Route path="/profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
         <Route path="/subscription" element={<RequireAuth><SubscriptionPage /></RequireAuth>} />

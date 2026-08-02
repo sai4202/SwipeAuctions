@@ -115,8 +115,9 @@ export default function Header() {
           )}
           {isAuthenticated && !isAdmin && (
             <div className="header-quicklinks">
+              <NavLink to="/my-bids">Your Bids</NavLink>
               <NavLink to="/my-wins">My Wins</NavLink>
-              <NavLink to="/wishlist">Wishlist</NavLink>
+              <NavLink to="/wishlist"><span className="wishlist-pulse">♥</span> Wishlist</NavLink>
             </div>
           )}
           {isAuthenticated && !isAdmin && !kycCompleted && (
@@ -184,8 +185,9 @@ export default function Header() {
         <NavLink to="/swipe-stock" onClick={closeMobile}>Swipe Stock</NavLink>
         {isAuthenticated && !isAdmin && (
           <>
+            <NavLink to="/my-bids" onClick={closeMobile}>Your Bids</NavLink>
             <NavLink to="/my-wins" onClick={closeMobile}>My Wins</NavLink>
-            <NavLink to="/wishlist" onClick={closeMobile}>Wishlist</NavLink>
+            <NavLink to="/wishlist" onClick={closeMobile}><span className="wishlist-pulse">♥</span> Wishlist</NavLink>
           </>
         )}
         {isAuthenticated && isTopLevel && (
