@@ -267,10 +267,12 @@ export interface AdminAuction {
 export interface AuctionBidder {
   bidderId: string
   email: string
+  bidId: string
   amount: number
   bidCount: number
   lastBidAt: string
   leading: boolean
+  disqualified: boolean
 }
 export interface Dispute {
   id: string
@@ -741,12 +743,27 @@ export async function getAdminAnalytics(granularity: AnalyticsGranularity): Prom
   const res = await api.get<AdminAnalyticsData>('/api/admin/analytics', { params: { granularity } })
   return res.data
 }
-export async function getAdminAuctions(status?: string, page = 0, size = 20): Promise<PageResponse<AdminAuction>> {
-  const res = await api.get<PageResponse<AdminAuction>>('/api/admin/auctions', { params: { ...(status ? { status } : {}), page, size } })
+export async function getAdminAuctions(status?: string, page = 0, size = 20, hasBids?: boolean): Promise<PageResponse<AdminAuction>> {
+  const res = await api.get<PageResponse<AdminAuction>>('/api/admin/auctions', {
+    params: { ...(status ? { status } : {}), ...(hasBids ? { hasBids } : {}), page, size },
+  })
   return res.data
 }
 export async function getAdminAuctionBidders(auctionId: string): Promise<AuctionBidder[]> {
   const res = await api.get<AuctionBidder[]>(`/api/admin/auctions/${auctionId}/bidders`)
+  return res.data
+}
+export async function adminEditBid(bidId: string, amount: number, reason: string): Promise<void> {
+  await api.put(`/api/admin/bids/${bidId}`, { amount, reason })
+}
+export async function adminDisqualifyBidder(auctionId: string, bidderId: string, reason: string): Promise<void> {
+  await api.post(`/api/admin/auctions/${auctionId}/bidders/${bidderId}/disqualify`, { reason })
+}
+export async function adminReinstateBidder(auctionId: string, bidderId: string): Promise<void> {
+  await api.delete(`/api/admin/auctions/${auctionId}/bidders/${bidderId}/disqualify`)
+}
+export async function adminAdjustWallet(userId: string, amount: number, credit: boolean, reason: string): Promise<ReleaseHoldResult> {
+  const res = await api.post<ReleaseHoldResult>(`/api/admin/users/${userId}/wallet/adjust`, { amount, credit, reason })
   return res.data
 }
 export async function forceCloseAuction(id: string): Promise<AdminAuction> {
@@ -846,8 +863,11 @@ export async function getGeoBreakdown(): Promise<GeoBreakdown> {
 export interface ChatMsg {
   id: string
   sender: 'USER' | 'ADMIN'
-  body: string
+  body: string | null
   createdAt: string
+  attachmentUrl: string | null
+  attachmentType: 'IMAGE' | 'VIDEO' | null
+  attachmentName: string | null
 }
 export async function getMyChatMessages(): Promise<ChatMsg[]> {
   const res = await api.get<ChatMsg[]>('/api/chat/messages')
@@ -855,6 +875,13 @@ export async function getMyChatMessages(): Promise<ChatMsg[]> {
 }
 export async function sendChatMessage(body: string): Promise<ChatMsg> {
   const res = await api.post<ChatMsg>('/api/chat/messages', { body })
+  return res.data
+}
+export async function sendChatAttachment(file: File, caption?: string): Promise<ChatMsg> {
+  const form = new FormData()
+  form.append('file', file)
+  if (caption) form.append('caption', caption)
+  const res = await api.post<ChatMsg>('/api/chat/messages/attachment', form)
   return res.data
 }
 export interface AdminChatConversation {
@@ -877,6 +904,13 @@ export async function sendAdminChatReply(userId: string, body: string): Promise<
   const res = await api.post<ChatMsg>(`/api/admin/chat/conversations/${userId}/messages`, { body })
   return res.data
 }
+export async function sendAdminChatAttachment(userId: string, file: File, caption?: string): Promise<ChatMsg> {
+  const form = new FormData()
+  form.append('file', file)
+  if (caption) form.append('caption', caption)
+  const res = await api.post<ChatMsg>(`/api/admin/chat/conversations/${userId}/messages/attachment`, form)
+  return res.data
+}
 
 // ---- Referrals ----
 export async function captureReferral(referrerId: string): Promise<{ recorded: boolean; message: string }> {
@@ -886,6 +920,8 @@ export async function captureReferral(referrerId: string): Promise<{ recorded: b
 export interface MyReferrals {
   referralCode: string
   totalReferred: number
+  successfulReferrals: number
+  totalEarned: number
 }
 export async function getMyReferrals(): Promise<MyReferrals> {
   const res = await api.get<MyReferrals>('/api/referrals/mine')
@@ -895,10 +931,14 @@ export interface AdminReferrerRow {
   userId: string
   email: string
   totalReferrals: number
+  successfulReferrals: number
+  totalRewardPaid: number
 }
 export interface AdminReferralDashboard {
   totalUsers: number
   totalReferralsMade: number
+  totalSuccessfulReferrals: number
+  totalBonusPaid: number
   topReferrerEmail: string | null
   referrers: AdminReferrerRow[]
 }
@@ -1007,10 +1047,22 @@ export async function getMembershipBenefits(): Promise<MembershipBenefit[]> {
   const res = await api.get<MembershipBenefit[]>('/api/settings/membership-benefits')
   return res.data
 }
+export interface ReferralSettings {
+  bonusAmount: number
+  minDeposit: number
+}
+export async function getReferralSettings(): Promise<ReferralSettings> {
+  const res = await api.get<ReferralSettings>('/api/settings/referral')
+  return res.data
+}
 
 // ---- Platform settings (admin writes) ----
 export async function updateRegistrationFee(fee: number): Promise<number> {
   const res = await api.put<number>('/api/admin/settings/registration-fee', { fee })
+  return res.data
+}
+export async function updateReferralSettings(bonusAmount: number, minDeposit: number): Promise<ReferralSettings> {
+  const res = await api.put<ReferralSettings>('/api/admin/settings/referral', { bonusAmount, minDeposit })
   return res.data
 }
 export async function updateSubscriptionPrices(prices: SubscriptionPrice[]): Promise<SubscriptionPrice[]> {

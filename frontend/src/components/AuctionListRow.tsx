@@ -53,7 +53,11 @@ export default function AuctionListRow({ auction: a, inTray, onToggleTray }: Pro
           <Link to={`/auctions/${auction.id}`} className="btn ghost sm">View Details</Link>
           {locked ? (
             <Link to="/subscription" className="btn sm">Upgrade your plan</Link>
-          ) : isAdmin ? null : es !== 'OPEN' ? (
+          ) : isAdmin ? (
+            auction.bidCount > 0 && (
+              <Link to={`/admin/auctions/${auction.id}/bidders`} className="btn ghost sm">View Bidders</Link>
+            )
+          ) : es !== 'OPEN' ? (
             <span className="btn sm" style={{ opacity: .55, pointerEvents: 'none' }}>
               {es === 'SCHEDULED' ? 'Not started' : 'Closed'}
             </span>

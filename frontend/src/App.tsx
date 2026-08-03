@@ -21,6 +21,8 @@ import AdminOverviewPage from './pages/admin/AdminOverviewPage'
 import AdminUsersPage from './pages/admin/AdminUsersPage'
 import AdminListingsPage from './pages/admin/AdminListingsPage'
 import AdminAuctionsPage from './pages/admin/AdminAuctionsPage'
+import AdminAuctionBiddersPage from './pages/admin/AdminAuctionBiddersPage'
+import AdminActiveBiddingsPage from './pages/admin/AdminActiveBiddingsPage'
 import AdminPlansPage from './pages/admin/AdminPlansPage'
 import AdminHoldsPage from './pages/admin/AdminHoldsPage'
 import AdminPaymentsPage from './pages/admin/AdminPaymentsPage'
@@ -67,6 +69,8 @@ export default function App() {
           <Route path="users" element={<AdminUsersPage />} />
           <Route path="listings" element={<AdminListingsPage />} />
           <Route path="auctions" element={<AdminAuctionsPage />} />
+          <Route path="auctions/:id/bidders" element={<AdminAuctionBiddersPage />} />
+          <Route path="active-biddings" element={<AdminActiveBiddingsPage />} />
           <Route path="plans" element={<AdminPlansPage />} />
           <Route path="holds" element={<AdminHoldsPage />} />
           <Route path="payments" element={<AdminPaymentsPage />} />

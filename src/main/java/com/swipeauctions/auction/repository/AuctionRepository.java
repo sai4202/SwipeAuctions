@@ -21,6 +21,12 @@ public interface AuctionRepository extends JpaRepository<Auction, UUID> {
 
     Page<Auction> findByStatus(AuctionStatus status, Pageable pageable);
 
+    /** Auctions with at least one bid — the "Active Biddings" admin view. Filtering at the DB level
+     *  (rather than the per-row bidCount computed after fetch in AdminController#toAuction) keeps
+     *  pagination correct — a page can't come back short just because some fetched rows had none. */
+    @Query("select a from Auction a where a.status = :status and exists (select 1 from Bid b where b.auction = a)")
+    Page<Auction> findByStatusAndHasBids(@Param("status") AuctionStatus status, Pageable pageable);
+
     Optional<Auction> findByListing_Id(UUID listingId);
 
     List<Auction> findByStatusAndStartTimeLessThanEqual(AuctionStatus status, LocalDateTime time);

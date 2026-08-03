@@ -35,6 +35,13 @@ public class SettingsController {
         return settingsService.getRegistrationFee();
     }
 
+    @GetMapping("/referral")
+    public ReferralSettingsResponse referralSettings() {
+        return new ReferralSettingsResponse(settingsService.getReferralBonusAmount(), settingsService.getReferralMinDeposit());
+    }
+
+    public record ReferralSettingsResponse(BigDecimal bonusAmount, BigDecimal minDeposit) {}
+
     // Lets the registration wizard know whether to render the mobile-OTP step, without hardcoding
     // that decision on the frontend — flipping AUTH_MOBILE_VERIFICATION_REQUIRED alone is then
     // enough to change both sides' behavior.

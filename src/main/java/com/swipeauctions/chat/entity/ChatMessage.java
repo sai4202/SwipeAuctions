@@ -25,6 +25,20 @@ public class ChatMessage extends BaseEntity {
     @Column(nullable = false, length = 10)
     private ChatSender sender;
 
-    @Column(nullable = false, columnDefinition = "TEXT")
+    /** Nullable — an attachment-only message (see below) has no caption text. */
+    @Column(columnDefinition = "TEXT")
     private String body;
+
+    /** Public /uploads/** URL from StorageProvider — same image/video-only validation as every
+     *  other upload in the app (banners, listing photos), reused as-is. Null for a text-only message. */
+    @Column(name = "attachment_url", length = 500)
+    private String attachmentUrl;
+
+    /** "IMAGE" or "VIDEO", derived from the uploaded file's content type. Null for a text-only message. */
+    @Column(name = "attachment_type", length = 20)
+    private String attachmentType;
+
+    /** Original filename, shown next to the attachment. Null for a text-only message. */
+    @Column(name = "attachment_name")
+    private String attachmentName;
 }

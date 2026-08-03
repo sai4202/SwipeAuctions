@@ -3,6 +3,7 @@ import { useAuth } from '../../auth'
 import {
   getRegistrationFee, updateRegistrationFee, getSubscriptionPrices, updateSubscriptionPrices,
   getMembershipBenefits, createMembershipBenefit, updateMembershipBenefitTiers, deleteMembershipBenefit,
+  getReferralSettings, updateReferralSettings,
   createAdmin, errorMessage,
   type SubscriptionPrice, type SubscriptionTier, type BillingCycle, type MembershipBenefit, type AdminRole,
 } from '../../api'
@@ -30,6 +31,12 @@ export default function AdminSettingsPage() {
   const [feeMsg, setFeeMsg] = useState('')
   const [feeError, setFeeError] = useState('')
 
+  const [referralBonus, setReferralBonus] = useState('')
+  const [referralMinDeposit, setReferralMinDeposit] = useState('')
+  const [referralSaving, setReferralSaving] = useState(false)
+  const [referralMsg, setReferralMsg] = useState('')
+  const [referralError, setReferralError] = useState('')
+
   const [prices, setPrices] = useState<SubscriptionPrice[]>([])
   const [priceSaving, setPriceSaving] = useState(false)
   const [priceMsg, setPriceMsg] = useState('')
@@ -51,6 +58,7 @@ export default function AdminSettingsPage() {
     getRegistrationFee().then((f) => setFee(String(f))).catch((e) => setFeeError(errorMessage(e)))
     getSubscriptionPrices().then(setPrices).catch((e) => setPriceError(errorMessage(e)))
     getMembershipBenefits().then(setBenefits).catch((e) => setBenefitsError(errorMessage(e)))
+    getReferralSettings().then((s) => { setReferralBonus(String(s.bonusAmount)); setReferralMinDeposit(String(s.minDeposit)) }).catch((e) => setReferralError(errorMessage(e)))
   }, [])
 
   const priceFor = (tier: SubscriptionTier, cycle: BillingCycle) =>
@@ -73,6 +81,17 @@ export default function AdminSettingsPage() {
       setFee(String(saved))
       setFeeMsg('Registration fee saved.')
     } catch (e2) { setFeeError(errorMessage(e2)) } finally { setFeeSaving(false) }
+  }
+
+  const submitReferralSettings = async (e: FormEvent) => {
+    e.preventDefault()
+    setReferralSaving(true); setReferralError(''); setReferralMsg('')
+    try {
+      const saved = await updateReferralSettings(Number(referralBonus), Number(referralMinDeposit))
+      setReferralBonus(String(saved.bonusAmount))
+      setReferralMinDeposit(String(saved.minDeposit))
+      setReferralMsg('Referral settings saved.')
+    } catch (e2) { setReferralError(errorMessage(e2)) } finally { setReferralSaving(false) }
   }
 
   const submitPrices = async (e: FormEvent) => {
@@ -186,6 +205,26 @@ export default function AdminSettingsPage() {
           </form>
           {feeError && <div className="error">{feeError}</div>}
           {feeMsg && <div className="ok">{feeMsg}</div>}
+        </div>
+
+        <div className="card">
+          <h2 style={{ fontSize: 15, margin: '0 0 12px' }}>Referral bonus</h2>
+          <p className="muted" style={{ fontSize: 12.5, marginTop: 0 }}>
+            Paid to the referrer once their invited user deposits at least the minimum in a single top-up.
+          </p>
+          <form onSubmit={submitReferralSettings} style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+            <div className="fgroup" style={{ maxWidth: 200 }}>
+              <small>Bonus amount (₹)</small>
+              <input type="number" min={0} value={referralBonus} onChange={(e) => setReferralBonus(e.target.value)} />
+            </div>
+            <div className="fgroup" style={{ maxWidth: 200 }}>
+              <small>Minimum deposit (₹)</small>
+              <input type="number" min={0} value={referralMinDeposit} onChange={(e) => setReferralMinDeposit(e.target.value)} />
+            </div>
+            <button type="submit" className="btn sm" disabled={referralSaving}>{referralSaving ? 'Saving…' : 'Save'}</button>
+          </form>
+          {referralError && <div className="error">{referralError}</div>}
+          {referralMsg && <div className="ok">{referralMsg}</div>}
         </div>
 
         <div className="card">

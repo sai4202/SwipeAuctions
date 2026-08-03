@@ -14,6 +14,15 @@ public interface BidRepository extends JpaRepository<Bid, UUID> {
 
     List<Bid> findByAuction_IdOrderByAmountDesc(UUID auctionId);
 
+    /** Same as {@link #findByAuction_IdOrderByAmountDesc} but excluding any bidder an admin has
+     *  disqualified from this specific auction — used to recompute the auction's leader after an
+     *  admin bid-edit/disqualify/reinstate (see BidService). Bid rows themselves are never deleted
+     *  on disqualification, only excluded from ranking. */
+    @Query("select b from Bid b where b.auction.id = :auctionId "
+            + "and not exists (select 1 from AuctionDisqualification d where d.auction.id = :auctionId and d.bidder.id = b.bidder.id) "
+            + "order by b.amount desc")
+    List<Bid> findEligibleByAuction_IdOrderByAmountDesc(@Param("auctionId") UUID auctionId);
+
     long countByAuction_Id(UUID auctionId);
 
     long countByAuction_IdAndBidder_Id(UUID auctionId, UUID bidderId);
@@ -42,7 +51,12 @@ public interface BidRepository extends JpaRepository<Bid, UUID> {
      *  WalletService.committedCredit / BidService.placeBid's credit-limit check). An auction drops
      *  out the moment it closes, which is what makes a lost auction's exposure free itself
      *  automatically with no separate "release" step needed. */
-    @Query("select max(b.amount) from Bid b where b.bidder.id = :bidderId and b.auction.status = com.swipeauctions.auction.enums.AuctionStatus.OPEN group by b.auction.id")
+    // Excludes any auction the bidder has been admin-disqualified from — otherwise a disqualified
+    // bidder's credit limit would stay locked up against an auction they can no longer win, since
+    // this query (not any cached/stored field) is the live source of "committed credit."
+    @Query("select max(b.amount) from Bid b where b.bidder.id = :bidderId and b.auction.status = com.swipeauctions.auction.enums.AuctionStatus.OPEN "
+            + "and not exists (select 1 from AuctionDisqualification d where d.auction.id = b.auction.id and d.bidder.id = b.bidder.id) "
+            + "group by b.auction.id")
     List<BigDecimal> findMaxBidPerOpenAuctionForBidder(@Param("bidderId") UUID bidderId);
 
     interface AuctionBidCount {

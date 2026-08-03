@@ -6,5 +6,7 @@ public enum NotificationKind {
     OUTBID,
     AUCTION_WON,
     AUCTION_LOST,
-    WALLET_TOPUP
+    WALLET_TOPUP,
+    REFERRAL_BONUS,
+    WALLET_ADJUSTED
 }

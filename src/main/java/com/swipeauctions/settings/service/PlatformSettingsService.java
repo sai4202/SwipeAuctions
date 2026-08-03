@@ -44,6 +44,24 @@ public class PlatformSettingsService {
     }
 
     @Transactional(readOnly = true)
+    public BigDecimal getReferralBonusAmount() {
+        return getOrCreateSettings().getReferralBonusAmount();
+    }
+
+    @Transactional(readOnly = true)
+    public BigDecimal getReferralMinDeposit() {
+        return getOrCreateSettings().getReferralMinDeposit();
+    }
+
+    @Transactional
+    public PlatformSettings updateReferralSettings(BigDecimal bonusAmount, BigDecimal minDeposit) {
+        PlatformSettings settings = getOrCreateSettings();
+        settings.setReferralBonusAmount(bonusAmount);
+        settings.setReferralMinDeposit(minDeposit);
+        return settingsRepository.save(settings);
+    }
+
+    @Transactional(readOnly = true)
     public List<SubscriptionPlanPrice> listSubscriptionPrices() {
         return priceRepository.findAll();
     }

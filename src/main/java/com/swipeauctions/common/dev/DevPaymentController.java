@@ -1,6 +1,7 @@
 package com.swipeauctions.common.dev;
 
 import com.swipeauctions.common.util.LoggedInUserUtil;
+import com.swipeauctions.referral.service.ReferralService;
 import com.swipeauctions.user.entity.User;
 import com.swipeauctions.wallet.controller.WalletController;
 import com.swipeauctions.wallet.entity.Wallet;
@@ -26,12 +27,14 @@ import java.math.BigDecimal;
 public class DevPaymentController {
 
     private final WalletService walletService;
+    private final ReferralService referralService;
     private final LoggedInUserUtil loggedInUserUtil;
 
     @PostMapping("/topup")
     public WalletController.WalletResponse topUp(@Valid @RequestBody TopUpRequest req) {
         User user = loggedInUserUtil.getCurrentUser();
         Wallet w = walletService.topUp(user, req.amount());
+        referralService.onTopUp(user, req.amount());
         BigDecimal creditLimit = walletService.creditLimitFor(w.getAvailableBalance());
         BigDecimal available = creditLimit.subtract(walletService.committedCredit(user.getId()));
         BigDecimal creditHeld = walletService.creditHeldAmount(user);

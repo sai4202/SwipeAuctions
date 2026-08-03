@@ -143,13 +143,53 @@ public class WalletService {
      *  (or directly, by the dev-only free top-up endpoint). */
     @Transactional
     public Wallet topUp(User user, BigDecimal amount) {
+        Wallet w = creditAvailable(user, amount, WalletTxnType.TOPUP, "RAZORPAY_ORDER", null);
+        notificationService.walletTopUp(user.getEmail(), amount);
+        return w;
+    }
+
+    /** Credits a referral bonus to the referrer's wallet — called by ReferralService once the
+     *  referred user's top-up satisfies the admin-configured minimum deposit. Kept out of
+     *  ReferralService's own transaction boundary knowledge: this is the only place that touches
+     *  the wallet, same "wallet-first" separation as every other credit path in this class. */
+    @Transactional
+    public Wallet creditReferralBonus(User referrer, BigDecimal amount, String refType, String refId) {
+        Wallet w = creditAvailable(referrer, amount, WalletTxnType.REFERRAL_BONUS, refType, refId);
+        notificationService.referralBonusCredited(referrer.getEmail(), amount);
+        return w;
+    }
+
+    /** Admin manual wallet correction (disputes, mistaken bids, or anything else that needs a
+     *  one-off fix) — the human-readable reason isn't stored on {@link WalletTransaction} (no
+     *  existing ledger row has one); it lives in the {@code AdminAuditLog} entry the controller
+     *  writes right after, same as every other admin action's audit trail. */
+    @Transactional
+    public Wallet adminAdjust(User user, BigDecimal amount, boolean credit, String reason) {
+        Wallet w;
+        if (credit) {
+            w = creditAvailable(user, amount, WalletTxnType.ADMIN_CREDIT, "ADMIN_ADJUSTMENT", null);
+        } else {
+            requirePositive(amount);
+            getOrCreateWallet(user);
+            w = lockWallet(user.getId());
+            if (w.getAvailableBalance().compareTo(amount) < 0) {
+                throw new BadRequestException("Insufficient available balance to debit " + amount);
+            }
+            w.setAvailableBalance(w.getAvailableBalance().subtract(amount));
+            walletRepository.save(w);
+            record(w, WalletTxnType.ADMIN_DEBIT, amount, "ADMIN_ADJUSTMENT", null);
+        }
+        notificationService.walletAdjusted(user.getEmail(), amount, credit, reason);
+        return w;
+    }
+
+    private Wallet creditAvailable(User user, BigDecimal amount, WalletTxnType type, String refType, String refId) {
         requirePositive(amount);
         getOrCreateWallet(user);
         Wallet w = lockWallet(user.getId());
         w.setAvailableBalance(w.getAvailableBalance().add(amount));
         walletRepository.save(w);
-        record(w, WalletTxnType.TOPUP, amount, "RAZORPAY_ORDER", null);
-        notificationService.walletTopUp(user.getEmail(), amount);
+        record(w, type, amount, refType, refId);
         return w;
     }
 

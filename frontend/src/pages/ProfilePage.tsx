@@ -1,7 +1,11 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../auth'
-import { getKycStatus, getMyReferrals, errorMessage, type KycStatusResult, type MyReferrals } from '../api'
+import {
+  getKycStatus, getMyReferrals, getReferralSettings, errorMessage,
+  type KycStatusResult, type MyReferrals, type ReferralSettings,
+} from '../api'
+import { money } from '../util'
 import ShareMenu from '../components/ShareMenu'
 
 export default function ProfilePage() {
@@ -9,11 +13,13 @@ export default function ProfilePage() {
   const [kyc, setKyc] = useState<KycStatusResult | null>(null)
   const [error, setError] = useState('')
   const [referrals, setReferrals] = useState<MyReferrals | null>(null)
+  const [referralSettings, setReferralSettings] = useState<ReferralSettings | null>(null)
 
   useEffect(() => {
     if (!isAuthenticated) return
     getKycStatus().then(setKyc).catch((e) => setError(errorMessage(e)))
     getMyReferrals().then(setReferrals).catch(() => {})
+    getReferralSettings().then(setReferralSettings).catch(() => {})
   }, [isAuthenticated])
 
   const inviteLink = referrals ? `/register?ref=${referrals.referralCode}` : ''
@@ -60,6 +66,16 @@ export default function ProfilePage() {
           <p className="muted" style={{ fontSize: 12.5, marginTop: 0 }}>
             {referrals.totalReferred} friend{referrals.totalReferred === 1 ? '' : 's'} have joined through your link so far. Pick where to share it:
           </p>
+          {referralSettings && referralSettings.bonusAmount > 0 && (
+            <p className="muted" style={{ fontSize: 12.5, marginTop: 0 }}>
+              Earn {money(referralSettings.bonusAmount)} when a friend deposits at least {money(referralSettings.minDeposit)}.
+            </p>
+          )}
+          {referrals.successfulReferrals > 0 && (
+            <p style={{ fontSize: 13, marginTop: 0, marginBottom: 12 }}>
+              <strong>{referrals.successfulReferrals}</strong> successful referral{referrals.successfulReferrals === 1 ? '' : 's'} — you've earned <strong>{money(referrals.totalEarned)}</strong>.
+            </p>
+          )}
           <ShareMenu
             variant="inline"
             url={inviteLink}

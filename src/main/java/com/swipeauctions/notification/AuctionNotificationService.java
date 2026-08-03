@@ -105,6 +105,19 @@ public class AuctionNotificationService {
                 money(amount) + " was added to your wallet.", null);
     }
 
+    @Async
+    public void referralBonusCredited(String email, BigDecimal amount) {
+        push(email, NotificationKind.REFERRAL_BONUS, "Referral bonus credited",
+                money(amount) + " was added to your wallet for a successful referral.", null);
+    }
+
+    @Async
+    public void walletAdjusted(String email, BigDecimal amount, boolean credit, String reason) {
+        push(email, NotificationKind.WALLET_ADJUSTED, credit ? "Wallet credited by admin" : "Wallet debited by admin",
+                (credit ? money(amount) + " was added to" : money(amount) + " was deducted from")
+                        + " your wallet by an admin. Reason: " + reason, null);
+    }
+
     // ---- helpers ----
 
     private void send(String to, String subject, String body) {

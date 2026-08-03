@@ -2,6 +2,7 @@ package com.swipeauctions.referral.controller;
 
 import com.swipeauctions.common.util.LoggedInUserUtil;
 import com.swipeauctions.referral.entity.Referral;
+import com.swipeauctions.referral.enums.ReferralStatus;
 import com.swipeauctions.referral.repository.ReferralRepository;
 import com.swipeauctions.user.entity.User;
 import com.swipeauctions.user.repository.UserRepository;
@@ -11,6 +12,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
+import java.util.List;
 import java.util.UUID;
 
 /** Referral capture + a user's own invite stats. Deliberately separate from the registration/auth
@@ -51,17 +54,23 @@ public class ReferralController {
         return new CaptureResponse(true, "Referral recorded.");
     }
 
-    /** The signed-in user's own invite link + how many people have signed up through it. */
+    /** The signed-in user's own invite link + how many people have signed up through it, how many
+     *  of those turned into a successful (bonus-paying) referral, and how much they've earned. */
     @GetMapping("/mine")
     public MyReferralsResponse mine() {
         User user = loggedInUserUtil.getCurrentUser();
-        int count = referralRepository.findByReferrer_Id(user.getId()).size();
-        return new MyReferralsResponse(user.getId(), count);
+        List<Referral> mine = referralRepository.findByReferrer_Id(user.getId());
+        long successful = mine.stream().filter(r -> r.getStatus() == ReferralStatus.SUCCESSFUL).count();
+        BigDecimal totalEarned = mine.stream()
+                .filter(r -> r.getStatus() == ReferralStatus.SUCCESSFUL && r.getRewardAmount() != null)
+                .map(Referral::getRewardAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        return new MyReferralsResponse(user.getId(), mine.size(), (int) successful, totalEarned);
     }
 
     public record CaptureRequest(@NotNull UUID referrerId) {}
 
     public record CaptureResponse(boolean recorded, String message) {}
 
-    public record MyReferralsResponse(UUID referralCode, int totalReferred) {}
+    public record MyReferralsResponse(UUID referralCode, int totalReferred, int successfulReferrals, BigDecimal totalEarned) {}
 }

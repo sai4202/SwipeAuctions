@@ -8,6 +8,8 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.servlet.NoHandlerFoundException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 import com.swipeauctions.common.response.ApiResponse;
 
 import java.util.HashMap;
@@ -89,6 +91,25 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<Object>> handleMethodArgumentTypeMismatchException(MethodArgumentTypeMismatchException exception)
     {
         return ResponseEntity.badRequest().body(ApiResponse.error("Invalid value for parameter \"" + exception.getName() + "\""));
+    }
+
+    // No controller (or, for a GET, no static resource) matched the request path at all — a genuine
+    // 404, not a server error. Without these, both exception types fell through to the generic
+    // handler below and reported as a 500, which is misleading for API consumers and monitoring.
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ApiResponse<Object>> handleNoResourceFoundException(NoResourceFoundException exception)
+    {
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .body(ApiResponse.error("Not found"));
+    }
+
+    @ExceptionHandler(NoHandlerFoundException.class)
+    public ResponseEntity<ApiResponse<Object>> handleNoHandlerFoundException(NoHandlerFoundException exception)
+    {
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .body(ApiResponse.error("Not found"));
     }
 
     @ExceptionHandler(EmailConfigurationException.class)

@@ -47,6 +47,16 @@ public class AdminSettingsController {
         return fee;
     }
 
+    @PutMapping("/referral")
+    public ReferralSettingsResponse updateReferralSettings(@Valid @RequestBody UpdateReferralSettingsRequest req) {
+        Admin admin = loggedInUserUtil.getCurrentAdmin();
+        var settings = settingsService.updateReferralSettings(req.bonusAmount(), req.minDeposit());
+        auditLogService.record(admin, AuditAction.REFERRAL_SETTINGS_UPDATED, "Settings", null,
+                "Set referral bonus to " + settings.getReferralBonusAmount()
+                        + " with a minimum deposit of " + settings.getReferralMinDeposit());
+        return new ReferralSettingsResponse(settings.getReferralBonusAmount(), settings.getReferralMinDeposit());
+    }
+
     @PutMapping("/subscription-prices")
     public List<SettingsController.SubscriptionPriceResponse> updateSubscriptionPrices(
             @Valid @RequestBody UpdatePricesRequest req) {
@@ -97,6 +107,11 @@ public class AdminSettingsController {
     }
 
     public record UpdateFeeRequest(@NotNull @PositiveOrZero BigDecimal fee) {}
+
+    public record UpdateReferralSettingsRequest(@NotNull @PositiveOrZero BigDecimal bonusAmount,
+                                                  @NotNull @PositiveOrZero BigDecimal minDeposit) {}
+
+    public record ReferralSettingsResponse(BigDecimal bonusAmount, BigDecimal minDeposit) {}
 
     public record PriceEntry(@NotNull SubscriptionTier tier, @NotNull BillingCycle billingCycle,
                               @NotNull @PositiveOrZero BigDecimal price) {}

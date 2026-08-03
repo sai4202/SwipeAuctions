@@ -8,8 +8,11 @@ import com.swipeauctions.auction.entity.Auction;
 import com.swipeauctions.auction.enums.AuctionStatus;
 import com.swipeauctions.auction.repository.AuctionRepository;
 import com.swipeauctions.auction.service.AuctionService;
+import com.swipeauctions.bidding.entity.AuctionDisqualification;
 import com.swipeauctions.bidding.entity.Bid;
+import com.swipeauctions.bidding.repository.AuctionDisqualificationRepository;
 import com.swipeauctions.bidding.repository.BidRepository;
+import com.swipeauctions.bidding.service.BidService;
 import com.swipeauctions.catalog.entity.Category;
 import com.swipeauctions.catalog.entity.CategoryAttributeDef;
 import com.swipeauctions.catalog.entity.CategoryBanner;
@@ -79,6 +82,8 @@ public class AdminController {
     private final AuctionRepository auctionRepository;
     private final ListingRepository listingRepository;
     private final BidRepository bidRepository;
+    private final BidService bidService;
+    private final AuctionDisqualificationRepository disqualificationRepository;
     private final DisputeService disputeService;
     private final DisputeRepository disputeRepository;
     private final UserRepository userRepository;
@@ -138,6 +143,23 @@ public class AdminController {
         return holdRepository.findByBidder_IdAndStatus(user.getId(), HoldStatus.ACTIVE).stream()
                 .map(AdminController::toHold).toList();
     }
+
+    /** General manual wallet correction tool — disputes, mistaken bids, or any other one-off fix
+     *  that doesn't fit the narrower EMD-hold-release/dispute-resolution paths. Always audit-logged
+     *  with the admin-supplied reason; the user gets a notification either way. */
+    @PostMapping("/users/{id}/wallet/adjust")
+    public ReleaseHoldResponse adjustWallet(@PathVariable UUID id, @Valid @RequestBody AdjustWalletRequest req) {
+        Admin admin = loggedInUserUtil.getCurrentAdmin();
+        User user = adminUserService.getUser(id);
+        Wallet w = walletService.adminAdjust(user, req.amount(), req.credit(), req.reason());
+        auditLogService.record(admin, AuditAction.WALLET_ADJUSTED, "User", user.getId().toString(),
+                (req.credit() ? "Credited " : "Debited ") + req.amount() + " " + (req.credit() ? "to" : "from")
+                        + " " + user.getEmail() + "'s wallet — reason: " + req.reason());
+        return new ReleaseHoldResponse(w.getAvailableBalance(), w.getHeldBalance(), walletService.creditLimitFor(w.getAvailableBalance()));
+    }
+
+    public record AdjustWalletRequest(@jakarta.validation.constraints.NotNull @jakarta.validation.constraints.Positive BigDecimal amount,
+                                       boolean credit, @NotBlank String reason) {}
 
     /** Everything this user has bid on, one row per auction (their own best bid on it) — the "how
      *  many items is he bidding" detail view, newest activity first. */
@@ -242,10 +264,13 @@ public class AdminController {
 
     @GetMapping("/auctions")
     public PageResponse<AuctionResponse> auctions(@RequestParam(required = false) AuctionStatus status,
+                                                    @RequestParam(required = false) Boolean hasBids,
                                                     @RequestParam(defaultValue = "0") int page,
                                                     @RequestParam(defaultValue = "20") int size) {
         Pageable pageable = pageable(page, size, "startTime");
-        var result = status != null ? auctionRepository.findByStatus(status, pageable) : auctionRepository.findAll(pageable);
+        var result = status != null && Boolean.TRUE.equals(hasBids) ? auctionRepository.findByStatusAndHasBids(status, pageable)
+                : status != null ? auctionRepository.findByStatus(status, pageable)
+                : auctionRepository.findAll(pageable);
         return PageResponse.of(result, this::toAuction);
     }
 
@@ -264,15 +289,55 @@ public class AdminController {
                     (existing, candidate) -> candidate.getAmount().compareTo(existing.getAmount()) > 0 ? candidate : existing);
             countPerBidder.merge(bidderId, 1L, Long::sum);
         }
+        java.util.Set<UUID> disqualified = disqualificationRepository.findByAuction_Id(id).stream()
+                .map(d -> d.getBidder().getId()).collect(java.util.stream.Collectors.toSet());
         User winner = auction.getCurrentWinner();
         return bestPerBidder.values().stream()
                 .sorted(java.util.Comparator.comparing(Bid::getAmount).reversed())
                 .map(b -> new AuctionBidderResponse(
-                        b.getBidder().getId(), b.getBidder().getEmail(), b.getAmount(),
+                        b.getBidder().getId(), b.getBidder().getEmail(), b.getId(), b.getAmount(),
                         countPerBidder.get(b.getBidder().getId()), b.getPlacedAt(),
-                        winner != null && winner.getId().equals(b.getBidder().getId())))
+                        winner != null && winner.getId().equals(b.getBidder().getId()),
+                        disqualified.contains(b.getBidder().getId())))
                 .toList();
     }
+
+    /** Admin correction for a mistaken/disputed bid — overwrites the bid's amount directly and
+     *  recomputes the auction's leader. See BidService#adminEditBid for the OPEN-only restriction. */
+    @PutMapping("/bids/{bidId}")
+    public void editBid(@PathVariable UUID bidId, @Valid @RequestBody EditBidRequest req) {
+        Admin admin = loggedInUserUtil.getCurrentAdmin();
+        Bid before = bidRepository.findById(bidId).orElseThrow(() -> new ResourceNotFoundException("Bid not found"));
+        BigDecimal oldAmount = before.getAmount();
+        Bid updated = bidService.adminEditBid(bidId, req.amount());
+        auditLogService.record(admin, AuditAction.BID_AMOUNT_MODIFIED, "Bid", bidId.toString(),
+                "Changed " + updated.getBidder().getEmail() + "'s bid on \"" + updated.getAuction().getListing().getTitle()
+                        + "\" from " + oldAmount + " to " + updated.getAmount() + " — reason: " + req.reason());
+    }
+
+    /** Bans a bidder from one specific auction (lighter than the account-wide suspend) — releases
+     *  their EMD hold on it if any, excludes them from this auction's ranking. */
+    @PostMapping("/auctions/{auctionId}/bidders/{bidderId}/disqualify")
+    public void disqualifyBidder(@PathVariable UUID auctionId, @PathVariable UUID bidderId,
+                                  @Valid @RequestBody DisqualifyBidderRequest req) {
+        Admin admin = loggedInUserUtil.getCurrentAdmin();
+        bidService.disqualifyBidder(auctionId, bidderId, admin, req.reason());
+        auditLogService.record(admin, AuditAction.BIDDER_DISQUALIFIED, "Auction", auctionId.toString(),
+                "Disqualified bidder " + bidderId + " from an auction — reason: " + req.reason());
+    }
+
+    @DeleteMapping("/auctions/{auctionId}/bidders/{bidderId}/disqualify")
+    public void reinstateBidder(@PathVariable UUID auctionId, @PathVariable UUID bidderId) {
+        Admin admin = loggedInUserUtil.getCurrentAdmin();
+        bidService.reinstateBidder(auctionId, bidderId);
+        auditLogService.record(admin, AuditAction.BIDDER_REINSTATED, "Auction", auctionId.toString(),
+                "Reinstated bidder " + bidderId + " on an auction");
+    }
+
+    public record EditBidRequest(@jakarta.validation.constraints.NotNull @jakarta.validation.constraints.Positive BigDecimal amount,
+                                  @NotBlank String reason) {}
+
+    public record DisqualifyBidderRequest(@NotBlank String reason) {}
 
     @PostMapping("/auctions/{id}/force-close")
     public AuctionResponse forceClose(@PathVariable UUID id) {
@@ -440,28 +505,40 @@ public class AdminController {
 
     // ---- Referrals ----
 
-    /** Reference site's "Referral Dashboard" — who's referring whom, via the real (non-monetary)
-     *  invite-link mechanism in ReferralController, admin-wide. */
+    /** Reference site's "Referral Dashboard" — who's referring whom via the invite-link mechanism
+     *  in ReferralController, admin-wide, plus how many of those turned into a bonus-paying
+     *  successful referral and how much has been paid out. */
     @GetMapping("/referrals")
     public ReferralDashboardResponse referrals() {
         List<Referral> all = referralRepository.findAllByOrderByCreatedAtDesc();
-        java.util.Map<UUID, Long> countByReferrer = all.stream()
-                .collect(java.util.stream.Collectors.groupingBy(r -> r.getReferrer().getId(), java.util.LinkedHashMap::new, java.util.stream.Collectors.counting()));
+        java.util.Map<UUID, List<Referral>> byReferrer = all.stream()
+                .collect(java.util.stream.Collectors.groupingBy(r -> r.getReferrer().getId(), java.util.LinkedHashMap::new, java.util.stream.Collectors.toList()));
         java.util.Map<UUID, User> referrerById = all.stream()
                 .collect(java.util.stream.Collectors.toMap(r -> r.getReferrer().getId(), Referral::getReferrer, (a, b) -> a));
 
-        List<ReferrerRow> rows = countByReferrer.entrySet().stream()
-                .sorted(java.util.Map.Entry.<UUID, Long>comparingByValue().reversed())
-                .map(e -> new ReferrerRow(e.getKey(), referrerById.get(e.getKey()).getEmail(), e.getValue()))
+        List<ReferrerRow> rows = byReferrer.entrySet().stream()
+                .map(e -> {
+                    List<Referral> referred = e.getValue();
+                    long successful = referred.stream().filter(r -> r.getStatus() == com.swipeauctions.referral.enums.ReferralStatus.SUCCESSFUL).count();
+                    BigDecimal totalRewardPaid = referred.stream()
+                            .filter(r -> r.getStatus() == com.swipeauctions.referral.enums.ReferralStatus.SUCCESSFUL && r.getRewardAmount() != null)
+                            .map(Referral::getRewardAmount)
+                            .reduce(BigDecimal.ZERO, BigDecimal::add);
+                    return new ReferrerRow(e.getKey(), referrerById.get(e.getKey()).getEmail(), referred.size(), successful, totalRewardPaid);
+                })
+                .sorted(java.util.Comparator.comparingLong(ReferrerRow::totalReferrals).reversed())
                 .toList();
 
         String topReferrerEmail = rows.isEmpty() ? null : rows.get(0).email();
-        return new ReferralDashboardResponse(userRepository.count(), all.size(), topReferrerEmail, rows);
+        BigDecimal totalBonusPaid = rows.stream().map(ReferrerRow::totalRewardPaid).reduce(BigDecimal.ZERO, BigDecimal::add);
+        long totalSuccessful = rows.stream().mapToLong(ReferrerRow::successfulReferrals).sum();
+        return new ReferralDashboardResponse(userRepository.count(), all.size(), totalSuccessful, totalBonusPaid, topReferrerEmail, rows);
     }
 
-    public record ReferrerRow(UUID userId, String email, long totalReferrals) {}
+    public record ReferrerRow(UUID userId, String email, long totalReferrals, long successfulReferrals, BigDecimal totalRewardPaid) {}
 
-    public record ReferralDashboardResponse(long totalUsers, long totalReferralsMade, String topReferrerEmail, List<ReferrerRow> referrers) {}
+    public record ReferralDashboardResponse(long totalUsers, long totalReferralsMade, long totalSuccessfulReferrals,
+                                             BigDecimal totalBonusPaid, String topReferrerEmail, List<ReferrerRow> referrers) {}
 
     // ---- KYC ----
 
@@ -727,10 +804,11 @@ public class AdminController {
                                   LocalDateTime startTime, LocalDateTime currentEndTime, long bidCount,
                                   UUID currentWinnerId, String currentWinnerEmail) {}
 
-    /** One row per bidder on an auction — their own current-best bid, how many bids they've placed,
-     *  and whether they're presently leading. */
-    public record AuctionBidderResponse(UUID bidderId, String email, BigDecimal amount, long bidCount,
-                                        LocalDateTime lastBidAt, boolean leading) {}
+    /** One row per bidder on an auction — their own current-best bid (and that specific Bid row's
+     *  id, so an admin action can target it directly), how many bids they've placed, whether
+     *  they're presently leading, and whether an admin has disqualified them from this auction. */
+    public record AuctionBidderResponse(UUID bidderId, String email, UUID bidId, BigDecimal amount, long bidCount,
+                                        LocalDateTime lastBidAt, boolean leading, boolean disqualified) {}
 
     public record UpdateAuctionRequest(@NotBlank String title,
                                        @jakarta.validation.constraints.NotNull @jakarta.validation.constraints.Positive BigDecimal basePrice,

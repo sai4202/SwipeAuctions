@@ -1,9 +1,12 @@
 package com.swipeauctions.bidding.service;
 
+import com.swipeauctions.admin.entity.Admin;
 import com.swipeauctions.auction.entity.Auction;
 import com.swipeauctions.auction.enums.AuctionStatus;
 import com.swipeauctions.auction.repository.AuctionRepository;
+import com.swipeauctions.bidding.entity.AuctionDisqualification;
 import com.swipeauctions.bidding.entity.Bid;
+import com.swipeauctions.bidding.repository.AuctionDisqualificationRepository;
 import com.swipeauctions.bidding.repository.BidRepository;
 import com.swipeauctions.common.exception.BadRequestException;
 import com.swipeauctions.common.exception.ResourceNotFoundException;
@@ -22,7 +25,9 @@ import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -36,6 +41,7 @@ public class BidService {
 
     private final AuctionRepository auctionRepository;
     private final BidRepository bidRepository;
+    private final AuctionDisqualificationRepository disqualificationRepository;
     private final WalletService walletService;
     private final SimpMessagingTemplate messagingTemplate;
     private final AuctionNotificationService notificationService;
@@ -69,6 +75,9 @@ public class BidService {
         }
         if (auction.getListing().getSeller().getId().equals(bidder.getId())) {
             throw new BadRequestException("Sellers cannot bid on their own auction");
+        }
+        if (disqualificationRepository.existsByAuction_IdAndBidder_Id(auctionId, bidder.getId())) {
+            throw new BadRequestException("You have been disqualified from bidding on this auction.");
         }
         if (!Boolean.TRUE.equals(bidder.getKycCompleted())) {
             throw new BadRequestException("Complete your KYC verification before bidding.");
@@ -178,6 +187,100 @@ public class BidService {
             }
         });
         return bid;
+    }
+
+    /**
+     * Admin correction tool for a mistaken/disputed bid — overwrites an existing bid's amount
+     * directly (bypassing the normal must-beat-your-own-previous-bid / credit-limit checks, which
+     * are for the bidder's own self-service flow, not an admin override) and recomputes the
+     * auction's leader. Restricted to still-OPEN auctions so this never has to unwind an
+     * already-executed settlement.
+     */
+    @Transactional
+    public Bid adminEditBid(UUID bidId, BigDecimal newAmount) {
+        Bid bid = bidRepository.findById(bidId)
+                .orElseThrow(() -> new ResourceNotFoundException("Bid not found"));
+        Auction auction = auctionRepository.findByIdForUpdate(bid.getAuction().getId())
+                .orElseThrow(() -> new ResourceNotFoundException("Auction not found"));
+        if (auction.getStatus() != AuctionStatus.OPEN) {
+            throw new BadRequestException("Cannot modify a bid after the auction has closed.");
+        }
+        if (newAmount == null || newAmount.signum() <= 0) {
+            throw new BadRequestException("Bid amount must be positive");
+        }
+        bid.setAmount(newAmount);
+        bidRepository.save(bid);
+        recomputeLeaderAndNotify(auction);
+        return bid;
+    }
+
+    /** Bans a bidder from one specific auction — releases their EMD hold on it (if any) and
+     *  excludes their bids from this auction's ranking going forward; {@link #placeBid} rejects any
+     *  further bids from them on it. Their bid history rows are left untouched. */
+    @Transactional
+    public void disqualifyBidder(UUID auctionId, UUID bidderId, Admin admin, String reason) {
+        Auction auction = auctionRepository.findByIdForUpdate(auctionId)
+                .orElseThrow(() -> new ResourceNotFoundException("Auction not found"));
+        if (auction.getStatus() != AuctionStatus.OPEN) {
+            throw new BadRequestException("Can only disqualify a bidder while the auction is open.");
+        }
+        if (disqualificationRepository.existsByAuction_IdAndBidder_Id(auctionId, bidderId)) {
+            throw new BadRequestException("This bidder is already disqualified from this auction.");
+        }
+        User bidder = bidRepository.findFirstByAuction_IdAndBidder_IdOrderByAmountDesc(auctionId, bidderId)
+                .map(Bid::getBidder)
+                .orElseThrow(() -> new BadRequestException("This user hasn't bid on this auction."));
+
+        disqualificationRepository.save(AuctionDisqualification.builder()
+                .auction(auction).bidder(bidder).admin(admin).reason(reason).build());
+        if (walletService.hasActiveHold(auctionId, bidderId)) {
+            walletService.releaseHold(auction, bidder);
+        }
+        recomputeLeaderAndNotify(auction);
+    }
+
+    /** Reverses {@link #disqualifyBidder} — their existing bid rows are untouched, so they're
+     *  naturally eligible again once the disqualification row is gone. Does not re-place a released
+     *  EMD hold; the bidder re-registers normally if they want to bid again. */
+    @Transactional
+    public void reinstateBidder(UUID auctionId, UUID bidderId) {
+        Auction auction = auctionRepository.findByIdForUpdate(auctionId)
+                .orElseThrow(() -> new ResourceNotFoundException("Auction not found"));
+        AuctionDisqualification dq = disqualificationRepository.findByAuction_IdAndBidder_Id(auctionId, bidderId)
+                .orElseThrow(() -> new ResourceNotFoundException("This bidder isn't disqualified from this auction."));
+        disqualificationRepository.delete(dq);
+        recomputeLeaderAndNotify(auction);
+    }
+
+    /** Shared by the three admin methods above: recomputes the auction's leader from its currently
+     *  eligible bids, broadcasts the result over the same STOMP topic {@link #placeBid} uses, and —
+     *  if someone lost the lead as a result — notifies them, same after-commit deferral as placeBid.
+     *  Caller must already hold the auction's row lock. */
+    private void recomputeLeaderAndNotify(Auction auction) {
+        User previousWinner = auction.getCurrentWinner();
+
+        List<Bid> eligible = bidRepository.findEligibleByAuction_IdOrderByAmountDesc(auction.getId());
+        Bid newLeadBid = eligible.isEmpty() ? null : eligible.get(0);
+        auction.setCurrentHighestBid(newLeadBid != null ? newLeadBid.getAmount() : null);
+        auction.setCurrentWinner(newLeadBid != null ? newLeadBid.getBidder() : null);
+        auctionRepository.save(auction);
+
+        UUID auctionId = auction.getId();
+        String auctionTitle = auction.getListing().getTitle();
+        BigDecimal newHighest = auction.getCurrentHighestBid();
+        LocalDateTime endTime = auction.getCurrentEndTime();
+        long bidCount = bidRepository.countByAuction_Id(auctionId);
+        User newWinner = auction.getCurrentWinner();
+
+        boolean leaderChanged = !Objects.equals(
+                previousWinner != null ? previousWinner.getId() : null,
+                newWinner != null ? newWinner.getId() : null);
+        String previousWinnerEmail = previousWinner != null ? previousWinner.getEmail() : null;
+
+        broadcastAfterCommit(auctionId, newHighest, endTime, bidCount);
+        if (leaderChanged && previousWinnerEmail != null) {
+            runAfterCommit(() -> notificationService.outbid(previousWinnerEmail, auctionId.toString(), auctionTitle, newHighest));
+        }
     }
 
     /** Pure anti-snipe decision: does a bid landing this close to the deadline warrant an extension? */

@@ -102,6 +102,7 @@ export default function Header() {
             </button>
           )}
           {isAdmin && <NavLink to="/admin">Admin</NavLink>}
+          {isAdmin && <NavLink to="/admin/active-biddings">Active Biddings</NavLink>}
         </nav>
 
         <div className="header-right">
@@ -214,6 +215,7 @@ export default function Header() {
           </button>
         )}
         {isAdmin && <NavLink to="/admin" onClick={closeMobile}>Admin</NavLink>}
+        {isAdmin && <NavLink to="/admin/active-biddings" onClick={closeMobile}>Active Biddings</NavLink>}
         {isAuthenticated && !isAdmin && !kycCompleted && (
           <NavLink to="/kyc" onClick={closeMobile} style={{ color: 'var(--orange, #d97706)' }}>Complete KYC</NavLink>
         )}

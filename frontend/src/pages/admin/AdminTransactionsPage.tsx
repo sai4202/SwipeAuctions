@@ -3,7 +3,7 @@ import { getAdminTransactions, errorMessage, type AdminTransaction } from '../..
 import { money, formatDateTimeShort } from '../../util'
 import { Pager, AdminPageHeader } from './shared'
 
-const TYPES = ['TOPUP', 'HOLD', 'RELEASE', 'CAPTURE', 'DEBIT', 'PAYOUT', 'WITHDRAWAL', 'REFUND', 'SALE_PROCEEDS']
+const TYPES = ['TOPUP', 'HOLD', 'RELEASE', 'CAPTURE', 'DEBIT', 'PAYOUT', 'WITHDRAWAL', 'REFUND', 'SALE_PROCEEDS', 'REFERRAL_BONUS']
 
 /** Reference site's "Transactions" section — the full wallet ledger, admin-wide instead of scoped
  *  to one user (the per-user version already exists and powers MyTransactionsPage). */

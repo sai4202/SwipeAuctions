@@ -8,6 +8,7 @@ import com.razorpay.Utils;
 import com.swipeauctions.common.exception.BadRequestException;
 import com.swipeauctions.enums.BillingCycle;
 import com.swipeauctions.enums.SubscriptionTier;
+import com.swipeauctions.referral.service.ReferralService;
 import com.swipeauctions.settings.entity.MembershipBenefit;
 import com.swipeauctions.settings.entity.SubscriptionPlanPrice;
 import com.swipeauctions.settings.repository.MembershipBenefitRepository;
@@ -57,6 +58,7 @@ public class RazorpayPaymentService {
     private final UserRepository userRepository;
     private final PaymentOrderRepository orderRepository;
     private final WalletService walletService;
+    private final ReferralService referralService;
     private final PlatformSettingsService platformSettingsService;
     private final SubscriptionService subscriptionService;
     private final SubscriptionPlanPriceRepository priceRepository;
@@ -232,7 +234,10 @@ public class RazorpayPaymentService {
         }
         User user = order.getUser();
         switch (order.getPurpose()) {
-            case WALLET_TOPUP -> walletService.topUp(user, order.getAmount());
+            case WALLET_TOPUP -> {
+                walletService.topUp(user, order.getAmount());
+                referralService.onTopUp(user, order.getAmount());
+            }
             case REGISTRATION_FEE -> {
                 user.setRegistrationFeePaid(true);
                 user.setRegistrationFeePaidAt(LocalDateTime.now());

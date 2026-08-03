@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
   getAdminUsers, getAdminUser, suspendUser, reactivateUser, getAdminUserHolds, releaseAdminHold, getAdminUserBids,
-  getAdminKycQueue, errorMessage,
+  getAdminKycQueue, adminAdjustWallet, getMobileVerificationRequired, errorMessage,
   type AdminUser, type AdminHold, type ReleaseHoldResult, type AdminUserBid,
 } from '../../api'
 import { money, moneyCompact, formatDateTimeShort } from '../../util'
@@ -47,12 +47,27 @@ export default function AdminUsersPage() {
   const [error, setError] = useState('')
   const [busyId, setBusyId] = useState<string | null>(null)
   const [walletUser, setWalletUser] = useState<AdminUser | null>(null)
+  // Whether an account was ever activated (i.e. would need an admin's Reactivate) is what actually
+  // distinguishes a genuine suspension from a signup that just hasn't finished email/mobile
+  // verification yet — both look identical as active:false otherwise. Mirrors the exact condition
+  // UserAuthServiceImpl#activateIfFullyVerified uses to flip active=true in the first place.
+  const [mobileRequired, setMobileRequired] = useState(false)
   const { sorted: sortedUsers, sortKey, sortDir, toggleSort } = useSortableData(users, getUserSortValue)
+
+  useEffect(() => {
+    getMobileVerificationRequired().then(setMobileRequired).catch(() => {})
+  }, [])
 
   useEffect(() => {
     if (!linkedUserId) return
     getAdminUser(linkedUserId).then(setWalletUser).catch((e) => setError(errorMessage(e)))
   }, [linkedUserId])
+
+  const userStatus = (u: AdminUser): 'Active' | 'Suspended' | 'Unverified' => {
+    if (u.active) return 'Active'
+    const wouldHaveActivated = u.emailVerified && (!mobileRequired || u.mobileVerified)
+    return wouldHaveActivated ? 'Suspended' : 'Unverified'
+  }
 
   const load = () => {
     getAdminUsers({
@@ -128,11 +143,15 @@ export default function AdminUsersPage() {
                   <td>{money(u.walletAvailableBalance)}</td>
                   <td>{moneyCompact(u.walletCreditLimit)}</td>
                   <td>{u.activeBidCount}</td>
-                  <td>{u.active ? <span className="ok" style={{ margin: 0, display: 'inline-block' }}>Active</span>
-                                : <span className="error" style={{ margin: 0, display: 'inline-block' }}>Suspended</span>}</td>
+                  <td>
+                    {userStatus(u) === 'Active' && <span className="ok" style={{ margin: 0, display: 'inline-block' }}>Active</span>}
+                    {userStatus(u) === 'Suspended' && <span className="error" style={{ margin: 0, display: 'inline-block' }}>Suspended</span>}
+                    {userStatus(u) === 'Unverified' && <span className="badge PENDING" title="Hasn't finished email/mobile verification yet — not suspended by an admin">Unverified</span>}
+                  </td>
                   <td style={{ display: 'flex', gap: 6 }}>
-                    <button type="button" className="btn ghost sm" disabled={busyId === u.id} onClick={() => toggle(u)}>
-                      {busyId === u.id ? '…' : u.active ? 'Suspend' : 'Reactivate'}
+                    <button type="button" className="btn ghost sm" disabled={busyId === u.id} onClick={() => toggle(u)}
+                            title={userStatus(u) === 'Unverified' ? "Activate without waiting for them to finish email/mobile verification" : undefined}>
+                      {busyId === u.id ? '…' : u.active ? 'Suspend' : userStatus(u) === 'Unverified' ? 'Activate' : 'Reactivate'}
                     </button>
                   </td>
                 </tr>
@@ -170,6 +189,13 @@ function WalletModal({ user, onClose, onReleased }: {
   const [busyId, setBusyId] = useState<string | null>(null)
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
 
+  const [adjustAmount, setAdjustAmount] = useState('')
+  const [adjustCredit, setAdjustCredit] = useState(true)
+  const [adjustReason, setAdjustReason] = useState('')
+  const [adjustBusy, setAdjustBusy] = useState(false)
+  const [adjustMsg, setAdjustMsg] = useState('')
+  const [adjustError, setAdjustError] = useState('')
+
   useEffect(() => {
     Promise.all([getAdminUserHolds(user.id), getAdminUserBids(user.id)])
       .then(([h, b]) => { setHolds(h); setBids(b) })
@@ -185,6 +211,17 @@ function WalletModal({ user, onClose, onReleased }: {
       setHolds((prev) => prev.filter((h) => h.id !== hold.id))
       onReleased(res)
     } catch (e) { setError(errorMessage(e)) } finally { setBusyId(null) }
+  }
+
+  const submitAdjust = async (e: FormEvent) => {
+    e.preventDefault()
+    setAdjustBusy(true); setAdjustError(''); setAdjustMsg('')
+    try {
+      const res = await adminAdjustWallet(user.id, Number(adjustAmount), adjustCredit, adjustReason)
+      onReleased(res)
+      setAdjustMsg(`${adjustCredit ? 'Credited' : 'Debited'} ${adjustAmount} — reflected above.`)
+      setAdjustAmount(''); setAdjustReason('')
+    } catch (e) { setAdjustError(errorMessage(e)) } finally { setAdjustBusy(false) }
   }
 
   const openBidCount = bids.filter((b) => b.auctionStatus === 'OPEN').length
@@ -222,6 +259,30 @@ function WalletModal({ user, onClose, onReleased }: {
               <div><div className="k">Held (Locked)</div><div className="v"><AnimatedNumber value={user.walletHeldBalance} format={money} /></div></div>
               <div><div className="k">Credit Limit</div><div className="v"><AnimatedNumber value={user.walletCreditLimit} format={moneyCompact} /></div></div>
             </div>
+
+            <form onSubmit={submitAdjust} style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 16 }}>
+              <div className="fgroup" style={{ maxWidth: 140 }}>
+                <small>Amount (₹)</small>
+                <input type="number" min={0.01} step="0.01" value={adjustAmount}
+                       onChange={(e) => setAdjustAmount(e.target.value)} required />
+              </div>
+              <div className="fgroup" style={{ maxWidth: 120 }}>
+                <small>Direction</small>
+                <select value={adjustCredit ? 'credit' : 'debit'} onChange={(e) => setAdjustCredit(e.target.value === 'credit')}>
+                  <option value="credit">Credit (+)</option>
+                  <option value="debit">Debit (−)</option>
+                </select>
+              </div>
+              <div className="fgroup" style={{ flex: 1, minWidth: 180 }}>
+                <small>Reason (required)</small>
+                <input value={adjustReason} onChange={(e) => setAdjustReason(e.target.value)} required
+                       placeholder="e.g. dispute resolution, mistaken bid correction" />
+              </div>
+              <button type="submit" className="btn sm" disabled={adjustBusy}>{adjustBusy ? '…' : 'Apply'}</button>
+            </form>
+            {adjustError && <div className="error">{adjustError}</div>}
+            {adjustMsg && <div className="ok">{adjustMsg}</div>}
+
             {loading ? (
               <p className="muted">Loading…</p>
             ) : holds.length === 0 ? (

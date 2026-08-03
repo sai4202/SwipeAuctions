@@ -10,7 +10,7 @@ import { useSortableData } from '../useSort'
 import FilterPill from '../components/FilterPill'
 import FilterModal, { CheckboxListBody } from '../components/FilterModal'
 
-const TXN_TYPES = ['TOPUP', 'HOLD', 'RELEASE', 'CAPTURE', 'DEBIT', 'PAYOUT', 'WITHDRAWAL', 'REFUND', 'SALE_PROCEEDS']
+const TXN_TYPES = ['TOPUP', 'HOLD', 'RELEASE', 'CAPTURE', 'DEBIT', 'PAYOUT', 'WITHDRAWAL', 'REFUND', 'SALE_PROCEEDS', 'REFERRAL_BONUS']
 
 function fmt(dt: string): string {
   return new Date(dt).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })

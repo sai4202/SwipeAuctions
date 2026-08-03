@@ -10,5 +10,8 @@ public enum WalletTxnType {
     PAYOUT,
     WITHDRAWAL,
     REFUND,
-    SALE_PROCEEDS
+    SALE_PROCEEDS,
+    REFERRAL_BONUS,
+    ADMIN_CREDIT,
+    ADMIN_DEBIT
 }

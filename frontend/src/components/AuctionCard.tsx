@@ -84,6 +84,11 @@ export default function AuctionCard({ auction: a, inTray, onToggleTray }: Props)
           {inTray ? '♥' : '♡'}
         </button>
         <ShareMenu url={`/auctions/${auction.id}`} text={`Check out "${auction.title}" on SwipeAuctions:`} emailSubject={auction.title} />
+        {isAdmin && auction.bidCount > 0 && (
+          <Link to={`/admin/auctions/${auction.id}/bidders`} className="view-bidders-btn">
+            View Bidders
+          </Link>
+        )}
       </div>
       <div className="row"><span className="cat">{auction.categoryName}</span><span className="cond">{auction.condition.replace('_', ' ')}</span></div>
       <Link to={`/auctions/${auction.id}`}><h3 className="acard-title">{auction.title}</h3></Link>
