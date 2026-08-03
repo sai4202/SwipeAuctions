@@ -376,9 +376,9 @@ function AddStockBulkForm({ onCreated }: { onCreated: () => void }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <p className="muted" style={{ fontSize: 13 }}>
         Upload an .xlsx/.xls file with columns: <b>Title</b>, <b>Category</b>, Brand, Condition, City, State,
-        Zip, <b>Base Price</b>, Start Time, End Time, Swipe Stock. Only Title, Category and Base Price are
-        required — a category that doesn't exist yet is created automatically. A bad row is skipped, not the
-        whole file.
+        Zip, <b>Base Price</b>, Start Time, End Time, Swipe Stock, Required Tier. Only Title, Category and
+        Base Price are required — a category that doesn't exist yet is created automatically, and a blank
+        Required Tier defaults to no subscription gate. A bad row is skipped, not the whole file.
       </p>
       <button type="button" className="linkbtn" onClick={() => downloadStockTemplate()}>⬇ Download template</button>
 

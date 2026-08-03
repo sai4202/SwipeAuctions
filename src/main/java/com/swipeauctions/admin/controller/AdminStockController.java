@@ -184,14 +184,15 @@ public class AdminStockController {
 
     /**
      * One row per item. Header row required (case-insensitive, any column order): Title, Category,
-     * Brand, Condition, City, State, Zip, Base Price, Start Time, End Time, Swipe Stock, Vehicle Type,
-     * the 4 {@link #MANDATORY_DETAIL_KEYS} columns (Registration Number, Chassis No, Yard Name, Yard
-     * Location), one combined "Label: Value per line" column per {@link #COLLAPSIBLE_TABS} tab (see
-     * {@link #COLLAPSED_COLUMNS}/{@link #parseDetailListCell}), and Remarks' 3 individual columns —
-     * together these populate the item's detail-page tabs exactly like the single-item Add Stock form
-     * does. Only Title, Category and Base Price are required — everything else has a sensible
-     * default, and every other column is optional (blank cells are simply omitted, same as leaving a
-     * form field empty). A row is one vehicle type, never a mix — see {@link #VEHICLE_TYPE_ATTR_KEY}.
+     * Brand, Condition, City, State, Zip, Base Price, Start Time, End Time, Swipe Stock, Required Tier,
+     * Vehicle Type, the 4 {@link #MANDATORY_DETAIL_KEYS} columns (Registration Number, Chassis No, Yard
+     * Name, Yard Location), one combined "Label: Value per line" column per {@link #COLLAPSIBLE_TABS}
+     * tab (see {@link #COLLAPSED_COLUMNS}/{@link #parseDetailListCell}), and Remarks' 3 individual
+     * columns — together these populate the item's detail-page tabs exactly like the single-item Add
+     * Stock form does. Only Title, Category and Base Price are required — everything else has a
+     * sensible default, and every other column is optional (blank cells are simply omitted, same as
+     * leaving a form field empty; a blank Required Tier defaults to NONE, same as the single-item
+     * form). A row is one vehicle type, never a mix — see {@link #VEHICLE_TYPE_ATTR_KEY}.
      * A row-level error doesn't abort the batch; every other valid row is still imported.
      */
     @PostMapping(value = "/bulk", consumes = "multipart/form-data")
@@ -239,6 +240,7 @@ public class AdminStockController {
                     if (end == null) end = start.plusDays(3);
                     Boolean rowSwipeStock = cellBoolean(row, cols, "swipe stock");
                     boolean effectiveSwipeStock = rowSwipeStock != null ? rowSwipeStock : swipeStock;
+                    SubscriptionTier requiredTier = parseTier(optionalString(row, cols, "required tier"));
 
                     Map<String, String> attributes = new LinkedHashMap<>();
                     for (String key : MANDATORY_DETAIL_KEYS) {
@@ -262,7 +264,7 @@ public class AdminStockController {
                     validateVehicleType(attributes);
                     Listing listing = catalogService.createListing(seller, category.getId(), title,
                             title + " — bulk-imported via admin Add Stock.", brand, condition, city, state, zip,
-                            price, attributes, effectiveSwipeStock);
+                            price, attributes, effectiveSwipeStock, requiredTier);
                     auctionService.createAuction(seller, listing.getId(), price, start, end, null);
                     created++;
                 } catch (Exception e) {
@@ -279,7 +281,7 @@ public class AdminStockController {
     }
 
     private static final String[] BASE_HEADERS = {"Title", "Category", "Brand", "Condition", "City", "State", "Zip",
-            "Base Price", "Start Time", "End Time", "Swipe Stock", "Vehicle Type"};
+            "Base Price", "Start Time", "End Time", "Swipe Stock", "Required Tier", "Vehicle Type"};
 
     /**
      * A ready-to-fill .xlsx with the exact header row the bulk importer expects (base columns, the 4
@@ -340,12 +342,12 @@ public class AdminStockController {
      * blank since it isn't a vehicle category.
      */
     private static final String[][] EXAMPLE_ROWS = {
-            // Title, Category, Brand, Condition, City, State, Zip, Base Price, Start, End, Swipe Stock, Vehicle Type,
+            // Title, Category, Brand, Condition, City, State, Zip, Base Price, Start, End, Swipe Stock, Required Tier, Vehicle Type,
             // Registration Number, Chassis No, Yard Name, Yard Location,
             // General Details (list), Registration (list), Insurance (list), Other Details (list),
             // Repo Date, Parking Rate (per day), Additional Remarks
             {"Mahindra Bolero Pickup (Repo)", "Bank Vehicles", "Mahindra", "USED", "Madanapalle", "Andhra Pradesh",
-                    "517325", "130200", "2026-08-01 10:00", "2026-08-05 18:00", "FALSE", "CV",
+                    "517325", "130200", "2026-08-01 10:00", "2026-08-05 18:00", "FALSE", "SILVER", "CV",
                     "AP02Y8911", "MD2B77AX3PWA26654", "Shriram Yard Bengaluru", "Shriram Yard Bengaluru, Survey No 52/1A",
                     "Power Steering: No\nPayment Terms: Payment to be made within 24 hours from the time of approval\n"
                             + "RC Book Available: No\nSeller Reference: L2ATHI10845213\nSun Roof: No\n"
@@ -356,7 +358,7 @@ public class AdminStockController {
                             + "Listing Remarks: L2A_THI10845213\nFaremeter: No\nEngine No: PFXWPA18287",
                     "2026-07-17", "100", "Bids once placed cannot be cancelled. Parking charges to be paid by buyer as per seller terms."},
             {"Water-Damaged Hyundai Creta (Salvage)", "Insurance", "Hyundai", "FOR_PARTS", "Chennai", "Tamil Nadu",
-                    "600001", "260000", "2026-08-02 09:00", "2026-08-06 18:00", "FALSE", "4W",
+                    "600001", "260000", "2026-08-02 09:00", "2026-08-06 18:00", "FALSE", "GOLD", "4W",
                     "TN09CD5678", "MA3ETEB1S00123456", "IDBI Yard Chennai", "IDBI Yard Chennai, Guindy Industrial Estate",
                     "",
                     "Year of Manufacturing: 2021",
@@ -364,7 +366,7 @@ public class AdminStockController {
                     "",
                     "", "", "Flood-damaged; sold as-is for parts/scrap only."},
             {"Sealed Dell Laptop (Grade A)", "Electronics", "Dell", "NEW", "Hyderabad", "Telangana",
-                    "500001", "45000", "", "", "TRUE", "",
+                    "500001", "45000", "", "", "TRUE", "", "",
                     "", "", "", "",
                     "", "", "", "",
                     "", "", ""},
@@ -496,6 +498,17 @@ public class AdminStockController {
             return ItemCondition.valueOf(raw.trim().toUpperCase().replace(' ', '_'));
         } catch (IllegalArgumentException e) {
             return ItemCondition.USED;
+        }
+    }
+
+    /** Unlike {@link #parseCondition}'s silent fallback, an unrecognized tier fails loudly — a mistyped
+     *  tier is a paywall bug (the item ends up visible to everyone), not a cosmetic default. */
+    private static SubscriptionTier parseTier(String raw) {
+        if (raw == null || raw.isBlank()) return SubscriptionTier.NONE;
+        try {
+            return SubscriptionTier.valueOf(raw.trim().toUpperCase());
+        } catch (IllegalArgumentException e) {
+            throw new BadRequestException("Required Tier must be one of NONE, SILVER, GOLD, DIAMOND, got \"" + raw + "\"");
         }
     }
 
