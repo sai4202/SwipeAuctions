@@ -11,4 +11,6 @@ public interface AuctionEventRepository extends JpaRepository<AuctionEvent, UUID
     List<AuctionEvent> findBySeller_IdOrderByStartTimeDesc(UUID sellerId);
 
     List<AuctionEvent> findByCategory_SlugOrderByStartTimeDesc(String categorySlug);
+
+    List<AuctionEvent> findAllByOrderByStartTimeDesc();
 }

@@ -21,6 +21,12 @@ public interface AuctionRepository extends JpaRepository<Auction, UUID> {
 
     Page<Auction> findByStatus(AuctionStatus status, Pageable pageable);
 
+    /** Public browse ordering — most recently listed first, across the flat catalogue, Swipe Stock,
+     *  and (via {@code GET /api/auctions?eventId=...}) an auction event's item table. */
+    List<Auction> findByStatusOrderByCreatedAtDesc(AuctionStatus status);
+
+    List<Auction> findAllByOrderByCreatedAtDesc();
+
     /** Auctions with at least one bid — the "Active Biddings" admin view. Filtering at the DB level
      *  (rather than the per-row bidCount computed after fetch in AdminController#toAuction) keeps
      *  pagination correct — a page can't come back short just because some fetched rows had none. */

@@ -144,6 +144,27 @@ export function eventStatus(e: { startTime: string; closingTime: string }): Even
   return 'LIVE'
 }
 
+// ---- Catalogue "item alert" badge ----
+const CLOSING_SOON_MS = 10 * 60 * 1000
+
+/** True for a live auction inside its final 10 minutes — the window the catalogue's blinking-red
+ *  "ending soon" alert covers, as opposed to the steady blinking-green "live" state every other
+ *  open auction gets. */
+export function closingSoon(a: {
+  status: string; currentEndTime: string; currentHighestBid: number | null; basePrice: number
+}): boolean {
+  if (effectiveStatus(a) !== 'OPEN') return false
+  const left = msUntil(a.currentEndTime)
+  return left > 0 && left <= CLOSING_SOON_MS
+}
+
+/** Same alert, for an auction event's own closing time (Bank Vehicles/Insurance event list). */
+export function eventClosingSoon(e: { startTime: string; closingTime: string }): boolean {
+  if (eventStatus(e) !== 'LIVE') return false
+  const left = new Date(e.closingTime).getTime() - Date.now()
+  return left > 0 && left <= CLOSING_SOON_MS
+}
+
 // ---- Valuation download ----
 // Auto-generates and downloads a plain-text "validated details" summary for an item — there's no
 // uploaded inspection-report document in this system, so the file is built from the listing's own

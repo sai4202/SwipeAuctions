@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { type Auction } from '../api'
-import { money, cardImage, downloadValuation, formatDateTimeShort } from '../util'
+import { money, cardImage, downloadValuation, formatDateTimeShort, closingSoon } from '../util'
 import { useAuctionBid } from '../useAuctionBid'
 import BidModals from './BidModals'
 import ItemDetailStrip from './ItemDetailStrip'
@@ -24,8 +24,9 @@ export default function AuctionListRow({ auction: a, inTray, onToggleTray }: Pro
     clickBidNow, confirmBid,
   } = useAuctionBid(a)
 
+  const soon = es === 'OPEN' && closingSoon(auction)
   return (
-    <tr>
+    <tr className={es === 'OPEN' ? (soon ? 'closing-soon-row' : 'live-pulse-row') : ''}>
       <td>
         <Link to={`/auctions/${auction.id}`}>
           <img src={cardImage(auction)} alt={auction.title} style={{ width: 70, height: 52, objectFit: 'cover', borderRadius: 8, display: 'block' }} />
@@ -34,6 +35,11 @@ export default function AuctionListRow({ auction: a, inTray, onToggleTray }: Pro
       </td>
       <td>
         <Link to={`/auctions/${auction.id}`}><b>{auction.title}</b></Link>
+        {es === 'OPEN' && (
+          <span className={`badge OPEN ${soon ? 'closing-soon' : 'live-pulse'}`} style={{ marginLeft: 8 }}>
+            {soon ? 'Closing Soon' : 'Live'}
+          </span>
+        )}
         <div className="muted" style={{ fontSize: 12 }}>{[auction.brand, auction.condition.replace('_', ' ')].filter(Boolean).join(' · ')}</div>
         <div className="muted" style={{ fontSize: 12 }}>◍ {[auction.city, auction.state].filter(Boolean).join(', ') || '—'}</div>
         <ItemDetailStrip attributes={auction.attributes} />

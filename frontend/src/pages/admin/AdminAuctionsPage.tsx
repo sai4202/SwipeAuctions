@@ -4,7 +4,7 @@ import {
   getAdminAuctions, forceCloseAuction, updateAuction, errorMessage,
   type AdminAuction,
 } from '../../api'
-import { money, openUserDetails } from '../../util'
+import { money, openUserDetails, effectiveStatus, closingSoon } from '../../util'
 import SortableTh from '../../components/SortableTh'
 import { useSortableData } from '../../useSort'
 import { getAuctionSortValue, toLocalInput, Pager, AdminPageHeader } from './shared'
@@ -28,6 +28,9 @@ export default function AdminAuctionsPage() {
 
   useEffect(() => setPage(0), [statusFilter])
   useEffect(load, [statusFilter, page, refreshTick])
+  // Forces a re-render every second so the live/ending-soon badge below stays accurate between fetches.
+  const [, setTick] = useState(0)
+  useEffect(() => { const t = setInterval(() => setTick((x) => x + 1), 1000); return () => clearInterval(t) }, [])
 
   const doForceClose = async (a: AdminAuction) => {
     if (!confirm(`Force-close "${a.title}" now? This settles it immediately at the current highest bid.`)) return
@@ -67,8 +70,11 @@ export default function AdminAuctionsPage() {
               <th></th>
             </tr></thead>
             <tbody>
-              {sortedAuctions.map((a) => (
-                <tr key={a.id}>
+              {sortedAuctions.map((a) => {
+                const open = effectiveStatus(a) === 'OPEN'
+                const soon = open && closingSoon(a)
+                return (
+                <tr key={a.id} className={open ? (soon ? 'closing-soon-row' : 'live-pulse-row') : ''}>
                   <td>{a.title}</td>
                   <td>{a.sellerEmail}</td>
                   <td>{money(a.basePrice)}</td>
@@ -81,7 +87,15 @@ export default function AdminAuctionsPage() {
                     ) : money(a.currentHighestBid)}
                   </td>
                   <td>{a.bidCount}</td>
-                  <td><span className={`badge ${a.status}`}>{a.status}</span></td>
+                  <td>
+                    {open ? (
+                      <span className={`badge OPEN ${soon ? 'closing-soon' : 'live-pulse'}`}>
+                        {soon ? 'Closing Soon' : 'Live'}
+                      </span>
+                    ) : (
+                      <span className={`badge ${a.status}`}>{a.status}</span>
+                    )}
+                  </td>
                   <td style={{ display: 'flex', gap: 8 }}>
                     {canModify(a) && (
                       <button type="button" className="btn ghost sm" onClick={() => setEditing(a)}>Modify</button>
@@ -96,7 +110,7 @@ export default function AdminAuctionsPage() {
                     )}
                   </td>
                 </tr>
-              ))}
+              )})}
               {auctions.length === 0 && <tr><td colSpan={7} className="muted">No auctions match.</td></tr>}
             </tbody>
           </table>

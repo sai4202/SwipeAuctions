@@ -36,7 +36,7 @@ public class AuctionEventService {
     @Transactional(readOnly = true)
     public List<AuctionEvent> listEvents(String categorySlug) {
         return categorySlug == null || categorySlug.isBlank()
-                ? auctionEventRepository.findAll()
+                ? auctionEventRepository.findAllByOrderByStartTimeDesc()
                 : auctionEventRepository.findByCategory_SlugOrderByStartTimeDesc(categorySlug);
     }
 

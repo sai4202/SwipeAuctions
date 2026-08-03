@@ -884,6 +884,25 @@ button { font-family: inherit; }
 .badge.SUCCEEDED, .badge.PUBLISHED, .badge.APPROVED, .badge.ACTIVE { background: rgba(52,211,153,.14); color: var(--green); }
 .badge.PENDING, .badge.DRAFT { background: rgba(251,191,36,.14); color: var(--amber); }
 .badge.WITHDRAWN { background: rgba(156,163,175,.16); color: var(--muted); }
+
+/* Catalogue "item alert" — a live item blinks green by default; once it's inside its final 10
+   minutes it switches to a faster, more urgent blinking red instead (see closingSoon() in util.ts).
+   The blink is on the whole card/row, not just the badge text, so it actually catches the eye. */
+@keyframes badge-blink-green { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
+@keyframes badge-blink-red { 0%, 100% { opacity: 1; background: rgba(239,61,46,.16); } 50% { opacity: .55; background: rgba(239,61,46,.4); } }
+.badge.live-pulse { animation: badge-blink-green 1.4s ease-in-out infinite; }
+.badge.closing-soon { background: rgba(239,61,46,.16); color: var(--red-2); animation: badge-blink-red .9s ease-in-out infinite; }
+
+@keyframes card-pulse-green { 0%, 100% { box-shadow: 0 0 0 0 rgba(52,211,153,.5); } 50% { box-shadow: 0 0 0 5px rgba(52,211,153,0); } }
+@keyframes card-pulse-red { 0%, 100% { box-shadow: 0 0 0 0 rgba(239,61,46,.6); } 50% { box-shadow: 0 0 0 6px rgba(239,61,46,0); } }
+.acard.live-pulse-card { animation: card-pulse-green 1.6s ease-in-out infinite; }
+.acard.closing-soon-card { animation: card-pulse-red 1s ease-in-out infinite; border-color: rgba(239,61,46,.5); }
+
+@keyframes row-pulse-green { 0%, 100% { background-color: transparent; } 50% { background-color: rgba(52,211,153,.08); } }
+@keyframes row-pulse-red { 0%, 100% { background-color: transparent; } 50% { background-color: rgba(239,61,46,.12); } }
+tr.live-pulse-row { animation: row-pulse-green 1.6s ease-in-out infinite; }
+tr.closing-soon-row { animation: row-pulse-red 1s ease-in-out infinite; }
+
 .countdown { font-variant-numeric: tabular-nums; font-weight: 800; color: var(--orange); font-size: 13px; }
 .live-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); margin-right: 6px; }
 

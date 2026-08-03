@@ -123,7 +123,7 @@ public class AuctionService {
 
     @Transactional(readOnly = true)
     public List<Auction> list(AuctionStatus status) {
-        return status != null ? auctionRepository.findByStatus(status) : auctionRepository.findAll();
+        return status != null ? auctionRepository.findByStatusOrderByCreatedAtDesc(status) : auctionRepository.findAllByOrderByCreatedAtDesc();
     }
 
     @Transactional(readOnly = true)

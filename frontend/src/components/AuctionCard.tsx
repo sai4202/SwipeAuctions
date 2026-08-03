@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { type Auction } from '../api'
-import { moneyCompact, money, formatDateTimeShort, cardImage, openUserDetails } from '../util'
+import { moneyCompact, money, formatDateTimeShort, cardImage, openUserDetails, closingSoon } from '../util'
 import { useAuctionBid } from '../useAuctionBid'
 import BidModals from './BidModals'
 import ShareMenu from './ShareMenu'
@@ -54,12 +54,15 @@ export default function AuctionCard({ auction: a, inTray, onToggleTray }: Props)
     clickBidNow, confirmBid,
   } = useAuctionBid(a)
 
+  const soon = es === 'OPEN' && closingSoon(auction)
   return (
-    <div className="card acard">
+    <div className={`card acard ${es === 'OPEN' ? (soon ? 'closing-soon-card' : 'live-pulse-card') : ''}`}>
       <div className="thumb-wrap">
         <Link to={`/auctions/${auction.id}`} className="thumb-link">
           <CardThumb auction={auction} />
-          <span className={`badge ${es} ribbon`}>{SLABEL[es] ?? es}</span>
+          <span className={`badge ${es} ribbon ${es === 'OPEN' ? (soon ? 'closing-soon' : 'live-pulse') : ''}`}>
+            {soon ? 'Closing Soon' : SLABEL[es] ?? es}
+          </span>
           {showTierBadge && (
             <span className="tier-badge" style={{ top: 34 }} title={`${auction.requiredTier} tier required`}>
               {TIER_ICON[auction.requiredTier] ?? '🔒'}

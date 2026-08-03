@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { getAuctions, getEvents, getCategoryFilters, errorMessage, type Auction, type AuctionEvent } from '../api'
-import { addMultiBid, removeMultiBid, getMultiBidIds, money, cardImage, downloadValuation, eventStatus, effectiveStatus, type EventStatus } from '../util'
+import { addMultiBid, removeMultiBid, getMultiBidIds, money, cardImage, downloadValuation, eventStatus, effectiveStatus, closingSoon, eventClosingSoon, type EventStatus } from '../util'
 import { EVENT_CATEGORIES, EVENT_CATEGORY_SLUGS } from '../eventCategories'
 import { VEHICLE_TYPE_KEY, VEHICLE_TYPE_OPTIONS } from '../catalogFilters'
 import { type BrowseFilter, filterParam, matchesFilter } from '../browseFilters'
@@ -69,6 +69,9 @@ export default function EventsBrowse({ categorySlug }: { categorySlug?: string }
   })
   const loading = auctionsLoading || eventsLoading
   const [multiIds, setMultiIds] = useState<string[]>(getMultiBidIds())
+  // Forces a re-render every second so the live/ending-soon badges below stay accurate between fetches.
+  const [, setTick] = useState(0)
+  useEffect(() => { const t = setInterval(() => setTick((x) => x + 1), 1000); return () => clearInterval(t) }, [])
 
   const eventId = params.get('event') || ''
   const q = params.get('q') || ''
@@ -245,8 +248,11 @@ export default function EventsBrowse({ categorySlug }: { categorySlug?: string }
                 </thead>
                 <tbody>
                   {loading && <SkeletonTableRows rows={5} cols={9} />}
-                  {sortedItems.map((a) => (
-                    <tr key={a.id}>
+                  {sortedItems.map((a) => {
+                    const itemOpen = effectiveStatus(a) === 'OPEN'
+                    const itemSoon = itemOpen && closingSoon(a)
+                    return (
+                    <tr key={a.id} className={itemOpen ? (itemSoon ? 'closing-soon-row' : 'live-pulse-row') : ''}>
                       <td>
                         <Link to={`/auctions/${a.id}`}>
                           <img src={cardImage(a)} alt={a.title} style={{ width: 70, height: 52, objectFit: 'cover', borderRadius: 8, display: 'block' }} />
@@ -255,6 +261,11 @@ export default function EventsBrowse({ categorySlug }: { categorySlug?: string }
                       </td>
                       <td>
                         <Link to={`/auctions/${a.id}`}><b>{a.title}</b></Link>
+                        {itemOpen && (
+                          <span className={`badge OPEN ${itemSoon ? 'closing-soon' : 'live-pulse'}`} style={{ marginLeft: 8 }}>
+                            {itemSoon ? 'Closing Soon' : 'Live'}
+                          </span>
+                        )}
                         <div className="muted" style={{ fontSize: 12 }}>{[a.brand, a.condition.replace('_', ' ')].filter(Boolean).join(' · ')}</div>
                         <div className="muted" style={{ fontSize: 12 }}>◍ {[a.city, a.state].filter(Boolean).join(', ') || '—'}</div>
                         <ItemDetailStrip attributes={a.attributes} />
@@ -289,7 +300,7 @@ export default function EventsBrowse({ categorySlug }: { categorySlug?: string }
                         </div>
                       </td>
                     </tr>
-                  ))}
+                  )})}
                 </tbody>
               </table>
             </div>
@@ -364,14 +375,21 @@ export default function EventsBrowse({ categorySlug }: { categorySlug?: string }
               </thead>
               <tbody>
                 {loading && <SkeletonTableRows rows={6} cols={9} />}
-                {sortedEvents.map((e) => (
-                  <tr key={e.id}>
+                {sortedEvents.map((e) => {
+                  const eventLive = eventStatus(e) === 'LIVE'
+                  const eventSoon = eventLive && eventClosingSoon(e)
+                  return (
+                  <tr key={e.id} className={eventLive ? (eventSoon ? 'closing-soon-row' : 'live-pulse-row') : ''}>
                     <td className="muted">{shortId(e.id)}</td>
                     <td>{e.name}</td>
                     <td>{fmt(e.startTime)}</td>
                     <td>{fmt(e.closingTime)}</td>
                     <td>{e.location || '—'}</td>
-                    <td><span className={`badge ${eventStatus(e) === 'CLOSED' ? 'CLOSED' : eventStatus(e) === 'UPCOMING' ? 'SCHEDULED' : 'OPEN'}`}>{SLABEL[eventStatus(e)]}</span></td>
+                    <td>
+                      <span className={`badge ${eventStatus(e) === 'CLOSED' ? 'CLOSED' : eventStatus(e) === 'UPCOMING' ? 'SCHEDULED' : 'OPEN'} ${eventLive ? (eventSoon ? 'closing-soon' : 'live-pulse') : ''}`}>
+                        {eventSoon ? 'Closing Soon' : SLABEL[eventStatus(e)]}
+                      </span>
+                    </td>
                     <td>{e.itemCount}</td>
                     <td className="muted">{vehicleTypesOf(e.id).join(', ') || '—'}</td>
                     <td>
@@ -388,7 +406,7 @@ export default function EventsBrowse({ categorySlug }: { categorySlug?: string }
                       </button>
                     </td>
                   </tr>
-                ))}
+                )})}
               </tbody>
             </table>
           </div>
