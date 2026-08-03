@@ -9,6 +9,9 @@ dependency-reduced-pom.xml
 # ===== Uploaded files (local dev storage) =====
 uploads/
 
+# ===== DB backups (deploy/backup.sh output — never commit real data) =====
+deploy/backups/
+
 # ===== Secrets / local config =====
 *.env
 .env*
