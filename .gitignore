@@ -6,13 +6,6 @@ target/
 !.mvn/wrapper/maven-wrapper.jar
 dependency-reduced-pom.xml
 
-# ===== Node / frontend (added in Phase 1) =====
-node_modules/
-dist/
-.vite/
-npm-debug.log*
-yarn-error.log*
-
 # ===== Uploaded files (local dev storage) =====
 uploads/
 

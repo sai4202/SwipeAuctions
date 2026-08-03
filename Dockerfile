@@ -1,5 +1,6 @@
 # Multi-stage build so the final image only carries the JRE + the built jar, not the whole Maven
-# cache/toolchain. Backend only — the frontend (frontend/) deploys separately on Vercel.
+# cache/toolchain. Backend only — the frontend now lives in its own repo (swipeauctions-frontend)
+# and deploys separately on Vercel.
 
 FROM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /build
