@@ -42,10 +42,13 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 /**
  * Admin "+ Add Stock" flow: create a single item, or bulk-import many from an Excel file. Every
@@ -194,13 +197,27 @@ public class AdminStockController {
      * leaving a form field empty; a blank Required Tier defaults to NONE, same as the single-item
      * form). A row is one vehicle type, never a mix — see {@link #VEHICLE_TYPE_ATTR_KEY}.
      * A row-level error doesn't abort the batch; every other valid row is still imported.
+     * <p>
+     * Photos: the sheet has no room for image bytes, so they travel separately as an optional
+     * {@code images} ZIP alongside the sheet. A row opts in by putting a key of its choosing in its
+     * "Image Folder" cell; that row's photos must then live directly inside a same-named top-level
+     * folder in the ZIP (e.g. row value {@code mahindra-bolero} &rarr;
+     * {@code mahindra-bolero/1.jpg, mahindra-bolero/2.jpg}). The first file (sorted by name) becomes
+     * the listing's cover image. A row whose folder isn't found in the ZIP, a ZIP folder no row
+     * claimed, and any individual file that isn't a readable image, all become non-fatal entries in
+     * {@link BulkImportResponse#imageWarnings()} rather than failing the row.
      */
     @PostMapping(value = "/bulk", consumes = "multipart/form-data")
     public BulkImportResponse bulkImport(@RequestParam MultipartFile file,
-                                          @RequestParam(defaultValue = "false") boolean swipeStock) {
+                                          @RequestParam(defaultValue = "false") boolean swipeStock,
+                                          @RequestParam(required = false) MultipartFile images) {
         Admin admin = loggedInUserUtil.getCurrentAdmin();
         User seller = platformAccountService.getOrCreateSwipeStockSeller();
         List<RowError> errors = new ArrayList<>();
+        List<String> imageWarnings = new ArrayList<>();
+        Map<String, List<ZipImage>> imagesByFolder = (images != null && !images.isEmpty())
+                ? parseImageZip(images) : Map.of();
+        java.util.Set<String> matchedFolders = new java.util.HashSet<>();
         int created = 0;
         int totalRows = 0;
 
@@ -267,8 +284,35 @@ public class AdminStockController {
                             price, attributes, effectiveSwipeStock, requiredTier);
                     auctionService.createAuction(seller, listing.getId(), price, start, end, null);
                     created++;
+
+                    String imageFolder = optionalString(row, cols, "image folder");
+                    if (imageFolder != null) {
+                        List<ZipImage> folderImages = imagesByFolder.get(imageFolder);
+                        if (folderImages == null) {
+                            imageWarnings.add("Row " + rowNumber + ": Image Folder \"" + imageFolder + "\" wasn't found in the uploaded ZIP");
+                        } else {
+                            matchedFolders.add(imageFolder);
+                            boolean cover = true;
+                            for (ZipImage img : folderImages) {
+                                try {
+                                    String url = storageProvider.store(img.content(), img.filename(), img.contentType(),
+                                            "listings/" + listing.getId());
+                                    catalogService.addImage(seller, listing.getId(), url, cover);
+                                    cover = false;
+                                } catch (Exception e) {
+                                    imageWarnings.add("Row " + rowNumber + ": couldn't attach \"" + img.filename() + "\" — "
+                                            + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
+                                }
+                            }
+                        }
+                    }
                 } catch (Exception e) {
                     errors.add(new RowError(rowNumber, e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
+                }
+            }
+            for (String folder : imagesByFolder.keySet()) {
+                if (!matchedFolders.contains(folder)) {
+                    imageWarnings.add("ZIP folder \"" + folder + "\" wasn't claimed by any row's Image Folder value");
                 }
             }
         } catch (IOException e) {
@@ -276,9 +320,58 @@ public class AdminStockController {
         }
 
         auditLogService.record(admin, AuditAction.STOCK_BULK_IMPORTED, "Stock", null,
-                "Bulk-imported stock: " + created + " of " + totalRows + " rows created" + (errors.isEmpty() ? "" : ", " + errors.size() + " error(s)"));
-        return new BulkImportResponse(totalRows, created, errors);
+                "Bulk-imported stock: " + created + " of " + totalRows + " rows created"
+                        + (errors.isEmpty() ? "" : ", " + errors.size() + " error(s)")
+                        + (imageWarnings.isEmpty() ? "" : ", " + imageWarnings.size() + " image warning(s)"));
+        return new BulkImportResponse(totalRows, created, errors, imageWarnings);
     }
+
+    /**
+     * Groups a bulk-upload images ZIP's entries by top-level folder name — {@code folder/photo.jpg}
+     * becomes {@code {"folder": [photo.jpg]}}, sorted by filename within each folder so the mapping
+     * from "first file" to cover image is deterministic. Root-level entries with no folder, and
+     * nested sub-folders beyond the first level, are silently ignored — only one level of nesting is
+     * a supported convention.
+     */
+    private static Map<String, List<ZipImage>> parseImageZip(MultipartFile zip) {
+        Map<String, List<ZipImage>> byFolder = new LinkedHashMap<>();
+        try (ZipInputStream zis = new ZipInputStream(zip.getInputStream())) {
+            ZipEntry entry;
+            while ((entry = zis.getNextEntry()) != null) {
+                if (entry.isDirectory()) continue;
+                String path = entry.getName().replace('\\', '/');
+                int slash = path.indexOf('/');
+                if (slash <= 0 || slash == path.length() - 1) continue;
+                String filename = path.substring(slash + 1);
+                if (filename.isBlank() || filename.contains("/")) continue;
+                String folder = path.substring(0, slash).trim();
+                byte[] content = zis.readAllBytes();
+                byFolder.computeIfAbsent(folder, k -> new ArrayList<>())
+                        .add(new ZipImage(filename, content, guessImageContentType(filename)));
+            }
+        } catch (IOException e) {
+            throw new BadRequestException("Could not read the uploaded images ZIP — is it a valid .zip?");
+        }
+        for (List<ZipImage> files : byFolder.values()) {
+            files.sort(Comparator.comparing(ZipImage::filename));
+        }
+        return byFolder;
+    }
+
+    /** Zip entries carry no Content-Type header, so it's guessed from the filename extension — good
+     *  enough here since {@link com.swipeauctions.storage.serviceImpl.LocalDiskStorageProvider} still
+     *  sniffs the actual bytes before accepting anything (an extension that doesn't match a real
+     *  image format falls through to "application/octet-stream", which that check rejects). */
+    private static String guessImageContentType(String filename) {
+        String lower = filename.toLowerCase();
+        if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+        if (lower.endsWith(".png")) return "image/png";
+        if (lower.endsWith(".gif")) return "image/gif";
+        if (lower.endsWith(".webp")) return "image/webp";
+        return "application/octet-stream";
+    }
+
+    private record ZipImage(String filename, byte[] content, String contentType) {}
 
     private static final String[] BASE_HEADERS = {"Title", "Category", "Brand", "Condition", "City", "State", "Zip",
             "Base Price", "Start Time", "End Time", "Swipe Stock", "Required Tier", "Vehicle Type"};
@@ -287,8 +380,9 @@ public class AdminStockController {
      * A ready-to-fill .xlsx with the exact header row the bulk importer expects (base columns, the 4
      * mandatory detail columns, one combined "Label: Value per line" column per
      * {@link #COLLAPSED_COLUMNS} tab, and Remarks' 3 columns — 23 total, down from a flat 35 when
-     * every one of the 23 {@link #DETAIL_COLUMNS} had its own column), plus a few example rows
-     * spanning different categories/field combinations.
+     * every one of the 23 {@link #DETAIL_COLUMNS} had its own column, plus the trailing "Image Folder"
+     * column — see {@link #bulkImport}), plus a few example rows spanning different
+     * categories/field combinations.
      */
     @GetMapping("/template")
     public ResponseEntity<byte[]> template() {
@@ -300,6 +394,7 @@ public class AdminStockController {
             for (String[] col : DETAIL_COLUMNS) {
                 if ("Remarks".equals(col[2])) headers.add(col[0]);
             }
+            headers.add("Image Folder");
 
             Row headerRow = sheet.createRow(0);
             for (int i = 0; i < headers.size(); i++) headerRow.createCell(i).setCellValue(headers.get(i));
@@ -332,20 +427,22 @@ public class AdminStockController {
 
     /**
      * Sample rows for the template, column-for-column aligned to BASE_HEADERS + the 4 mandatory
-     * columns + {@link #COLLAPSED_COLUMNS} + Remarks' 3 columns. Deliberately varied: a fully-detailed
-     * bank-repo vehicle, a lighter insurance-salvage item, and a plain electronics item using none of
-     * the detail columns at all — showing the range from "fill in everything" to "ignore the detail
-     * columns entirely." Both vehicle-category rows still carry Registration Number/Chassis No/Yard
-     * Name/Yard Location since requireVehicleDetails makes those 4 mandatory for any non-NEW item in
-     * a vehicle category (Vehicles/Bank Vehicles/Auto/Insurance), and a Vehicle Type — a single row is
-     * always one vehicle type, never a mix (see {@link #VEHICLE_TYPE_ATTR_KEY}); Electronics leaves it
-     * blank since it isn't a vehicle category.
+     * columns + {@link #COLLAPSED_COLUMNS} + Remarks' 3 columns + trailing Image Folder. Deliberately
+     * varied: a fully-detailed bank-repo vehicle, a lighter insurance-salvage item, and a plain
+     * electronics item using none of the detail columns at all — showing the range from "fill in
+     * everything" to "ignore the detail columns entirely." Both vehicle-category rows still carry
+     * Registration Number/Chassis No/Yard Name/Yard Location since requireVehicleDetails makes those
+     * 4 mandatory for any non-NEW item in a vehicle category (Vehicles/Bank Vehicles/Auto/Insurance),
+     * and a Vehicle Type — a single row is always one vehicle type, never a mix (see
+     * {@link #VEHICLE_TYPE_ATTR_KEY}); Electronics leaves it blank since it isn't a vehicle category.
+     * The first two rows show an Image Folder value (matching {@code bulkImport}'s ZIP convention);
+     * the third leaves it blank to show photos are optional.
      */
     private static final String[][] EXAMPLE_ROWS = {
             // Title, Category, Brand, Condition, City, State, Zip, Base Price, Start, End, Swipe Stock, Required Tier, Vehicle Type,
             // Registration Number, Chassis No, Yard Name, Yard Location,
             // General Details (list), Registration (list), Insurance (list), Other Details (list),
-            // Repo Date, Parking Rate (per day), Additional Remarks
+            // Repo Date, Parking Rate (per day), Additional Remarks, Image Folder
             {"Mahindra Bolero Pickup (Repo)", "Bank Vehicles", "Mahindra", "USED", "Madanapalle", "Andhra Pradesh",
                     "517325", "130200", "2026-08-01 10:00", "2026-08-05 18:00", "FALSE", "SILVER", "CV",
                     "AP02Y8911", "MD2B77AX3PWA26654", "Shriram Yard Bengaluru", "Shriram Yard Bengaluru, Survey No 52/1A",
@@ -356,7 +453,8 @@ public class AdminStockController {
                     "",
                     "Hypothecation: No\nHas Loan Been Paid Off: No\nWhether Valid Form 35 NOC Available: No\n"
                             + "Listing Remarks: L2A_THI10845213\nFaremeter: No\nEngine No: PFXWPA18287",
-                    "2026-07-17", "100", "Bids once placed cannot be cancelled. Parking charges to be paid by buyer as per seller terms."},
+                    "2026-07-17", "100", "Bids once placed cannot be cancelled. Parking charges to be paid by buyer as per seller terms.",
+                    "mahindra-bolero"},
             {"Water-Damaged Hyundai Creta (Salvage)", "Insurance", "Hyundai", "FOR_PARTS", "Chennai", "Tamil Nadu",
                     "600001", "260000", "2026-08-02 09:00", "2026-08-06 18:00", "FALSE", "GOLD", "4W",
                     "TN09CD5678", "MA3ETEB1S00123456", "IDBI Yard Chennai", "IDBI Yard Chennai, Guindy Industrial Estate",
@@ -364,12 +462,14 @@ public class AdminStockController {
                     "Year of Manufacturing: 2021",
                     "Insurance Provider: ICICI Lombard\nInsurance Valid Upto: 2027-03-31",
                     "",
-                    "", "", "Flood-damaged; sold as-is for parts/scrap only."},
+                    "", "", "Flood-damaged; sold as-is for parts/scrap only.",
+                    "hyundai-creta"},
             {"Sealed Dell Laptop (Grade A)", "Electronics", "Dell", "NEW", "Hyderabad", "Telangana",
                     "500001", "45000", "", "", "TRUE", "", "",
                     "", "", "", "",
                     "", "", "", "",
-                    "", "", ""},
+                    "", "", "",
+                    ""},
     };
 
     // ---- helpers ----
@@ -586,5 +686,5 @@ public class AdminStockController {
 
     public record RowError(int row, String message) {}
 
-    public record BulkImportResponse(int totalRows, int created, List<RowError> errors) {}
+    public record BulkImportResponse(int totalRows, int created, List<RowError> errors, List<String> imageWarnings) {}
 }

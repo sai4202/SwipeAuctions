@@ -8,7 +8,6 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -34,7 +33,20 @@ public class LocalDiskStorageProvider implements StorageProvider {
         if (file == null || file.isEmpty()) {
             throw new BadRequestException("No file uploaded");
         }
-        String contentType = file.getContentType();
+        byte[] content;
+        try {
+            content = file.getBytes();
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to read uploaded file", e);
+        }
+        return store(content, file.getOriginalFilename(), file.getContentType(), subDir);
+    }
+
+    @Override
+    public String store(byte[] content, String originalFilename, String contentType, String subDir) {
+        if (content == null || content.length == 0) {
+            throw new BadRequestException("No file uploaded");
+        }
         boolean isMedia = contentType != null && (contentType.startsWith("image/") || contentType.startsWith("video/"));
         if (!isMedia) {
             throw new BadRequestException("Only image or video uploads are supported");
@@ -44,11 +56,11 @@ public class LocalDiskStorageProvider implements StorageProvider {
         // "image/svg+xml" (SVG is a text/XML format with no binary magic number, so it never
         // matches any signature below and is rejected here regardless of the header it arrives
         // with). See Findings_pendings.md #7.
-        if (!hasKnownMediaSignature(file)) {
+        if (!hasKnownMediaSignature(content)) {
             throw new BadRequestException("File content doesn't match a supported image or video format");
         }
         String extension = "";
-        String original = StringUtils.getFilenameExtension(file.getOriginalFilename());
+        String original = StringUtils.getFilenameExtension(originalFilename);
         if (original != null && !original.isBlank()) {
             extension = "." + original.toLowerCase().replaceAll("[^a-z0-9]", "");
         }
@@ -59,7 +71,7 @@ public class LocalDiskStorageProvider implements StorageProvider {
                 throw new BadRequestException("Invalid upload path");
             }
             Files.createDirectories(dir);
-            file.transferTo(dir.resolve(filename));
+            Files.write(dir.resolve(filename), content);
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to store uploaded file", e);
         }
@@ -67,20 +79,16 @@ public class LocalDiskStorageProvider implements StorageProvider {
     }
 
     /**
-     * Reads the leading bytes of the upload and checks them against known binary magic numbers for
-     * the raster-image and video formats this app actually accepts. Deliberately allowlist-only: an
+     * Checks the leading bytes of the content against known binary magic numbers for the
+     * raster-image and video formats this app actually accepts. Deliberately allowlist-only: an
      * SVG (or any other text/XML-based format) has no binary signature to match, so it's rejected
      * here regardless of what Content-Type it claims — no denylist of "dangerous" formats to keep
      * up to date.
      */
-    private boolean hasKnownMediaSignature(MultipartFile file) {
+    private boolean hasKnownMediaSignature(byte[] content) {
+        int read = Math.min(content.length, 16);
         byte[] header = new byte[16];
-        int read;
-        try (InputStream in = file.getInputStream()) {
-            read = in.readNBytes(header, 0, header.length);
-        } catch (IOException e) {
-            throw new UncheckedIOException("Failed to read uploaded file", e);
-        }
+        System.arraycopy(content, 0, header, 0, read);
         if (read < 4) {
             return false;
         }

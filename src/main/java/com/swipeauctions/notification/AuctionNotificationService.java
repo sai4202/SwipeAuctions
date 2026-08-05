@@ -110,6 +110,17 @@ public class AuctionNotificationService {
     }
 
     @Async
+    public void walletWithdrawn(String email, BigDecimal amount) {
+        send(email, "Withdrawal processed — " + money(amount), wrap("Withdrawal processed",
+                "<p>Your withdrawal request has been sent to your bank.</p>"
+                        + row("Amount withdrawn", money(amount))
+                        + "<p style=\"margin-top:18px\">Funds typically arrive within a few hours, depending on your "
+                        + "bank.</p>"));
+        push(email, NotificationKind.WALLET_WITHDRAWAL, "Withdrawal processed",
+                money(amount) + " was withdrawn from your wallet.", null);
+    }
+
+    @Async
     public void referralBonusCredited(String email, BigDecimal amount) {
         send(email, "Referral bonus credited — " + money(amount), wrap("Referral bonus credited",
                 "<p>Thanks for referring a friend — your bonus has been added to your wallet.</p>"

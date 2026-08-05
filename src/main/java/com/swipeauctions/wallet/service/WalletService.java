@@ -347,6 +347,7 @@ public class WalletService {
         withdrawal.setRazorpayPayoutId(razorpayPayoutId);
         withdrawal.setCompletedAt(LocalDateTime.now());
         withdrawalRepository.save(withdrawal);
+        notificationService.walletWithdrawn(withdrawal.getWallet().getUser().getEmail(), withdrawal.getAmount());
     }
 
     /** Razorpay Payout failed after the wallet was already debited — give the funds back. */
