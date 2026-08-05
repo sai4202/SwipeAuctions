@@ -45,6 +45,18 @@ public interface AuctionRepository extends JpaRepository<Auction, UUID> {
 
     List<Auction> findByCurrentWinner_IdAndStatusOrderByCurrentEndTimeDesc(UUID winnerId, AuctionStatus status);
 
+    /** Dashboard "Pending Win Approvals" tile: closed auctions with a winner still awaiting an
+     *  admin's approve/reject decision. */
+    long countByStatusAndCurrentWinnerIsNotNullAndWinApprovedFalse(AuctionStatus status);
+
+    /** PaymentReminderScheduler candidates: closed, unpaid, past the wait window since either the
+     *  auction closed or the last reminder — whichever is later. */
+    @Query("select a from Auction a where a.status = :status and a.settlementPaid = false "
+            + "and a.currentWinner is not null "
+            + "and ((a.settlementReminderSentAt is null and a.currentEndTime <= :cutoff) "
+            + "or (a.settlementReminderSentAt is not null and a.settlementReminderSentAt <= :cutoff))")
+    List<Auction> findDueForSettlementReminder(@Param("status") AuctionStatus status, @Param("cutoff") LocalDateTime cutoff);
+
     /** Pessimistic row lock used by BidService so concurrent bids on one auction serialize. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select a from Auction a where a.id = :id")

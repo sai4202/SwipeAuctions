@@ -184,6 +184,29 @@ public class AuctionNotificationService {
                 money(amountDue) + " is still due for \"" + auctionTitle + "\".", auctionId);
     }
 
+    @Async
+    public void winApproved(String email, String auctionId, String auctionTitle, BigDecimal amountDue, boolean autoSettled) {
+        send(email, "Win approved — " + auctionTitle, wrap("Win approved",
+                "<p>Your win on <strong>" + esc(auctionTitle) + "</strong> has been approved.</p>"
+                        + (autoSettled
+                                ? "<p style=\"margin-top:18px\">Your remaining balance was already covered by your wallet — this auction is now fully settled.</p>"
+                                : row("Amount due", money(amountDue))
+                                        + "<p style=\"margin-top:18px\">You can now complete your payment from the auction page to finalize your win.</p>")));
+        push(email, NotificationKind.WIN_APPROVED, "Win approved",
+                autoSettled ? "\"" + auctionTitle + "\" is approved and fully settled." : "\"" + auctionTitle + "\" is approved — " + money(amountDue) + " due.",
+                auctionId);
+    }
+
+    @Async
+    public void winRejected(String email, String auctionId, String auctionTitle, String reason) {
+        send(email, "Win rejected — " + auctionTitle, wrap("Win rejected",
+                "<p>Your win on <strong>" + esc(auctionTitle) + "</strong> could not be approved and has been cancelled.</p>"
+                        + row("Reason", esc(reason == null || reason.isBlank() ? "—" : reason))
+                        + "<p style=\"margin-top:18px\">Your deposit for this auction has been released back to your wallet.</p>"));
+        push(email, NotificationKind.WIN_REJECTED, "Win rejected",
+                "\"" + auctionTitle + "\" — your win was rejected and your deposit released. Reason: " + reason, auctionId);
+    }
+
     // ---- helpers ----
 
     private void send(String to, String subject, String body) {

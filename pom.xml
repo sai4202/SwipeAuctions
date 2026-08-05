@@ -116,6 +116,13 @@
             <artifactId>poi-ooxml</artifactId>
             <version>5.3.0</version>
         </dependency>
+        <!-- HTML-to-PDF rendering for the winner's settlement confirmation letter — pure Java, no
+             native deps, reuses the same HTML-string-building style already used for emails. -->
+        <dependency>
+            <groupId>com.openhtmltopdf</groupId>
+            <artifactId>openhtmltopdf-pdfbox</artifactId>
+            <version>1.0.10</version>
+        </dependency>
 
         <!-- Tooling -->
         <dependency>

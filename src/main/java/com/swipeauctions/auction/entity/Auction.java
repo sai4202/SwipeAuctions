@@ -69,6 +69,21 @@ public class Auction extends BaseEntity {
     @Column(name = "settlement_paid", nullable = false)
     private boolean settlementPaid = false;
 
+    /** When PaymentReminderScheduler last emailed the winner about an unpaid settlement remainder.
+     *  Null means never reminded. Lets the scheduler re-remind on an interval instead of spamming
+     *  every tick, without needing a separate reminders table. */
+    @Column(name = "settlement_reminder_sent_at")
+    private LocalDateTime settlementReminderSentAt;
+
+    /** True once an admin has approved this win — required before the winner may pay the
+     *  settlement remainder (see AuctionService#approveWin/completeSettlement). */
+    @Builder.Default
+    @Column(name = "win_approved", nullable = false)
+    private boolean winApproved = false;
+
+    @Column(name = "win_approved_at")
+    private LocalDateTime winApprovedAt;
+
     @Version
     @Column(nullable = false)
     private Long version;

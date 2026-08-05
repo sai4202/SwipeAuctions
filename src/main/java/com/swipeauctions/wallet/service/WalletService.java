@@ -256,6 +256,27 @@ public class WalletService {
         record(w, WalletTxnType.CAPTURE, hold.getAmount(), "AUCTION", auction.getId().toString());
     }
 
+    /** Reject-win path: refunds a winner's already-CAPTURED EMD hold back to available balance.
+     *  Unlike {@link #releaseHold}, which reverses an ACTIVE hold, heldBalance was already
+     *  decremented at capture time ({@link #captureHold}) — only availableBalance needs the credit
+     *  back here. */
+    @Transactional
+    public BigDecimal refundCapturedHold(Auction auction, User winner) {
+        BidEligibilityHold hold = holdRepository.findByAuction_IdAndBidder_IdForUpdate(auction.getId(), winner.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("No EMD hold found for this bidder/auction"));
+        if (hold.getStatus() != HoldStatus.CAPTURED) {
+            throw new BadRequestException("EMD hold is not captured");
+        }
+        Wallet w = lockWallet(winner.getId());
+        w.setAvailableBalance(w.getAvailableBalance().add(hold.getAmount()));
+        walletRepository.save(w);
+        hold.setStatus(HoldStatus.RELEASED);
+        hold.setResolvedAt(LocalDateTime.now());
+        holdRepository.save(hold);
+        record(w, WalletTxnType.RELEASE, hold.getAmount(), "AUCTION", auction.getId().toString());
+        return creditLimitFor(w.getAvailableBalance());
+    }
+
     @Transactional(readOnly = true)
     public boolean hasActiveHold(UUID auctionId, UUID bidderId) {
         return holdRepository.existsByAuction_IdAndBidder_IdAndStatus(auctionId, bidderId, HoldStatus.ACTIVE);

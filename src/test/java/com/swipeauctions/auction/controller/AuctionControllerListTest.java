@@ -16,6 +16,7 @@ import com.swipeauctions.common.util.LoggedInUserUtil;
 import com.swipeauctions.enums.Role;
 import com.swipeauctions.event.entity.AuctionEvent;
 import com.swipeauctions.notification.AuctionNotificationService;
+import com.swipeauctions.notification.ConfirmationLetterService;
 import com.swipeauctions.settings.service.SubscriptionService;
 import com.swipeauctions.user.entity.User;
 import com.swipeauctions.wallet.service.WalletService;
@@ -48,6 +49,7 @@ class AuctionControllerListTest {
     @Mock private AuctionNotificationService notificationService;
     @Mock private LoggedInUserUtil loggedInUserUtil;
     @Mock private SubscriptionService subscriptionService;
+    @Mock private ConfirmationLetterService confirmationLetterService;
 
     private AuctionController controller;
 
@@ -55,7 +57,7 @@ class AuctionControllerListTest {
     void setUp() {
         controller = new AuctionController(auctionService, bidService, walletService, bidRepository,
                 listingImageRepository, listingAttributeRepository, listingRepository, notificationService,
-                loggedInUserUtil, subscriptionService);
+                loggedInUserUtil, subscriptionService, confirmationLetterService);
         lenient().when(loggedInUserUtil.getCurrentUser()).thenThrow(new UnauthorizedException("anonymous"));
         // Without this, an unstubbed mock call to getCurrentAdmin() returns null instead of throwing,
         // which AuctionController.currentViewer() would read as "found an admin" — silently resolving

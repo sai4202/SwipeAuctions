@@ -69,13 +69,16 @@ public class AdminDashboardController {
         long pendingPayments = paymentOrderRepository.findAll().stream()
                 .filter(o -> o.getStatus() == TopUpStatus.PENDING).count();
         long pendingApprovals = kycPending + pendingPayments;
+        // Kept separate from pendingApprovals (KYC + payment-orders) above — a different queue an
+        // admin needs to clear, not the same one.
+        long pendingWinApprovals = auctionRepository.countByStatusAndCurrentWinnerIsNotNullAndWinApprovedFalse(AuctionStatus.CLOSED);
 
         int totalPlans = (SubscriptionTier.values().length - 1) * BillingCycle.values().length; // exclude NONE
 
         return new SummaryResponse(totalUsers, openAuctions, gmv, openDisputes,
                 transactionsToday, transactionsAmountToday, pendingApprovals, kycRejected,
                 kycVerified, kycPending, pendingPayments, totalPlans,
-                razorpayConfig.isEnabled(), razorpayConfig.payoutsEnabled());
+                razorpayConfig.isEnabled(), razorpayConfig.payoutsEnabled(), pendingWinApprovals);
     }
 
     public enum Range { TODAY, YESTERDAY, LAST_7_DAYS, LAST_30_DAYS }
@@ -134,7 +137,8 @@ public class AdminDashboardController {
                                   long transactionsToday, BigDecimal transactionsAmountToday,
                                   long pendingApprovals, long kycRejected,
                                   long kycVerified, long kycPending, long pendingPayments, int totalPlans,
-                                  boolean paymentsGatewayConfigured, boolean payoutsGatewayConfigured) {}
+                                  boolean paymentsGatewayConfigured, boolean payoutsGatewayConfigured,
+                                  long pendingWinApprovals) {}
 
     public record CashFlowPoint(String label, BigDecimal deposits, BigDecimal withdrawals) {}
 

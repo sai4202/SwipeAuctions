@@ -14,6 +14,7 @@ import com.swipeauctions.common.util.LoggedInUserUtil;
 import com.swipeauctions.enums.Role;
 import com.swipeauctions.enums.SubscriptionTier;
 import com.swipeauctions.notification.AuctionNotificationService;
+import com.swipeauctions.notification.ConfirmationLetterService;
 import com.swipeauctions.settings.service.SubscriptionService;
 import com.swipeauctions.user.entity.User;
 import com.swipeauctions.wallet.entity.Wallet;
@@ -21,6 +22,10 @@ import com.swipeauctions.wallet.service.WalletService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
@@ -47,6 +52,7 @@ public class AuctionController {
     private final AuctionNotificationService notificationService;
     private final LoggedInUserUtil loggedInUserUtil;
     private final SubscriptionService subscriptionService;
+    private final ConfirmationLetterService confirmationLetterService;
 
     @GetMapping
     public List<AuctionResponse> list(@RequestParam(required = false) AuctionStatus status,
@@ -212,6 +218,24 @@ public class AuctionController {
         return toResponse(a, winner.getId(), winner.getRole() == Role.ADMIN);
     }
 
+    /** Auto-generated PDF receipt — only once the winner's settlement is fully paid. */
+    @GetMapping("/{id}/confirmation-letter")
+    public ResponseEntity<byte[]> confirmationLetter(@PathVariable UUID id) {
+        User me = loggedInUserUtil.getCurrentUser();
+        Auction a = auctionService.get(id);
+        boolean isWinner = a.getCurrentWinner() != null && a.getCurrentWinner().getId().equals(me.getId());
+        if (!isWinner || !a.isSettlementPaid()) {
+            throw new com.swipeauctions.common.exception.BadRequestException(
+                    "Confirmation letter is only available for a won, fully settled auction.");
+        }
+        byte[] pdf = confirmationLetterService.generate(a);
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_PDF)
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        ContentDisposition.attachment().filename("confirmation-letter-" + id + ".pdf").build().toString())
+                .body(pdf);
+    }
+
     private void requireTierAccess(User bidder, Auction a) {
         SubscriptionTier required = a.getListing().getRequiredTier();
         if (!subscriptionService.currentTier(bidder).meetsRequirement(required)) {
@@ -270,7 +294,7 @@ public class AuctionController {
                 l.getCategory().getName(), l.getCategory().getId(), l.getBrand(),
                 l.getCondition().name(), l.getCity(), l.getState(), l.getZip(),
                 coverImageUrl, images.stream().map(ListingImage::getUrl).toList(),
-                yourBid, attributes, isWinner, a.isSettlementPaid(),
+                yourBid, attributes, isWinner, a.isSettlementPaid(), a.isWinApproved(),
                 a.getEvent() != null ? a.getEvent().getId() : null,
                 a.getEvent() != null ? a.getEvent().getName() : null,
                 l.getSeller().getEmail(), l.isSwipeStock(), l.getRequiredTier(), registered, bidsRemaining,
@@ -302,7 +326,7 @@ public class AuctionController {
                 l.getCategory().getName(), l.getCategory().getId(), l.getBrand(),
                 l.getCondition().name(), l.getCity(), l.getState(), l.getZip(),
                 coverImageUrl, images.stream().map(ListingImage::getUrl).toList(),
-                yourBid, attributes, isWinner, a.isSettlementPaid(),
+                yourBid, attributes, isWinner, a.isSettlementPaid(), a.isWinApproved(),
                 a.getEvent() != null ? a.getEvent().getId() : null,
                 a.getEvent() != null ? a.getEvent().getName() : null,
                 l.getSeller().getEmail(), l.isSwipeStock(), l.getRequiredTier(), registered, bidsRemaining,
@@ -322,7 +346,7 @@ public class AuctionController {
             AuctionStatus status, LocalDateTime startTime, LocalDateTime currentEndTime, long bidCount,
             String categoryName, UUID categoryId, String brand, String condition, String city, String state,
             String zip, String coverImageUrl, List<String> images, BigDecimal yourBid,
-            Map<String, String> attributes, boolean isWinner, boolean settlementPaid,
+            Map<String, String> attributes, boolean isWinner, boolean settlementPaid, boolean winApproved,
             UUID eventId, String eventName, String sellerEmail, boolean swipeStock,
             SubscriptionTier requiredTier, boolean registered, Integer bidsRemaining,
             // Only populated for an admin viewer (see toResponse) — the current highest bidder's

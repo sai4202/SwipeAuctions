@@ -237,14 +237,9 @@ public class AuctionService {
                     notificationService.auctionEndedNotWon(b.getEmail(), auctionIdStr, title, true, newCreditLimit);
                 }
             }
-            // Settle the remainder immediately if funds allow (internal wallet debit, no Razorpay call
-            // — same rule as hold/release/capture). If the winner (dealer or otherwise) doesn't have
-            // enough available balance yet, leave settlementPaid false so they can pay it off later.
-            User winner = a.getCurrentWinner();
-            a.setSettlementPaid(walletService.captureRemainder(a, winner, settlementRemainder(a, winner)));
-            if (a.isSettlementPaid()) {
-                walletService.creditSaleProceeds(a, a.getListing().getSeller(), a.getCurrentHighestBid());
-            }
+            // The settlement remainder is no longer captured here — the win first needs an admin's
+            // explicit approve/reject decision (see approveWin/rejectWin below). winApproved defaults
+            // to false, so the win sits as "Approval Pending" until an admin acts on it.
         } else {
             a.setStatus(AuctionStatus.UNSOLD);
             for (BidEligibilityHold hold : holds) {
@@ -257,8 +252,9 @@ public class AuctionService {
     }
 
     /**
-     * Winner pays off the settlement remainder later (e.g. after topping up their wallet), if it
-     * couldn't be captured in full at close time. Idempotent — no-ops once already settled.
+     * Winner pays off the settlement remainder — only once an admin has approved the win (see
+     * {@link #approveWin}) — later (e.g. after topping up their wallet) if it couldn't be captured
+     * in full at approval time. Idempotent — no-ops once already settled.
      */
     @Transactional
     public Auction completeSettlement(UUID auctionId, User winner) {
@@ -272,6 +268,9 @@ public class AuctionService {
         if (a.isSettlementPaid()) {
             return a;
         }
+        if (!a.isWinApproved()) {
+            throw new BadRequestException("This win hasn't been approved yet — please wait for admin approval before completing payment.");
+        }
         BigDecimal remainder = settlementRemainder(a, winner);
         boolean paid = walletService.captureRemainder(a, winner, remainder);
         if (!paid) {
@@ -279,7 +278,98 @@ public class AuctionService {
         }
         a.setSettlementPaid(true);
         walletService.creditSaleProceeds(a, a.getListing().getSeller(), a.getCurrentHighestBid());
-        return auctionRepository.save(a);
+        Auction saved = auctionRepository.save(a);
+        notificationService.settlementCompleted(winner.getEmail(), a.getId().toString(), a.getListing().getTitle(), remainder);
+        return saved;
+    }
+
+    /**
+     * Admin approves a closed auction's win, unblocking the winner's settlement payment. Also
+     * attempts to capture the remainder immediately if the winner's wallet balance already covers
+     * it (the same "settle instantly when funds allow" convenience {@link #closeAuction} used to
+     * provide at close time, now gated behind this approval instead). Idempotent — a second approve
+     * on an already-approved win just returns it unchanged.
+     */
+    @Transactional
+    public Auction approveWin(UUID auctionId) {
+        Auction a = getForUpdate(auctionId);
+        if (a.getStatus() != AuctionStatus.CLOSED || a.getCurrentWinner() == null) {
+            throw new BadRequestException("This auction has no win awaiting approval");
+        }
+        if (a.isWinApproved()) {
+            return a;
+        }
+        a.setWinApproved(true);
+        a.setWinApprovedAt(LocalDateTime.now());
+        User winner = a.getCurrentWinner();
+        BigDecimal remainder = settlementRemainder(a, winner);
+        boolean autoSettled = false;
+        if (!a.isSettlementPaid() && walletService.captureRemainder(a, winner, remainder)) {
+            a.setSettlementPaid(true);
+            walletService.creditSaleProceeds(a, a.getListing().getSeller(), a.getCurrentHighestBid());
+            autoSettled = true;
+        }
+        Auction saved = auctionRepository.save(a);
+        notificationService.winApproved(winner.getEmail(), a.getId().toString(), a.getListing().getTitle(), remainder, autoSettled);
+        return saved;
+    }
+
+    /**
+     * Admin rejects a closed auction's win — the auction goes UNSOLD and the winner's captured EMD
+     * deposit is refunded. Does not cascade to the next-highest bidder; that's a separate decision
+     * for a human to make (relist, contact the next bidder, etc.). Can only reject a win that hasn't
+     * been approved yet — an approved/paid win must be unwound some other way.
+     */
+    @Transactional
+    public Auction rejectWin(UUID auctionId, String reason) {
+        Auction a = getForUpdate(auctionId);
+        if (a.getStatus() != AuctionStatus.CLOSED || a.getCurrentWinner() == null) {
+            throw new BadRequestException("This auction has no win awaiting approval");
+        }
+        if (a.isWinApproved()) {
+            throw new BadRequestException("This win was already approved — it can't be rejected anymore");
+        }
+        User winner = a.getCurrentWinner();
+        String title = a.getListing().getTitle();
+        // Dealers are EMD-exempt (see register()) — same dealer-aware check settlementRemainder()
+        // uses, so there's nothing to refund when the winner never had a hold in the first place.
+        boolean hadHold = holdRepository.findByAuction_IdAndBidder_Id(a.getId(), winner.getId()).isPresent();
+        if (hadHold) {
+            walletService.refundCapturedHold(a, winner);
+        }
+        a.setStatus(AuctionStatus.UNSOLD);
+        a.setCurrentWinner(null);
+        Auction saved = auctionRepository.save(a);
+        notificationService.winRejected(winner.getEmail(), a.getId().toString(), title, reason);
+        return saved;
+    }
+
+    /**
+     * Scheduler hook: IDs of CLOSED, unpaid auctions due a settlement-reminder email — either never
+     * reminded and past {@code intervalHours} since close, or reminded before but past
+     * {@code intervalHours} since that last reminder. IDs only, same isolation rationale as
+     * {@link #findAuctionsDueForClose}.
+     */
+    @Transactional(readOnly = true)
+    public List<UUID> findAuctionsDueForSettlementReminder(long intervalHours) {
+        LocalDateTime cutoff = LocalDateTime.now().minusHours(intervalHours);
+        return auctionRepository.findDueForSettlementReminder(AuctionStatus.CLOSED, cutoff)
+                .stream().map(Auction::getId).toList();
+    }
+
+    /** Scheduler hook: re-fetches the auction fresh and sends one settlement-reminder email, if it's
+     *  still actually due (re-checked under the row lock in case it was paid off in the meantime). */
+    @Transactional
+    public void sendSettlementReminder(UUID auctionId) {
+        Auction a = getForUpdate(auctionId);
+        if (a.getStatus() != AuctionStatus.CLOSED || a.isSettlementPaid() || a.getCurrentWinner() == null) {
+            return;
+        }
+        User winner = a.getCurrentWinner();
+        BigDecimal amountDue = settlementRemainder(a, winner);
+        notificationService.settlementPaymentReminder(winner.getEmail(), a.getId().toString(), a.getListing().getTitle(), amountDue);
+        a.setSettlementReminderSentAt(LocalDateTime.now());
+        auctionRepository.save(a);
     }
 
     /**

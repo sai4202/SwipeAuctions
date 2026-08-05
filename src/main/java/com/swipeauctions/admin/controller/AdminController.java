@@ -357,6 +357,30 @@ public class AdminController {
         return toAuction(a);
     }
 
+    /** Unblocks the winner's settlement payment — also auto-settles immediately if their wallet
+     *  balance already covers the remainder. See AuctionService#approveWin. */
+    @PostMapping("/auctions/{id}/approve-win")
+    public AuctionResponse approveWin(@PathVariable UUID id) {
+        Admin admin = loggedInUserUtil.getCurrentAdmin();
+        Auction a = auctionService.approveWin(id);
+        auditLogService.record(admin, AuditAction.AUCTION_WIN_APPROVED, "Auction", a.getId().toString(),
+                "Approved the win on \"" + a.getListing().getTitle() + "\"");
+        return toAuction(a);
+    }
+
+    /** Cancels an unapproved win — the auction goes UNSOLD and the winner's deposit is refunded.
+     *  See AuctionService#rejectWin. */
+    @PostMapping("/auctions/{id}/reject-win")
+    public AuctionResponse rejectWin(@PathVariable UUID id, @Valid @RequestBody RejectWinRequest req) {
+        Admin admin = loggedInUserUtil.getCurrentAdmin();
+        Auction a = auctionService.rejectWin(id, req.reason());
+        auditLogService.record(admin, AuditAction.AUCTION_WIN_REJECTED, "Auction", a.getId().toString(),
+                "Rejected the win on \"" + a.getListing().getTitle() + "\" — reason: " + req.reason());
+        return toAuction(a);
+    }
+
+    public record RejectWinRequest(@NotBlank String reason) {}
+
     @PatchMapping("/listings/{id}/required-tier")
     public ListingResponse updateRequiredTier(@PathVariable UUID id, @Valid @RequestBody UpdateRequiredTierRequest req) {
         Admin admin = loggedInUserUtil.getCurrentAdmin();
@@ -754,7 +778,8 @@ public class AdminController {
                 a.getListing().getSeller().getEmail(), a.getBasePrice(), a.getCurrentHighestBid(),
                 a.getStatus(), a.getStartTime(), a.getCurrentEndTime(),
                 bidRepository.countByAuction_Id(a.getId()),
-                winner != null ? winner.getId() : null, winner != null ? winner.getEmail() : null);
+                winner != null ? winner.getId() : null, winner != null ? winner.getEmail() : null,
+                a.isSettlementPaid(), a.isWinApproved());
     }
 
     public record UserResponse(UUID id, String email, String mobileNumber, Role role, Boolean active,
@@ -802,7 +827,8 @@ public class AdminController {
     public record AuctionResponse(UUID id, UUID listingId, String title, String sellerEmail,
                                   BigDecimal basePrice, BigDecimal currentHighestBid, AuctionStatus status,
                                   LocalDateTime startTime, LocalDateTime currentEndTime, long bidCount,
-                                  UUID currentWinnerId, String currentWinnerEmail) {}
+                                  UUID currentWinnerId, String currentWinnerEmail,
+                                  boolean settlementPaid, boolean winApproved) {}
 
     /** One row per bidder on an auction — their own current-best bid (and that specific Bid row's
      *  id, so an admin action can target it directly), how many bids they've placed, whether
