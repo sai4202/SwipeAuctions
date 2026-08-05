@@ -8,6 +8,8 @@ import com.razorpay.Utils;
 import com.swipeauctions.common.exception.BadRequestException;
 import com.swipeauctions.enums.BillingCycle;
 import com.swipeauctions.enums.SubscriptionTier;
+import com.swipeauctions.notification.AdminNotificationService;
+import com.swipeauctions.notification.AuctionNotificationService;
 import com.swipeauctions.referral.service.ReferralService;
 import com.swipeauctions.settings.entity.MembershipBenefit;
 import com.swipeauctions.settings.entity.SubscriptionPlanPrice;
@@ -63,6 +65,8 @@ public class RazorpayPaymentService {
     private final SubscriptionService subscriptionService;
     private final SubscriptionPlanPriceRepository priceRepository;
     private final MembershipBenefitRepository membershipBenefitRepository;
+    private final AuctionNotificationService notificationService;
+    private final AdminNotificationService adminNotificationService;
 
     private void requireEnabled() {
         if (!config.isEnabled()) {
@@ -221,18 +225,23 @@ public class RazorpayPaymentService {
     }
 
     /** Idempotent — only acts if the order is still PENDING, so the client-verify call and the
-     *  webhook (or a redelivered webhook) racing each other settle exactly once. */
-    private void settle(PaymentOrder order, TopUpStatus outcome) {
+     *  webhook (or a redelivered webhook) racing each other settle exactly once. Package-private
+     *  (not private) so RazorpayPaymentServiceSettleTest can drive it directly without going through
+     *  Razorpay's static signature-verification calls. */
+    void settle(PaymentOrder order, TopUpStatus outcome) {
         if (order.getStatus() != TopUpStatus.PENDING) {
             return;
         }
         order.setStatus(outcome);
         order.setCompletedAt(LocalDateTime.now());
         orderRepository.save(order);
+        User user = order.getUser();
         if (outcome != TopUpStatus.SUCCEEDED) {
+            String purposeLabel = purposeLabel(order.getPurpose());
+            notificationService.paymentFailed(user.getEmail(), purposeLabel, order.getAmount());
+            adminNotificationService.paymentFailed(user.getEmail(), purposeLabel, order.getAmount());
             return;
         }
-        User user = order.getUser();
         switch (order.getPurpose()) {
             case WALLET_TOPUP -> {
                 walletService.topUp(user, order.getAmount());
@@ -242,12 +251,25 @@ public class RazorpayPaymentService {
                 user.setRegistrationFeePaid(true);
                 user.setRegistrationFeePaidAt(LocalDateTime.now());
                 userRepository.save(user);
+                notificationService.registrationFeePaid(user.getEmail(), order.getAmount());
             }
             case SUBSCRIPTION -> {
                 String[] parts = order.getMetadata().split(":");
-                subscriptionService.subscribe(user, SubscriptionTier.valueOf(parts[0]), BillingCycle.valueOf(parts[1]));
+                SubscriptionTier tier = SubscriptionTier.valueOf(parts[0]);
+                BillingCycle cycle = BillingCycle.valueOf(parts[1]);
+                User updated = subscriptionService.subscribe(user, tier, cycle);
+                notificationService.subscriptionActivated(updated.getEmail(), tier.name(), cycle.name(),
+                        updated.getSubscriptionExpiresAt());
             }
         }
+    }
+
+    private static String purposeLabel(PaymentPurpose purpose) {
+        return switch (purpose) {
+            case WALLET_TOPUP -> "Wallet top-up";
+            case REGISTRATION_FEE -> "Registration fee";
+            case SUBSCRIPTION -> "Subscription";
+        };
     }
 
     // ---- Seller payouts (RazorpayX) ----

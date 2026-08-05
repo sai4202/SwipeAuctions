@@ -48,22 +48,22 @@ class AuctionServiceListTest {
     void noStatusFilter_returnsAllAuctions() {
         Auction a = Auction.builder().status(AuctionStatus.OPEN).build();
         Auction b = Auction.builder().status(AuctionStatus.CLOSED).build();
-        when(auctionRepository.findAll()).thenReturn(List.of(a, b));
+        when(auctionRepository.findAllByOrderByCreatedAtDesc()).thenReturn(List.of(a, b));
 
         List<Auction> result = auctionService.list(null);
 
         assertThat(result).containsExactly(a, b);
-        verify(auctionRepository, never()).findByStatus(org.mockito.ArgumentMatchers.any());
+        verify(auctionRepository, never()).findByStatusOrderByCreatedAtDesc(org.mockito.ArgumentMatchers.any());
     }
 
     @Test
     void statusFilter_delegatesToFindByStatus() {
         Auction open = Auction.builder().status(AuctionStatus.OPEN).build();
-        when(auctionRepository.findByStatus(AuctionStatus.OPEN)).thenReturn(List.of(open));
+        when(auctionRepository.findByStatusOrderByCreatedAtDesc(AuctionStatus.OPEN)).thenReturn(List.of(open));
 
         List<Auction> result = auctionService.list(AuctionStatus.OPEN);
 
         assertThat(result).containsExactly(open);
-        verify(auctionRepository, never()).findAll();
+        verify(auctionRepository, never()).findAllByOrderByCreatedAtDesc();
     }
 }

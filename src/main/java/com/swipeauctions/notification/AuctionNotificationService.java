@@ -101,21 +101,87 @@ public class AuctionNotificationService {
 
     @Async
     public void walletTopUp(String email, BigDecimal amount) {
+        send(email, "Wallet credited — " + money(amount), wrap("Wallet credited",
+                "<p>Your wallet top-up was successful.</p>"
+                        + row("Amount credited", money(amount))
+                        + "<p style=\"margin-top:18px\">Funds are available to bid on right away.</p>"));
         push(email, NotificationKind.WALLET_TOPUP, "Wallet credited",
                 money(amount) + " was added to your wallet.", null);
     }
 
     @Async
     public void referralBonusCredited(String email, BigDecimal amount) {
+        send(email, "Referral bonus credited — " + money(amount), wrap("Referral bonus credited",
+                "<p>Thanks for referring a friend — your bonus has been added to your wallet.</p>"
+                        + row("Bonus credited", money(amount))
+                        + "<p style=\"margin-top:18px\">Keep sharing your referral link to earn more.</p>"));
         push(email, NotificationKind.REFERRAL_BONUS, "Referral bonus credited",
                 money(amount) + " was added to your wallet for a successful referral.", null);
     }
 
     @Async
     public void walletAdjusted(String email, BigDecimal amount, boolean credit, String reason) {
+        send(email, credit ? "Wallet credited by admin" : "Wallet debited by admin",
+                wrap(credit ? "Wallet credited by admin" : "Wallet debited by admin",
+                        "<p>An admin has " + (credit ? "credited" : "debited") + " your wallet.</p>"
+                                + row("Amount", money(amount))
+                                + row("Reason", esc(reason == null || reason.isBlank() ? "—" : reason))
+                                + "<p style=\"margin-top:18px\">Contact support if you have any questions about this adjustment.</p>"));
         push(email, NotificationKind.WALLET_ADJUSTED, credit ? "Wallet credited by admin" : "Wallet debited by admin",
                 (credit ? money(amount) + " was added to" : money(amount) + " was deducted from")
                         + " your wallet by an admin. Reason: " + reason, null);
+    }
+
+    @Async
+    public void registrationFeePaid(String email, BigDecimal amount) {
+        send(email, "Registration fee received", wrap("Registration fee received",
+                "<p>Your one-time registration fee has been received — your account is now fully activated.</p>"
+                        + row("Amount paid", money(amount))
+                        + "<p style=\"margin-top:18px\">You're all set to register for auctions and start bidding.</p>"));
+        push(email, NotificationKind.REGISTRATION_FEE_PAID, "Registration fee received",
+                money(amount) + " registration fee received. Your account is fully activated.", null);
+    }
+
+    @Async
+    public void subscriptionActivated(String email, String tierLabel, String cycleLabel, LocalDateTime expiresAt) {
+        send(email, "Subscription activated — " + tierLabel, wrap("Subscription activated",
+                "<p>Your <strong>" + esc(tierLabel) + "</strong> subscription (" + esc(cycleLabel) + ") is now active.</p>"
+                        + row("Renews / expires", expiresAt == null ? "—" : TS.format(expiresAt))
+                        + "<p style=\"margin-top:18px\">Your new tier benefits are live on your account now.</p>"));
+        push(email, NotificationKind.SUBSCRIPTION_ACTIVATED, "Subscription activated",
+                tierLabel + " (" + cycleLabel + ") is now active on your account.", null);
+    }
+
+    @Async
+    public void paymentFailed(String email, String purposeLabel, BigDecimal amount) {
+        send(email, "Payment failed — " + purposeLabel, wrap("Payment failed",
+                "<p>Your recent payment for <strong>" + esc(purposeLabel) + "</strong> could not be completed.</p>"
+                        + row("Amount", money(amount))
+                        + "<p style=\"margin-top:18px\">No funds were deducted. Please try again, or use a different "
+                        + "payment method.</p>"));
+        push(email, NotificationKind.PAYMENT_FAILED, "Payment failed",
+                purposeLabel + " payment of " + money(amount) + " could not be completed.", null);
+    }
+
+    @Async
+    public void settlementCompleted(String email, String auctionId, String auctionTitle, BigDecimal amount) {
+        send(email, "Payment complete — " + auctionTitle, wrap("Payment complete",
+                "<p>Your remaining payment for <strong>" + esc(auctionTitle) + "</strong> has been received in full.</p>"
+                        + row("Amount paid", money(amount))
+                        + "<p style=\"margin-top:18px\">We'll follow up shortly with handover details.</p>"));
+        push(email, NotificationKind.SETTLEMENT_COMPLETED, "Payment complete",
+                "Your payment of " + money(amount) + " for \"" + auctionTitle + "\" is complete.", auctionId);
+    }
+
+    @Async
+    public void settlementPaymentReminder(String email, String auctionId, String auctionTitle, BigDecimal amountDue) {
+        send(email, "Payment due — " + auctionTitle, wrap("Payment due",
+                "<p>You won <strong>" + esc(auctionTitle) + "</strong>, but the remaining balance hasn't been paid yet.</p>"
+                        + row("Amount due", money(amountDue))
+                        + "<p style=\"margin-top:18px\">Top up your wallet and complete the payment from the auction "
+                        + "page to finalize your win.</p>"));
+        push(email, NotificationKind.SETTLEMENT_REMINDER, "Payment due",
+                money(amountDue) + " is still due for \"" + auctionTitle + "\".", auctionId);
     }
 
     // ---- helpers ----

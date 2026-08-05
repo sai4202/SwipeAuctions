@@ -3,6 +3,7 @@ package com.swipeauctions.auth.helper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import com.swipeauctions.admin.repository.AdminRepository;
 import com.swipeauctions.auth.util.UserReferenceNumGenerator;
 import com.swipeauctions.common.exception.BadRequestException;
@@ -14,6 +15,8 @@ import com.swipeauctions.user.repository.OtpVerificationRepository;
 import com.swipeauctions.user.repository.UserRepository;
 
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -117,6 +120,29 @@ public class UserRegistrationHelperService {
         otpVerification.setMobileOtpExpiry(LocalDateTime.now().plusMinutes(10));
 
         otpRepository.save(otpVerification);
+    }
+
+    /** Registration rows past this age that never got verified — cleanup scheduler entry point. */
+    public List<User> findStaleUnverifiedUsers(long thresholdHours)
+    {
+        return userRepository.findByActiveFalseAndCreatedAtBefore(LocalDateTime.now().minusHours(thresholdHours));
+    }
+
+    /**
+     * Deletes exactly one stale, still-unverified user and its OtpVerification row. Re-checks
+     * active=false at delete time (UserRepository.deleteIfStillUnverified) — if the user activated
+     * in the window between being selected and this call, the delete is a no-op and the
+     * OtpVerification row (which a concurrently-finishing verify call may still need) is left alone.
+     */
+    @Transactional
+    public boolean purgeIfStillUnverified(UUID userId, String email)
+    {
+        if (userRepository.deleteIfStillUnverified(userId) > 0)
+        {
+            otpRepository.deleteByEmail(email);
+            return true;
+        }
+        return false;
     }
 
 }

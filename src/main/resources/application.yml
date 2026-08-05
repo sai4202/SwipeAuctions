@@ -66,6 +66,10 @@ app:
     url: ${APP_FRONTEND_URL:http://localhost:3000}
   upload:
     dir: ${UPLOAD_DIR:uploads}
+  admin:
+    # Ops inbox for best-effort alert emails (e.g. a failed Razorpay payment). Blank disables
+    # alerting entirely — the platform never depends on this to function.
+    alert-email: ${APP_ADMIN_ALERT_EMAIL:}
   cors:
     # Comma-separated browser origins allowed to call this API (the Vite dev server locally; the
     # deployed frontend's origin in production — e.g. https://swipe-auctions.vercel.app).
@@ -79,11 +83,28 @@ auth:
   # wired up — required=false skips mobile OTP entirely (email verification alone activates the
   # account). Flip to true (or set AUTH_MOBILE_VERIFICATION_REQUIRED=true) once real SMS is live.
   mobile-verification-required: ${AUTH_MOBILE_VERIFICATION_REQUIRED:false}
+  # Unverified registrations (active=false, stuck at the OTP stage) permanently block their
+  # email/mobile/userRefNumber unique slots with no expiry otherwise. Purged once older than
+  # threshold-hours. Disable via AUTH_STALE_REGISTRATION_CLEANUP_ENABLED=false to pause without
+  # a redeploy.
+  stale-registration-cleanup:
+    enabled: ${AUTH_STALE_REGISTRATION_CLEANUP_ENABLED:true}
+    threshold-hours: ${AUTH_STALE_REGISTRATION_CLEANUP_THRESHOLD_HOURS:24}
+    interval-ms: ${AUTH_STALE_REGISTRATION_CLEANUP_INTERVAL_MS:3600000}
 
 # Dispute wallet-freeze: how long a seller's sale proceeds stay escrowed (held, not available)
 # before auto-release, absent an open dispute on that auction.
 dispute:
   proceeds-hold-hours: ${DISPUTE_PROCEEDS_HOLD_HOURS:48}
+
+auction:
+  # Re-emails an auction winner who still owes a settlement remainder (see
+  # AuctionService#completeSettlement) every interval-hours until it's paid off. Disable via
+  # AUCTION_SETTLEMENT_REMINDER_ENABLED=false to pause without a redeploy.
+  settlement-reminder:
+    enabled: ${AUCTION_SETTLEMENT_REMINDER_ENABLED:true}
+    interval-hours: ${AUCTION_SETTLEMENT_REMINDER_INTERVAL_HOURS:24}
+    interval-ms: ${AUCTION_SETTLEMENT_REMINDER_INTERVAL_MS:3600000}
 
 # Razorpay — real money. All blank by default: the app boots and the rest of the platform works
 # fine without them; wallet top-up, registration fee, and subscription payment need key-id/secret;
